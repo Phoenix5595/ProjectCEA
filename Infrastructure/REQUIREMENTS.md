@@ -4,7 +4,7 @@ Stable cross-service contracts for ProjectCEA. For current architecture, see `AR
 
 ## Service Enumeration Authority
 
-`Infrastructure/services.yaml` is the single source of truth for every managed systemd unit. It defines unit filename, repo path, start order, health URL, and hardware-facing flag. `Infrastructure/scripts/service_list.py` parses it; `deploy.sh`, `rollback-deploy.sh`, and `sync_systemd_units.sh` consume it. No script should hardcode a service list.
+`Infrastructure/services.yaml` is the single source of truth for every managed systemd unit. It defines unit filename, repo path, start order, health and readiness URLs, and the hardware-facing flag. `Infrastructure/scripts/service_list.py` parses it; `deploy.sh`, `rollback-deploy.sh`, and `sync_systemd_units.sh` consume it. No script should hardcode a service list.
 
 ## Secrets
 
@@ -25,10 +25,10 @@ Stable cross-service contracts for ProjectCEA. For current architecture, see `AR
 
 ## Deployment Safety
 
-- `deploy.sh` and `rollback-deploy.sh` share an exclusive `flock(1)` on `/var/lib/projectcea-deploy.lock`.
-- `deploy.sh` writes `/var/lib/projectcea/deploy_state.json` after a successful deploy; `rollback-deploy.sh` uses `rollback_to_path` from that file.
-- `deploy.sh` writes `/opt/projectcea/current/deploy_manifest.json` with `release_id`, `git_sha`, `deployed_at`, and `health_ok`. The current deployed state is external; this repo describes the source surface, not a mutable snapshot.
-- `sync_systemd_units.sh` is intentionally not wired into `deploy.sh`. Auto-rollback reverts the code symlink only; a bad unit file left in `/etc/systemd/system/` would survive rollback.
+- `deploy.sh` and `rollback-deploy.sh` share an exclusive `flock(1)` on `/var/lock/projectcea-deploy.lock`.
+- Deploys export an exact committed revision, run read-only lint, and record `release_id`, full `git_sha`, `alembic_heads`, `migration_head`, `deployed_at`, and `health_ok` in the release manifest.
+- Migrations apply before unit/drop-in and Caddy synchronization. Downtime migrations require a recent passing rehearsal and create `/var/lib/projectcea/backups/pre-<RELEASE_ID>.dump`.
+- Per-release systemd and Caddy backups are restored by automatic or manual rollback. Manual rollback refuses newer SQL schema unless `--with-down-migrations` is given; Alembic head mismatches require restoring the pre-deploy dump.
 
 ## Caddy Reverse Proxy
 

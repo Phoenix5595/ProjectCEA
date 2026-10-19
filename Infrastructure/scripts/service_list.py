@@ -9,7 +9,8 @@ flags; every invocation prints one value per line so shell ``while read`` or
 CLI modes:
     --list-units                : one unit name per line, in start_order
     --list-deploy-managed-units : same, filtered to services deploy.sh touches
-    --list-health               : "<unit>\\t<url>" for every service with a url
+    --list-health               : "<unit>\\t<url>" for every service with a health URL
+    --list-ready                : "<unit>\\t<url>" for every service with a ready URL
     --list-hardware-facing      : units where hardware_facing: true
     --list-repo-unit-paths      : "<unit>\\t<repo_path>" for services whose
                                   unit file is tracked in this repo
@@ -66,6 +67,13 @@ def list_health_urls() -> None:
             print(f"{svc['unit']}\t{url}")
 
 
+def list_ready_urls() -> None:
+    for svc in _load():
+        url = svc.get("ready_url")
+        if url:
+            print(f"{svc['unit']}\t{url}")
+
+
 def list_hardware_facing() -> None:
     for svc in _load():
         if svc.get("hardware_facing"):
@@ -89,6 +97,7 @@ def main() -> int:
     group.add_argument("--list-health", action="store_true")
     group.add_argument("--list-hardware-facing", action="store_true")
     group.add_argument("--list-repo-unit-paths", action="store_true")
+    group.add_argument("--list-ready", action="store_true")
     args = parser.parse_args()
 
     if args.list_units:
@@ -97,6 +106,8 @@ def main() -> int:
         list_units(deploy_managed_only=True)
     elif args.list_health:
         list_health_urls()
+    elif args.list_ready:
+        list_ready_urls()
     elif args.list_hardware_facing:
         list_hardware_facing()
     elif args.list_repo_unit_paths:

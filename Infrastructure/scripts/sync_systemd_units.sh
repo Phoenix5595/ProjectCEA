@@ -1,162 +1,182 @@
 #!/usr/bin/env bash
-# Sync repo-tracked systemd unit files in Infrastructure/*.service to
-# /etc/systemd/system/. Opt-in; NOT wired into deploy.sh (so a bad unit file
-# cannot brick the box via auto-deploy).
-#
-# Semantics:
-#   - For each service in services.yaml with repo_unit != null:
-#     * Compare repo_unit contents with /etc/systemd/system/<unit> byte-for-byte.
-#     * If different, back up the current /etc/systemd/system/<unit> to
-#       /var/lib/projectcea/systemd-backup/<TIMESTAMP>/<unit>, then install
-#       the repo version.
-#   - daemon-reload once at the end.
-#   - Offer --reenable to also reenable every affected unit so [Install]
-#     section changes (renamed WantedBy=, new deps) take effect on boot.
-#   - --dry-run: only show diffs, don't touch anything.
-#
-# This script does NOT touch /etc/systemd/system/<unit>.service.d/ drop-ins.
-# The drop-ins merge with the base unit on daemon-reload and override it for
-# single-value keys (ExecStart, WorkingDirectory, etc.), so behaviour stays
-# identical as long as repo base units match the merged behaviour captured
-# in Phase 0 (which is by construction for the initial rollout).
-#
-# Rollback: the backup dir printed at the end can be rsync'd back:
-#   sudo rsync -a /var/lib/projectcea/systemd-backup/<TS>/ /etc/systemd/system/
-#   sudo systemctl daemon-reload
+# Install repo-managed systemd units and drop-ins into the system unit tree.
+# Deploys pass --release and --backup-dir for a non-interactive, reversible sync.
 
 set -euo pipefail
 
 usage() {
   cat <<EOF
-Usage: $0 [--dry-run] [--reenable] [--help]
+Usage: $0 [--release <repo-root> --backup-dir <dir>] [--dry-run] [--reenable] [--help]
 
-  --dry-run   Show diffs but don't modify /etc/systemd/system/ or run daemon-reload.
-  --reenable  After install, run 'systemctl reenable <unit>' for every changed
-              unit so [Install] section changes take effect on boot.
-  --help      This message.
+  --release <path>  Repository root to install from (defaults to this checkout).
+  --backup-dir <dir> Reversible backup directory; required with --release.
+  --dry-run         Show differences without installing or reloading systemd.
+  --reenable        Reenable changed base units after installation.
+  --help            Show this help.
 EOF
 }
 
 DRY_RUN=0
 REENABLE=0
+RELEASE_ROOT=""
+BACKUP_DIR=""
+EXPLICIT_RELEASE=0
+EXPLICIT_BACKUP=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) DRY_RUN=1; shift ;;
     --reenable) REENABLE=1; shift ;;
+    --release)
+      [[ $# -ge 2 && -n "$2" ]] || { echo "--release requires a path" >&2; exit 2; }
+      RELEASE_ROOT="$2"
+      EXPLICIT_RELEASE=1
+      shift 2
+      ;;
+    --backup-dir)
+      [[ $# -ge 2 && -n "$2" ]] || { echo "--backup-dir requires a path" >&2; exit 2; }
+      BACKUP_DIR="$2"
+      EXPLICIT_BACKUP=1
+      shift 2
+      ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown arg: $1" >&2; usage; exit 2 ;;
   esac
 done
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-SERVICE_LIST="${SCRIPT_DIR}/service_list.py"
-BACKUP_ROOT="/var/lib/projectcea/systemd-backup"
-BACKUP_DIR="${BACKUP_ROOT}/$(date -u +%Y%m%dT%H%M%SZ)"
-SYSTEMD_DIR="/etc/systemd/system"
+DEFAULT_REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+REPO_ROOT="${RELEASE_ROOT:-$DEFAULT_REPO_ROOT}"
+SERVICE_LIST="$REPO_ROOT/Infrastructure/scripts/service_list.py"
+SYSTEMD_DIR="${DEPLOY_SYSTEMD_DIR:-/etc/systemd/system}"
+BACKUP_ROOT="${SYSTEMD_BACKUP_ROOT:-/var/lib/projectcea/systemd-backup}"
 
+if [[ "$EXPLICIT_RELEASE" -ne "$EXPLICIT_BACKUP" ]]; then
+  echo "--release and --backup-dir must be specified together" >&2
+  exit 2
+fi
 if [[ ! -x "$SERVICE_LIST" ]]; then
   echo "ERROR: $SERVICE_LIST not found or not executable" >&2
   exit 2
 fi
-
-# Collect <unit>\t<repo_unit> pairs
-mapfile -t PAIRS < <(python3 "$SERVICE_LIST" --list-repo-unit-paths)
-
-if [[ ${#PAIRS[@]} -eq 0 ]]; then
-  echo "No services with repo_unit in services.yaml — nothing to do."
-  exit 0
+if [[ "$EXPLICIT_RELEASE" -eq 1 && ! -d "$REPO_ROOT/Infrastructure" ]]; then
+  echo "ERROR: release Infrastructure directory not found: $REPO_ROOT/Infrastructure" >&2
+  exit 2
 fi
 
-CHANGED=()
-echo "=== systemd unit sync dry-run: repo vs /etc/systemd/system ==="
-for pair in "${PAIRS[@]}"; do
+if [[ -z "$BACKUP_DIR" ]]; then
+  BACKUP_DIR="$BACKUP_ROOT/$(date -u +%Y%m%dT%H%M%SZ)"
+fi
+
+declare -a DEST_PATHS=()
+declare -a SOURCE_PATHS=()
+declare -a UNIT_NAMES=()
+declare -a CHANGED_INDEXES=()
+declare -a REENABLE_UNITS=()
+mapfile -t SERVICE_PAIRS < <(python3 "$SERVICE_LIST" --list-repo-unit-paths)
+for pair in "${SERVICE_PAIRS[@]}"; do
   unit="${pair%%$'\t'*}"
   repo_rel="${pair##*$'\t'}"
-  repo_path="${REPO_ROOT}/${repo_rel}"
-  installed_path="${SYSTEMD_DIR}/${unit}"
+  DEST_PATHS+=("$unit")
+  SOURCE_PATHS+=("$REPO_ROOT/$repo_rel")
+  UNIT_NAMES+=("$unit")
+done
 
+HANDLER_REL="Infrastructure/service-error-handler@.service"
+HANDLER_SOURCE="$REPO_ROOT/$HANDLER_REL"
+if [[ ! -f "$HANDLER_SOURCE" ]]; then
+  echo "ERROR: required failure handler unit is missing: $HANDLER_SOURCE" >&2
+  exit 2
+fi
+DEST_PATHS+=("service-error-handler@.service")
+SOURCE_PATHS+=("$HANDLER_SOURCE")
+UNIT_NAMES+=("service-error-handler@.service")
+
+DROPIN_ROOT="$REPO_ROOT/Infrastructure/systemd-overrides"
+if [[ -d "$DROPIN_ROOT" ]]; then
+  while IFS= read -r source_path; do
+    [[ -n "$source_path" ]] || continue
+    relative="${source_path#"$DROPIN_ROOT"/}"
+    DEST_PATHS+=("$relative")
+    SOURCE_PATHS+=("$source_path")
+    UNIT_NAMES+=("")
+  done < <(find "$DROPIN_ROOT" -mindepth 2 -maxdepth 2 -type f -name '*.conf' -print | sort)
+fi
+
+echo "=== systemd unit sync: $REPO_ROOT -> $SYSTEMD_DIR ==="
+for index in "${!DEST_PATHS[@]}"; do
+  relative="${DEST_PATHS[$index]}"
+  repo_path="${SOURCE_PATHS[$index]}"
+  installed_path="$SYSTEMD_DIR/$relative"
   if [[ ! -f "$repo_path" ]]; then
-    echo "  SKIP $unit (missing: $repo_path)"
+    echo "  SKIP $relative (missing: $repo_path)"
+    if [[ "$EXPLICIT_RELEASE" -eq 1 ]]; then
+      exit 1
+    fi
     continue
   fi
-
-  if [[ ! -f "$installed_path" ]]; then
-    echo "  NEW  $unit (no current /etc/systemd/system/$unit)"
-    CHANGED+=("$unit"$'\t'"$repo_path"$'\t'"$installed_path")
+  if [[ -f "$installed_path" ]] && cmp -s "$repo_path" "$installed_path"; then
+    echo "  OK   $relative (identical)"
     continue
   fi
-
-  if cmp -s "$repo_path" "$installed_path"; then
-    echo "  OK   $unit (identical)"
-  else
-    echo "  DIFF $unit"
+  if [[ -f "$installed_path" ]]; then
+    echo "  DIFF $relative"
     if [[ "$DRY_RUN" -eq 1 ]]; then
       diff -u "$installed_path" "$repo_path" | sed 's/^/      /' || true
     fi
-    CHANGED+=("$unit"$'\t'"$repo_path"$'\t'"$installed_path")
+  else
+    echo "  NEW  $relative"
+  fi
+  CHANGED_INDEXES+=("$index")
+  if [[ -n "${UNIT_NAMES[$index]}" ]]; then
+    REENABLE_UNITS+=("${UNIT_NAMES[$index]}")
   fi
 done
 
-if [[ ${#CHANGED[@]} -eq 0 ]]; then
-  echo ""
-  echo "All repo unit files match /etc/systemd/system. Nothing to do."
-  exit 0
-fi
-
-echo ""
-echo "Changed units: ${#CHANGED[@]}"
 if [[ "$DRY_RUN" -eq 1 ]]; then
   echo "(--dry-run: no changes applied)"
   exit 0
 fi
+if [[ ${#CHANGED_INDEXES[@]} -eq 0 && "$EXPLICIT_RELEASE" -eq 0 ]]; then
+  echo "All repo unit files and drop-ins match. Nothing to do."
+  exit 0
+fi
 
-# Interactive confirmation. Skip if stdin is not a TTY — expect caller to have
-# already looked at --dry-run output.
-if [[ -t 0 ]]; then
-  read -r -p "Apply changes to $SYSTEMD_DIR? [y/N] " ans
-  if [[ "$ans" != "y" && "$ans" != "Y" ]]; then
+if [[ "$EXPLICIT_RELEASE" -eq 0 && -t 0 ]]; then
+  read -r -p "Apply changes to $SYSTEMD_DIR? [y/N] " answer
+  if [[ "$answer" != "y" && "$answer" != "Y" ]]; then
     echo "Aborted."
     exit 1
   fi
 fi
 
-sudo mkdir -p "$BACKUP_DIR"
-echo "Backup dir: $BACKUP_DIR"
-
-for row in "${CHANGED[@]}"; do
-  IFS=$'\t' read -r unit repo_path installed_path <<<"$row"
+sudo install -d -m 0755 "$BACKUP_DIR"
+created_tmp="$(mktemp)"
+trap 'rm -f -- "$created_tmp"' EXIT
+sudo install -m 0644 -o root -g root "$created_tmp" "$BACKUP_DIR/created.txt"
+for index in "${CHANGED_INDEXES[@]}"; do
+  relative="${DEST_PATHS[$index]}"
+  repo_path="${SOURCE_PATHS[$index]}"
+  installed_path="$SYSTEMD_DIR/$relative"
   if [[ -f "$installed_path" ]]; then
-    sudo cp -a "$installed_path" "${BACKUP_DIR}/${unit}"
-    echo "  backed up  $unit  ->  ${BACKUP_DIR}/${unit}"
+    sudo install -d -m 0755 "$BACKUP_DIR/$(dirname "$relative")"
+    sudo cp -a "$installed_path" "$BACKUP_DIR/$relative"
+    echo "  backed up  $relative"
+  else
+    printf '%s\n' "$relative" >> "$created_tmp"
+    sudo install -m 0644 -o root -g root "$created_tmp" "$BACKUP_DIR/created.txt"
   fi
-  sudo install -o root -g root -m 0644 "$repo_path" "$installed_path"
-  echo "  installed  $unit  <-  ${repo_path}"
+  sudo install -d -m 0755 "$(dirname "$installed_path")"
+  sudo install -o root -g root -m 0644 "${SOURCE_PATHS[$index]}" "$installed_path"
+  echo "  installed  $relative"
 done
+sudo install -m 0644 -o root -g root "$created_tmp" "$BACKUP_DIR/created.txt"
 
-echo ""
-echo "Running daemon-reload..."
 sudo systemctl daemon-reload
-
 if [[ "$REENABLE" -eq 1 ]]; then
-  echo ""
-  echo "Reenabling changed units (Install-section changes take effect)..."
-  for row in "${CHANGED[@]}"; do
-    unit="${row%%$'\t'*}"
+  for unit in "${REENABLE_UNITS[@]}"; do
     sudo systemctl reenable "$unit" 2>/dev/null || sudo systemctl enable "$unit" || true
   done
 fi
 
-echo ""
 echo "Done. Backup: $BACKUP_DIR"
-echo ""
-echo "Services NOT restarted by this script. To apply runtime changes, restart manually:"
-for row in "${CHANGED[@]}"; do
-  unit="${row%%$'\t'*}"
-  echo "  sudo systemctl restart $unit"
-done
-
-echo ""
-echo "Rollback if needed:"
-echo "  sudo rsync -a ${BACKUP_DIR}/ ${SYSTEMD_DIR}/"
-echo "  sudo systemctl daemon-reload"
+echo "Rollback restores backed-up paths, removes created.txt entries, then daemon-reloads."

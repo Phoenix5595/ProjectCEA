@@ -11,21 +11,28 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-def run_alembic_migrations() -> None:
-    """Run database migrations using Alembic if available."""
+async def verify_alembic_head(pool: "Pool | None") -> None:
+    """Log deployed Alembic head drift without blocking service startup."""
+    current: set[str] = set()
+    heads: set[str] = set()
     try:
-        from alembic import command
         from alembic.config import Config
+        from alembic.script import ScriptDirectory
 
         alembic_ini = os.path.join(os.path.dirname(os.path.dirname(__file__)), "alembic.ini")
-        if os.path.exists(alembic_ini):
-            alembic_cfg = Config(alembic_ini)
-            command.upgrade(alembic_cfg, "head")
-            logger.info("Alembic migrations applied")
-    except ImportError:
-        logger.debug("Alembic not installed, skipping migrations (schema already exists)")
-    except Exception as e:
-        logger.warning(f"Alembic migration skipped: {e}")
+        alembic_cfg = Config(alembic_ini)
+        heads = set(ScriptDirectory.from_config(alembic_cfg).get_heads())
+        if pool is None:
+            raise RuntimeError("database pool is unavailable")
+        async with pool.acquire() as conn:
+            rows = await conn.fetch("SELECT version_num FROM alembic_version")
+        current = {row["version_num"] for row in rows}
+    except Exception:
+        logger.error(f"alembic_revision_mismatch current={sorted(current)} heads={sorted(heads)}")
+        return
+
+    if current != heads:
+        logger.error(f"alembic_revision_mismatch current={sorted(current)} heads={sorted(heads)}")
 
 
 async def create_room_modes_tables(pool: "Pool") -> None:

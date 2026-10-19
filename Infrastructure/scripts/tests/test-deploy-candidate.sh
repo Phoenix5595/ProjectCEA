@@ -25,6 +25,23 @@ readonly API_KEY_ENV_FILE="$SANDBOX/api_key.env"
 readonly FRONTEND_BUILD_PROOF="$SANDBOX/frontend-build-proof"
 readonly PACKAGE_WRAPPER_PROBE="$SANDBOX/run-package-command.sh"
 
+readonly REPO_ROOT="$(cd "$SCRIPT_DIRECTORY/../../.." && pwd)"
+readonly ARCHIVE_ROOT="$SANDBOX/git-archive"
+readonly SYSTEMD_DIR="$SANDBOX/systemd"
+readonly SYSTEMD_BACKUP_ROOT="$SANDBOX/systemd-backups"
+readonly CADDY_DIR="$SANDBOX/caddy"
+readonly CADDY_FILE="$CADDY_DIR/Caddyfile"
+readonly REHEARSAL_DIR="$SANDBOX/rehearsals"
+readonly MIGRATION_BACKUP_DIR="$SANDBOX/db-backups"
+readonly POSTGRES_ENV_FILE="$SANDBOX/postgres.env"
+readonly DB_MIGRATE_STUB="$SANDBOX/db_migrate_stub.py"
+readonly PSQL_STUB="$SANDBOX/bin/psql"
+readonly PG_DUMP_STUB="$SANDBOX/bin/pg_dump"
+readonly DB_HEAD_FILE="$SANDBOX/db-head"
+readonly ALEMBIC_HEADS_FILE="$SANDBOX/alembic-heads"
+readonly PIP_CACHE_DIR="$SANDBOX/pip-cache"
+readonly EXPECTED_GIT_SHA="$(printf 'a%.0s' {1..40})"
+
 readonly REL_A="$RELEASES/rel-A"
 readonly REL_B="$RELEASES/rel-B"
 readonly REL_C="$RELEASES/rel-C"
@@ -51,16 +68,31 @@ pass() {
 }
 
 
-mkdir -p "$BIN_DIRECTORY" "$RELEASES" "$STATE_DIR"
+
+mkdir -p "$BIN_DIRECTORY" "$RELEASES" "$STATE_DIR" \
+  "$ARCHIVE_ROOT/Infrastructure/scripts" "$ARCHIVE_ROOT/Infrastructure/frontend/dist" \
+  "$ARCHIVE_ROOT/Infrastructure/can-processor-service" "$ARCHIVE_ROOT/Infrastructure/grow-archive-service" \
+  "$ARCHIVE_ROOT/Infrastructure/caddy"
+cp -a "$REPO_ROOT/Infrastructure/services.yaml" "$ARCHIVE_ROOT/Infrastructure/services.yaml"
+cp -a "$REPO_ROOT/Infrastructure/scripts/service_list.py" "$ARCHIVE_ROOT/Infrastructure/scripts/"
+cp -a "$REPO_ROOT/Infrastructure/scripts/sync_systemd_units.sh" "$ARCHIVE_ROOT/Infrastructure/scripts/"
+cp -a "$REPO_ROOT/Infrastructure/scripts/install-sudoers.sh" "$ARCHIVE_ROOT/Infrastructure/scripts/"
+cp -a "$REPO_ROOT/Infrastructure/systemd-overrides" "$ARCHIVE_ROOT/Infrastructure/"
+cp -a "$REPO_ROOT/Infrastructure/"*.service "$ARCHIVE_ROOT/Infrastructure/"
+printf '#!/bin/bash\nexit 0\n' > "$ARCHIVE_ROOT/Infrastructure/can-processor-service/setup_can.sh"
+chmod 0755 "$ARCHIVE_ROOT/Infrastructure/can-processor-service/setup_can.sh"
+printf '# Required staged-release fixture file.\n' > "$ARCHIVE_ROOT/Infrastructure/grow-archive-service/requirements.txt"
+printf '{"name":"cea-frontend","version":"fixture"}\n' > "$ARCHIVE_ROOT/Infrastructure/frontend/package.json"
+printf '<!doctype html><title>Fixture</title>\n' > "$ARCHIVE_ROOT/Infrastructure/frontend/dist/index.html"
+printf '# archive Caddy configuration\n' > "$ARCHIVE_ROOT/Infrastructure/caddy/Caddyfile"
 
 for rel in "$REL_A" "$REL_B" "$REL_C" "$REL_D"; do
-  mkdir -p "$rel/Infrastructure/frontend/dist" "$rel/Infrastructure/can-processor-service" \
-    "$rel/Infrastructure/grow-archive-service"
-  printf '{"name":"cea-frontend","version":"fixture"}\n' > "$rel/Infrastructure/frontend/package.json"
-  printf '<!doctype html><title>Fixture</title>\n' > "$rel/Infrastructure/frontend/dist/index.html"
-  printf '#!/bin/bash\nexit 0\n' > "$rel/Infrastructure/can-processor-service/setup_can.sh"
-  printf '# Required staged-release fixture file.\n' > "$rel/Infrastructure/grow-archive-service/requirements.txt"
-  cp "$SCRIPT_DIRECTORY/../../services.yaml" "$rel/Infrastructure/services.yaml"
+  mkdir -p "$rel"
+  cp -a "$ARCHIVE_ROOT/Infrastructure" "$rel/"
+  printf '# release Caddy configuration: %s\n' "$(basename "$rel")" > "$rel/Infrastructure/caddy/Caddyfile"
+  printf '\n# fixture release: %s\n' "$(basename "$rel")" >> "$rel/Infrastructure/cea-backend.service"
+  printf '{"release_id":"%s","git_sha":"%s","alembic_heads":[],"migration_head":null}\n' \
+    "$(basename "$rel")" "$EXPECTED_GIT_SHA" > "$rel/deploy_manifest.json"
 done
 
 mkdir -p "$RELEASES/rel-old-1" "$RELEASES/rel-old-2" "$RELEASES/rel-old-3"
@@ -88,12 +120,39 @@ case "${1:-}" in
       exit 0
     fi
     ;;
+  install)
+    shift
+    declare -a install_args=()
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        -o|-g) shift 2 ;;
+        -o*|-g*) shift ;;
+        *) install_args+=("$1"); shift ;;
+      esac
+    done
+    exec install "${install_args[@]}"
+    ;;
+  python3)
+    if [[ "${2:-}" == "-m" && "${3:-}" == "venv" ]]; then
+      venv_dir="${4:-}"
+      mkdir -p "$venv_dir/bin"
+      cat > "$venv_dir/bin/pip" <<'PIP'
+#!/usr/bin/env bash
+exit 0
+PIP
+      chmod 0755 "$venv_dir/bin/pip"
+      exit 0
+    fi
+    ;;
 esac
 exec "$@"
 SUDO
 
 cat > "$BIN_DIRECTORY/ruff" <<'RUFF'
 #!/usr/bin/env bash
+if [[ "${DEPLOY_TEST_LINT_FAILURE:-0}" == "1" ]]; then
+  exit 1
+fi
 exit 0
 RUFF
 
@@ -103,13 +162,31 @@ set -euo pipefail
 
 source_path="${@: -2:1}"
 destination_path="${@: -1}"
-mkdir -p "$destination_path/frontend"
-cp -a "$source_path/frontend/." "$destination_path/frontend/"
-mkdir -p "$destination_path/can-processor-service"
-cp "$source_path/can-processor-service/setup_can.sh" "$destination_path/can-processor-service/"
-cp "$source_path/services.yaml" "$destination_path/services.yaml"
-mkdir -p "$destination_path/grow-archive-service"
-cp "$source_path/grow-archive-service/requirements.txt" "$destination_path/grow-archive-service/requirements.txt"
+source_root="${source_path%/}"
+delete_destination=0
+declare -a excludes=()
+for argument in "$@"; do
+  case "$argument" in
+    --delete) delete_destination=1 ;;
+    --exclude=*) excludes+=("${argument#--exclude=}") ;;
+  esac
+done
+mkdir -p "$destination_path"
+if [[ "$delete_destination" -eq 1 ]]; then
+  find "$destination_path" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+fi
+while IFS= read -r -d '' source_file; do
+  relative="${source_file#"$source_root"/}"
+  basename="${relative##*/}"
+  skip=0
+  for excluded in "${excludes[@]}"; do
+    [[ "$basename" == "$excluded" ]] && skip=1
+  done
+  [[ "$skip" -eq 0 ]] || continue
+  destination_file="$destination_path/$relative"
+  mkdir -p "$(dirname "$destination_file")"
+  cp -a "$source_file" "$destination_file"
+done < <(find "$source_root" -type f -print0)
 RSYNC
 
 cat > "$BIN_DIRECTORY/npm" <<'NPM'
@@ -154,7 +231,15 @@ cat > "$BIN_DIRECTORY/systemctl" <<'SYSTEMCTL'
 set -euo pipefail
 
 case "${1:-}" in
+  show)
+    if [[ "${DEPLOY_TEST_NOT_FOUND_UNIT:-}" == "${5:-}" ]]; then
+      printf 'not-found\n'
+    else
+      printf 'loaded\n'
+    fi
+    ;;
   daemon-reload)
+    printf 'systemctl daemon-reload\n' >> "$EVENT_LOG"
     ;;
   restart|start|stop)
     printf 'systemctl %s\n' "$*" >> "$EVENT_LOG"
@@ -178,7 +263,7 @@ cat > "$BIN_DIRECTORY/curl" <<'CURL'
 #!/usr/bin/env bash
 set -euo pipefail
 
-outfile=""
+outfile="/dev/null"
 url=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -189,19 +274,25 @@ while [[ $# -gt 0 ]]; do
     *) url="$1"; shift ;;
   esac
 done
+printf 'curl %s\n' "$url" >> "$EVENT_LOG"
 
-state="$(cat "$HEALTH_STATE_FILE" 2>/dev/null || echo not_ready)"
-if [[ "${HEALTH_DELAYED_URL:-}" == "$url" ]] && \
-  [[ "$(wc -l < "$HEALTH_DELAYED_CALLS_FILE" 2>/dev/null || echo 0)" -lt "${HEALTH_DELAYED_FAILURES:-0}" ]]; then
-  printf 'attempt\n' >> "$HEALTH_DELAYED_CALLS_FILE"
-  body='{"status":"starting"}'
-  code="503"
-elif [[ "$state" == "ready" ]]; then
-  body='{"status":"ready"}'
-  code="200"
+if [[ "$url" == "${DEPLOY_CADDY_HEALTH_URL:-http://127.0.0.1:8080/}" ]]; then
+  code="${DEPLOY_TEST_CADDY_CODE:-200}"
+  body='{"status":"caddy"}'
 else
-  body='{"status":"not_ready"}'
-  code="503"
+  state="$(cat "$HEALTH_STATE_FILE" 2>/dev/null || echo not_ready)"
+  if [[ "${HEALTH_DELAYED_URL:-}" == "$url" ]] && \
+    [[ "$(wc -l < "$HEALTH_DELAYED_CALLS_FILE" 2>/dev/null || echo 0)" -lt "${HEALTH_DELAYED_FAILURES:-0}" ]]; then
+    printf 'attempt\n' >> "$HEALTH_DELAYED_CALLS_FILE"
+    body='{"status":"starting"}'
+    code="503"
+  elif [[ "$state" == "ready" ]]; then
+    body='{"status":"ready"}'
+    code="200"
+  else
+    body='{"status":"not_ready"}'
+    code="503"
+  fi
 fi
 printf '%s\n' "$body" > "$outfile"
 printf '%s' "$code"
@@ -209,14 +300,132 @@ CURL
 
 cat > "$BIN_DIRECTORY/git" <<'GIT'
 #!/usr/bin/env bash
-printf 'abc123\n'
+set -euo pipefail
+
+if [[ "${1:-}" == "-C" ]]; then shift 2; fi
+case "${1:-}" in
+  rev-parse)
+    printf '%s\n' "$EXPECTED_GIT_SHA"
+    ;;
+  status)
+    if [[ "${DEPLOY_TEST_DIRTY_TRACKED:-0}" == "1" ]]; then
+      printf ' M Infrastructure/services.yaml\n'
+    elif [[ "${DEPLOY_TEST_UNTRACKED_ONLY:-0}" == "1" ]]; then
+      printf '?? Infrastructure/new-file.py\n'
+    fi
+    ;;
+  archive)
+    tar -C "$DEPLOY_TEST_ARCHIVE_ROOT" -cf - Infrastructure
+    ;;
+  *)
+    echo "unexpected git invocation: $*" >&2
+    exit 2
+    ;;
+esac
 GIT
 
+cat > "$BIN_DIRECTORY/caddy" <<'CADDY'
+#!/usr/bin/env bash
+printf 'caddy %s\n' "$*" >> "$EVENT_LOG"
+exit 0
+CADDY
+
+cat > "$PSQL_STUB" <<'PSQL'
+#!/usr/bin/env bash
+set -euo pipefail
+command_text=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --command=*) command_text="${1#--command=}" ;;
+    --command|-c)
+      command_text="${2:-}"
+      shift
+      ;;
+  esac
+  shift
+done
+if [[ "$command_text" == *"to_regclass"* ]]; then
+  printf 't\n'
+elif [[ "$command_text" == *"version_num"* ]]; then
+  cat "$ALEMBIC_HEADS_FILE"
+else
+  echo "unexpected psql query: $command_text" >&2
+  exit 2
+fi
+PSQL
+
+cat > "$PG_DUMP_STUB" <<'PGDUMP'
+#!/usr/bin/env bash
+set -euo pipefail
+file=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --file) file="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+[[ -n "$file" ]] || exit 2
+mkdir -p "$(dirname "$file")"
+printf 'fixture custom-format database dump\n' > "$file"
+printf 'pg_dump -Fc %s\n' "$file" >> "$EVENT_LOG"
+PGDUMP
+
+cat > "$DB_MIGRATE_STUB" <<'PY'
+#!/usr/bin/env python3
+import json
+import os
+from pathlib import Path
+import sys
+
+args = sys.argv[1:]
+if "--release" not in args:
+    raise SystemExit("missing --release")
+release_index = args.index("--release")
+command = args[release_index + 2]
+command_args = args[release_index + 3 :]
+event_log = Path(os.environ["EVENT_LOG"])
+event_log.parent.mkdir(parents=True, exist_ok=True)
+with event_log.open("a", encoding="utf-8") as stream:
+    stream.write(f"db_migrate {command} {' '.join(command_args)}\n")
+
+head_path = Path(os.environ["DB_HEAD_FILE"])
+head = head_path.read_text(encoding="utf-8").strip() if head_path.exists() else "null"
+alembic_path = Path(os.environ["ALEMBIC_HEADS_FILE"])
+alembic_heads = [line.strip() for line in alembic_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+if command == "plan":
+    downtime = os.environ.get("DEPLOY_TEST_DOWNTIME") == "1"
+    pending = [{"version": "0001_test_migration", "sha256": "f" * 64, "downtime": True}] if downtime else []
+    print(json.dumps({
+        "pending": pending,
+        "requires_downtime": downtime,
+        "set_sha256": "test-set-sha" if downtime else "empty-set-sha",
+        "head": None if head == "null" else head,
+    }))
+elif command == "apply":
+    applied = []
+    if "--allow-downtime" in command_args and head == "null":
+        head = "0001_test_migration"
+        head_path.write_text(head + "\n", encoding="utf-8")
+        applied.append(head)
+    print(json.dumps({"applied": applied, "head": None if head == "null" else head, "alembic_heads": alembic_heads}))
+elif command == "head":
+    print(head)
+elif command == "down":
+    target = command_args[command_args.index("--to") + 1]
+    head = "null" if target == "none" else target
+    head_path.write_text(head + "\n", encoding="utf-8")
+elif command == "status":
+    print(json.dumps({"head": None if head == "null" else head}))
+else:
+    raise SystemExit(f"unexpected db_migrate command: {command}")
+PY
 chmod 0700 "$BIN_DIRECTORY"/*
 
 base_environment() {
   export PATH="$BIN_DIRECTORY:$PATH"
-  export SOURCE="$(cd "$SCRIPT_DIRECTORY/../../.." && pwd)"
+  export SOURCE="$REPO_ROOT"
+  export DEPLOY_GIT_REPO="$REPO_ROOT"
   export DEPLOY_ROOT
   export DEPLOY_STATE_DIR="$STATE_DIR"
   export DEPLOY_LOG="$EVENT_LOG"
@@ -228,9 +437,22 @@ base_environment() {
   export DEPLOY_MAX_RELEASES=10
   export DEPLOY_SKIP_STAGING=1
   export DEPLOY_HEALTH_ATTEMPTS=1
-  export HEALTH_STATE_FILE
-  export HEALTH_DELAYED_CALLS_FILE
-  export EVENT_LOG
+  export DEPLOY_SYSTEMD_DIR="$SYSTEMD_DIR"
+  export DEPLOY_SYSTEMD_BACKUP_ROOT="$SYSTEMD_BACKUP_ROOT"
+  export DEPLOY_CADDY_FILE="$CADDY_FILE"
+  export DEPLOY_CADDY_HEALTH_URL="http://127.0.0.1:8080/"
+  export DEPLOY_REHEARSAL_DIR="$REHEARSAL_DIR"
+  export DEPLOY_BACKUP_DIR="$MIGRATION_BACKUP_DIR"
+  export DEPLOY_POSTGRES_ENV_FILE="$POSTGRES_ENV_FILE"
+  export DEPLOY_DB_MIGRATE="$DB_MIGRATE_STUB"
+  export DEPLOY_PSQL="$PSQL_STUB"
+  export DEPLOY_PG_DUMP="$PG_DUMP_STUB"
+  export PIP_CACHE_DIR
+  export POSTGRES_DB="monitoring_test_deploy_candidates"
+  export EVENT_LOG HEALTH_STATE_FILE HEALTH_DELAYED_CALLS_FILE
+  export DEPLOY_TEST_ARCHIVE_ROOT="$ARCHIVE_ROOT"
+  export DEPLOY_TEST_DB_HEAD_FILE="$DB_HEAD_FILE"
+  export DB_HEAD_FILE ALEMBIC_HEADS_FILE EXPECTED_GIT_SHA
 }
 
 run_frontend_build_key_sandbox() {
@@ -271,7 +493,7 @@ import sys
 
 source = Path(sys.argv[1]).read_text()
 start = source.index("run_package_command() {")
-end = source.index("\n}\n\nrestart_services", start) + 3
+end = source.index("\n}\n\nsystemd_load_state", start) + 3
 Path(sys.argv[2]).write_text(source[start:end] + "\n")
 PY
 }
@@ -478,16 +700,45 @@ current_target() {
   readlink -f "$CURRENT" 2>/dev/null || true
 }
 
+assert_event_before() {
+  local earlier later
+  earlier="$(grep -n -m 1 -F -- "$1" "$EVENT_LOG" | cut -d: -f1)"
+  later="$(grep -n -m 1 -F -- "$2" "$EVENT_LOG" | cut -d: -f1)"
+  [[ -n "$earlier" && -n "$later" && "$earlier" -lt "$later" ]] || \
+    fail "event order was not preserved: $1 before $2"
+}
+
 clear_state() {
   rm -f "$STATE_FILE" "$EVENT_LOG" "$PACKAGE_LOG" "$HEALTH_STATE_FILE" "$HEALTH_DELAYED_CALLS_FILE"
   rm -f "$STATE_DIR/deploy-packages.log"
   rm -f "$CURRENT"
   rm -f "$EVENT_LOG.restart-failed"
+  rm -rf "$SYSTEMD_DIR" "$SYSTEMD_BACKUP_ROOT" "$REHEARSAL_DIR" "$MIGRATION_BACKUP_DIR"
+  mkdir -p "$SYSTEMD_DIR" "$CADDY_DIR" "$REHEARSAL_DIR" "$MIGRATION_BACKUP_DIR"
+  printf '# pre-release Caddy configuration\n' > "$CADDY_FILE"
+  printf 'null\n' > "$DB_HEAD_FILE"
+  : > "$ALEMBIC_HEADS_FILE"
+  printf 'POSTGRES_PASSWORD=test\n' > "$POSTGRES_ENV_FILE"
   unset HEALTH_DELAYED_URL HEALTH_DELAYED_FAILURES ROLLBACK_HEALTH_TIMEOUT_SECONDS
+  unset DEPLOY_TEST_DIRTY_TRACKED DEPLOY_TEST_UNTRACKED_ONLY DEPLOY_TEST_LINT_FAILURE DEPLOY_TEST_DOWNTIME
+  unset DEPLOY_TEST_NOT_FOUND_UNIT DEPLOY_TEST_CADDY_CODE DEPLOY_TEST_FAIL_UNIT
 }
 
 set_current() {
   ln -sfn "$1" "$CURRENT"
+  [[ -d "$1/Infrastructure" ]] || return 0
+  mkdir -p "$SYSTEMD_DIR" "$CADDY_DIR"
+  cp "$1/Infrastructure/caddy/Caddyfile" "$CADDY_FILE"
+  for unit_file in "$1"/Infrastructure/*.service; do
+    [[ -f "$unit_file" ]] || continue
+    cp -a "$unit_file" "$SYSTEMD_DIR/$(basename "$unit_file")"
+  done
+  for override_file in "$1"/Infrastructure/systemd-overrides/*/*.conf; do
+    [[ -f "$override_file" ]] || continue
+    relative="${override_file#"$1/Infrastructure/systemd-overrides/"}"
+    mkdir -p "$SYSTEMD_DIR/$(dirname "$relative")"
+    cp -a "$override_file" "$SYSTEMD_DIR/$relative"
+  done
 }
 
 write_state_json() {
@@ -538,6 +789,7 @@ create_identity_fixture() {
   PATH="$ORIGINAL_PATH" git -C "$IDENTITY_REPO" commit -qm 'fixture release input'
   cp -R "$IDENTITY_REPO/Infrastructure/." "$IDENTITY_TARGET/Infrastructure/"
   cp -R "$REL_D/Infrastructure/." "$IDENTITY_TARGET/Infrastructure/"
+  cp "$IDENTITY_REPO/Infrastructure/caddy/Caddyfile" "$IDENTITY_TARGET/Infrastructure/caddy/Caddyfile"
   ln -sfn "$IDENTITY_PREVIOUS" "$IDENTITY_CURRENT"
 }
 
@@ -670,6 +922,7 @@ unset DEPLOY_TEST_FAIL_UNIT
 [[ "$(state_field candidate_release_id)" == "" ]] || fail 'restart failure recorded a candidate'
 [[ "$(cat "$EVENT_LOG")" == *"service_restart_failed"* ]] || fail 'restart failure was not recorded'
 [[ "$(cat "$EVENT_LOG")" == *"rollback_auto_done"* ]] || fail 'restart failure did not restore services'
+assert_event_before 'systemctl restart grow-archive-service.service' 'rollback_auto_symlink'
 pass 'service restart failure restores the previous release before exiting'
 
 clear_state
@@ -705,13 +958,17 @@ export TARGET="$REL_A"
 expect_success bash "$DEPLOY_SCRIPT"
 [[ "$(current_target)" == "$REL_A" ]] || { printf 'scenario 1: current should be rel-A\n' >&2; exit 1; }
 [[ "$(cat "$EVENT_LOG")" == *"systemctl restart monitoring-service.service"* ]] || { printf 'scenario 1: monitoring service was not restarted\n' >&2; exit 1; }
-python3 - "$CURRENT/deploy_manifest.json" <<'PY'
+python3 - "$CURRENT/deploy_manifest.json" "$EXPECTED_GIT_SHA" <<'PY'
 import json
 import sys
 from pathlib import Path
 
-services = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))["services"]
-if "monitoring-service" not in services:
+manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+if manifest["git_sha"] != sys.argv[2]:
+    raise SystemExit("scenario 1: manifest git_sha is not the resolved full commit SHA")
+if manifest["alembic_heads"] != [] or manifest["migration_head"] is not None:
+    raise SystemExit("scenario 1: migration heads are missing or incorrect")
+if "monitoring-service" not in manifest["services"]:
     raise SystemExit("scenario 1: monitoring service missing from deploy manifest")
 PY
 [[ "$(state_field last_good_release_id)" == "rel-A" ]] || { printf 'scenario 1: stale last_good was not reconciled\n' >&2; exit 1; }
@@ -773,6 +1030,12 @@ expect_success bash "$FINALIZE_SCRIPT" --confirm
 [[ "$(state_field rollback_to_path)" == "$REL_A" ]] || { printf 'scenario 4: rollback should be former last-good rel-A\n' >&2; exit 1; }
 [[ "$(state_field candidate_release_id)" == "" ]] || { printf 'scenario 4: candidate should be cleared\n' >&2; exit 1; }
 [[ "$(cat "$EVENT_LOG")" == *"finalized"* ]] || { printf 'scenario 4: finalized event missing\n' >&2; exit 1; }
+[[ "$(cat "$EVENT_LOG")" == *"systemctl restart grow-archive-service.service"* ]] || \
+  fail 'scenario 4: finalize did not restart the target release service list'
+for port in 8000 8001 8002 8003 8004 8005 8006; do
+  grep -Fq "curl http://127.0.0.1:$port/ready" "$EVENT_LOG" || \
+    fail "scenario 4: finalize did not check ready port $port"
+done
 append_state "finalized"
 pass "scenario 4: finalize promotes candidate to last-good"
 
@@ -976,6 +1239,133 @@ if any("unrelated-dirty.txt" in str(item) for item in record["release_inputs"]):
 PY
 pass "scenario 14: unrelated dirty file stays outside identity artifacts"
 
+if [[ ! -d "$REL_A/Infrastructure" ]]; then
+  mkdir -p "$REL_A"
+  cp -a "$ARCHIVE_ROOT/Infrastructure" "$REL_A/"
+  printf '# release Caddy configuration: rel-A\n' > "$REL_A/Infrastructure/caddy/Caddyfile"
+  printf '\n# fixture release: rel-A\n' >> "$REL_A/Infrastructure/cea-backend.service"
+  printf '{"release_id":"rel-A","git_sha":"%s","alembic_heads":[],"migration_head":null}\n' \
+    "$EXPECTED_GIT_SHA" > "$REL_A/deploy_manifest.json"
+fi
+
+
+# --- Deploy hardening: dirty tracked inputs are rejected before release work ---
+clear_state
+set_current "$REL_A"
+write_state_json "rel-A" "$REL_A" "$REL_C"
+base_environment
+export TARGET="$REL_B"
+export DEPLOY_TEST_DIRTY_TRACKED=1
+expect_failure bash "$DEPLOY_SCRIPT"
+grep -Fq 'dirty_tracked_inputs' "$EVENT_LOG" || fail 'dirty tracked input was not reported'
+[[ "$(current_target)" == "$REL_A" ]] || fail 'dirty tracked input changed current'
+[[ "$(cat "$EVENT_LOG")" != *"db_migrate plan"* ]] || fail 'dirty tracked input reached migration planning'
+pass 'dirty tracked inputs block deploy before migrations'
+
+# Untracked inputs are deliberately ignored by the release-source guard.
+clear_state
+set_current "$REL_A"
+write_state_json "rel-A" "$REL_A" "$REL_C"
+printf 'ready\n' > "$HEALTH_STATE_FILE"
+base_environment
+export TARGET="$REL_B"
+export DEPLOY_TEST_UNTRACKED_ONLY=1
+expect_success bash "$DEPLOY_SCRIPT"
+[[ "$(current_target)" == "$REL_B" ]] || fail 'untracked-only status blocked the release'
+pass 'untracked-only release source status is allowed'
+
+# --- Deploy hardening: lint is read-only and blocks before migrations ---
+clear_state
+set_current "$REL_A"
+write_state_json "rel-A" "$REL_A" "$REL_C"
+base_environment
+export TARGET="$REL_B"
+export DEPLOY_TEST_LINT_FAILURE=1
+expect_failure bash "$DEPLOY_SCRIPT"
+grep -Fq 'lint_failed' "$EVENT_LOG" || fail 'lint failure was not reported'
+[[ "$(current_target)" == "$REL_A" ]] || fail 'lint failure changed current'
+[[ "$(cat "$EVENT_LOG")" != *"db_migrate plan"* ]] || fail 'lint failure reached migration planning'
+pass 'lint failure blocks candidate activation'
+
+# --- Deploy hardening: downtime migration requires a fresh matching rehearsal ---
+clear_state
+set_current "$REL_A"
+write_state_json "rel-A" "$REL_A" "$REL_C"
+printf 'ready\n' > "$HEALTH_STATE_FILE"
+base_environment
+export TARGET="$REL_B"
+export DEPLOY_TEST_DOWNTIME=1
+expect_failure bash "$DEPLOY_SCRIPT"
+grep -Fq 'rehearsal_missing' "$EVENT_LOG" || fail 'missing rehearsal was not reported'
+[[ "$(cat "$EVENT_LOG")" != *"pg_dump -Fc"* ]] || fail 'missing rehearsal started a backup'
+[[ "$(cat "$EVENT_LOG")" != *"systemctl stop "* ]] || fail 'missing rehearsal stopped services'
+[[ "$(cat "$EVENT_LOG")" != *"db_migrate apply"* ]] || fail 'missing rehearsal applied migrations'
+pass 'downtime migrations are blocked without a fresh matching rehearsal'
+
+# --- Deploy hardening: downtime order, schema-aware rollback, and Caddy backup ---
+clear_state
+set_current "$REL_A"
+write_state_json "rel-A" "$REL_A" "$REL_C"
+printf 'ready\n' > "$HEALTH_STATE_FILE"
+base_environment
+export TARGET="$REL_B"
+export DEPLOY_TEST_DOWNTIME=1
+mkdir -p "$REHEARSAL_DIR"
+printf '{"set_sha256":"test-set-sha","result":"pass"}\n' > "$REHEARSAL_DIR/test-set-sha.json"
+expect_success bash "$DEPLOY_SCRIPT"
+assert_event_before 'systemctl stop grow-archive-service.service' 'db_migrate apply --json --allow-downtime'
+assert_event_before 'db_migrate apply --json --allow-downtime' 'deploy_symlink_switched'
+[[ "$(current_target)" == "$REL_B" ]] || fail 'rehearsed downtime deploy did not activate the candidate'
+[[ -s "$MIGRATION_BACKUP_DIR/pre-rel-B.dump" ]] || fail 'downtime deploy did not retain its pre-migration dump'
+[[ "$(cat "$CADDY_FILE")" == "$(cat "$REL_B/Infrastructure/caddy/Caddyfile")" ]] || \
+  fail 'candidate Caddyfile was not installed'
+[[ -s "$SYSTEMD_BACKUP_ROOT/rel-B/Caddyfile" ]] || fail 'pre-deploy Caddyfile was not backed up'
+cmp -s "$SYSTEMD_BACKUP_ROOT/rel-B/Caddyfile" "$REL_A/Infrastructure/caddy/Caddyfile" || \
+  fail 'Caddyfile backup does not match the previous release'
+cmp -s "$SYSTEMD_BACKUP_ROOT/rel-B/cea-backend.service" "$REL_A/Infrastructure/cea-backend.service" || \
+  fail 'replaced systemd unit was not backed up'
+expect_failure bash "$ROLLBACK_SCRIPT"
+grep -Fq 'schema_newer_than_target' "$EVENT_LOG" || fail 'manual rollback did not block a newer schema'
+[[ "$(current_target)" == "$REL_B" ]] || fail 'schema-blocked rollback changed current'
+expect_success bash "$ROLLBACK_SCRIPT" --with-down-migrations
+assert_event_before 'db_migrate down --to none' 'rollback_manual_symlink'
+[[ "$(current_target)" == "$REL_A" ]] || fail 'schema-aware manual rollback did not restore the target release'
+[[ "$(cat "$DB_HEAD_FILE")" == "null" ]] || fail 'schema-aware manual rollback did not reverse the SQL migration'
+cmp -s "$CADDY_FILE" "$REL_A/Infrastructure/caddy/Caddyfile" || fail 'rollback did not restore the previous Caddyfile'
+cmp -s "$SYSTEMD_DIR/cea-backend.service" "$REL_A/Infrastructure/cea-backend.service" || \
+  fail 'rollback did not restore the replaced systemd unit'
+[[ "$(state_field candidate_release_id)" == "" ]] || fail 'candidate state was not cleared after rollback'
+pass 'rehearsed downtime deploy orders stop/apply/switch and rollback restores schema, units, and Caddy'
+
+# --- Deploy hardening: failed health after downtime migrates down before switching back ---
+clear_state
+set_current "$REL_A"
+write_state_json "rel-A" "$REL_A" "$REL_C"
+base_environment
+export TARGET="$REL_B"
+export DEPLOY_TEST_DOWNTIME=1
+mkdir -p "$REHEARSAL_DIR"
+printf '{"set_sha256":"test-set-sha","result":"pass"}\n' > "$REHEARSAL_DIR/test-set-sha.json"
+expect_failure bash "$DEPLOY_SCRIPT"
+assert_event_before 'db_migrate down --to none' 'rollback_auto_symlink'
+[[ "$(current_target)" == "$REL_A" ]] || fail 'health failure after downtime did not restore the prior release'
+[[ "$(cat "$DB_HEAD_FILE")" == "null" ]] || fail 'automatic rollback did not reverse the SQL migration'
+pass 'automatic health rollback runs down migrations before switching releases'
+
+# --- Deploy hardening: absent units are skipped while remaining services restart ---
+clear_state
+set_current "$REL_A"
+write_state_json "rel-A" "$REL_A" "$REL_C"
+printf 'ready\n' > "$HEALTH_STATE_FILE"
+base_environment
+export TARGET="$REL_B"
+export DEPLOY_TEST_NOT_FOUND_UNIT=can-processor.service
+expect_success bash "$DEPLOY_SCRIPT"
+grep -Fq 'load_state_not_found' "$EVENT_LOG" || fail 'not-found unit was not reported as skipped'
+[[ "$(cat "$EVENT_LOG")" != *"systemctl restart can-processor.service"* ]] || fail 'not-found unit was restarted'
+[[ "$(cat "$EVENT_LOG")" == *"systemctl restart grow-archive-service.service"* ]] || \
+  fail 'a not-found unit prevented later service restarts'
+pass 'not-found units are skipped without stopping the restart loop'
 printf ']' >> "$EVIDENCE_STATES"
 
 EVIDENCE_DIR="$SANDBOX/evidence"

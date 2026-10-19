@@ -29,7 +29,7 @@ Config changes flow from automation-service to backend to frontend via Redis Str
 
 Monitoring range validation is intentionally split: monitoring-service sensor/control reads validate ranges down to 1 second (`sensor_models.MINIMUM_RANGE = timedelta(seconds=1)`), while automation-service projection snapshot construction independently requires ranges of at least 5 minutes (`app/schemas/monitoring_models.py` `MINIMUM_RANGE`). These are separate validators serving different purposes; neither is being changed by the plan.
 
-Deploys restart all managed services as full-service candidates; there is no component-scoped deploy. Rollback restores code/release state but does not revert database schema. This plan performs no schema migrations.
+Deploys are exact-commit candidates (`deploy.sh [--commit <rev>] [major|minor|patch]`): the script exports committed `Infrastructure/`, runs read-only Ruff, applies Alembic and SQL migrations, synchronizes repo-managed units/drop-ins and Caddy, then requires each configured `/health` and `/ready` endpoint. Downtime migrations require a fresh passing rehearsal and a pre-deploy dump. Rollback restores the prior systemd/Caddy files; SQL migrations run down only for an older target (`--with-down-migrations` for manual rollback), and Alembic is never downgraded. Finalize restarts the candidate's deploy-managed units and rechecks health/readiness before promotion.
 
 ## Shared Code Ownership
 

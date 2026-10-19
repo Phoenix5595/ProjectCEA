@@ -19,12 +19,13 @@
 #   name         : human / friendly name (also used in log lines)
 #   unit         : systemd unit filename (without path)
 #   repo_unit    : path to the canonical unit file inside the repo, relative
-#                  to the repo root. `null` means "not yet in repo" — TODO
-#                  during Phase 2.1 rollout.
+#                  to the repo root. `null` means the unit has no repo file.
 #   start_order  : ascending integer; services with the same order can start
 #                  in parallel (but deploy.sh currently restarts sequentially)
-#   health_url   : HTTP GET URL for post-deploy health check, OR null if the
-#                  unit doesn't expose HTTP (can-processor, can-setup, etc.)
+#   health_url   : HTTP GET URL for the post-deploy health check, or null when
+#                  the unit does not expose HTTP.
+#   ready_url    : HTTP GET URL for readiness after startup, or null when
+#                  the unit does not expose HTTP.
 #   hardware_facing : true if the unit talks to real hardware (GPIO, I2C,
 #                  1-Wire, CAN, RS485). Used by the rollout guard in Phase
 #                  2.1 to stage hardware-facing services LAST.
@@ -35,6 +36,7 @@ services:
     repo_unit: Infrastructure/can-setup.service
     start_order: 1
     health_url: null
+    ready_url: null
     hardware_facing: true  # brings up can0
 
   - name: can-processor
@@ -42,6 +44,7 @@ services:
     repo_unit: Infrastructure/can-processor.service
     start_order: 2
     health_url: null  # long-running daemon, no FastAPI
+    ready_url: null
     hardware_facing: true  # reads CAN bus
 
   - name: cea-backend
@@ -49,6 +52,7 @@ services:
     repo_unit: Infrastructure/cea-backend.service
     start_order: 2
     health_url: http://127.0.0.1:8000/health
+    ready_url: http://127.0.0.1:8000/ready
     hardware_facing: false
 
   - name: onewire-worker
@@ -56,6 +60,7 @@ services:
     repo_unit: Infrastructure/onewire-worker.service
     start_order: 3
     health_url: http://127.0.0.1:8004/health
+    ready_url: http://127.0.0.1:8004/ready
     hardware_facing: true  # reads /sys/bus/w1 DS18B20
 
   - name: soil-sensor-service
@@ -63,6 +68,7 @@ services:
     repo_unit: Infrastructure/soil-sensor-service.service
     start_order: 3
     health_url: http://127.0.0.1:8002/health
+    ready_url: http://127.0.0.1:8002/ready
     hardware_facing: true  # RS485 Modbus
 
   - name: weather-service
@@ -70,6 +76,7 @@ services:
     repo_unit: Infrastructure/weather-service.service
     start_order: 3
     health_url: http://127.0.0.1:8003/health
+    ready_url: http://127.0.0.1:8003/ready
     hardware_facing: false  # HTTP pulls only
 
   - name: automation-service
@@ -77,6 +84,7 @@ services:
     repo_unit: Infrastructure/automation-service.service
     start_order: 4
     health_url: http://127.0.0.1:8001/health
+    ready_url: http://127.0.0.1:8001/ready
     hardware_facing: true  # drives DFR0971 dimmers + MCP relays — lights live here
 
   - name: monitoring-service
@@ -84,6 +92,7 @@ services:
     repo_unit: Infrastructure/monitoring-service.service
     start_order: 5
     health_url: http://127.0.0.1:8005/health
+    ready_url: http://127.0.0.1:8005/ready
     hardware_facing: false  # read-only TimescaleDB and Redis monitoring API
 
   - name: grow-archive-service
@@ -91,6 +100,7 @@ services:
     repo_unit: Infrastructure/grow-archive-service.service
     start_order: 6
     health_url: http://127.0.0.1:8006/health
+    ready_url: http://127.0.0.1:8006/ready
     hardware_facing: false  # archive storage/lifecycle API; no hardware, no Redis writes
 
   - name: redis-aof-check
@@ -98,5 +108,6 @@ services:
     repo_unit: Infrastructure/redis-aof-check.service
     start_order: 0  # runs before redis-server on boot only; not restarted by deploy.sh
     health_url: null
+    ready_url: null
     hardware_facing: false
     deploy_managed: false  # oneshot, excluded from deploy.sh restart loop

@@ -12,7 +12,7 @@ import redis
 from shared.db import create_pool, db_config_from_env
 from shared.infra_logging import get_logger
 
-from .migrations import create_calendar_tables, create_room_modes_tables, run_alembic_migrations
+from .migrations import create_calendar_tables, create_room_modes_tables, verify_alembic_head
 from .redis_client import AutomationRedisClient
 from .repositories.calendar import CalendarRepository
 from .repositories.climate_periods import ClimatePeriodRepository
@@ -64,7 +64,7 @@ class DatabaseManager:
         self._light_programs_repo: LightProgramsRepository | None = None
 
     async def initialize(self) -> bool:
-        """Initialize database connection and run migrations.
+        """Initialize database connections and services.
 
         Returns:
             True if successful, False otherwise
@@ -72,8 +72,8 @@ class DatabaseManager:
         try:
             await self._connect_db()
 
-            # Run migrations
-            run_alembic_migrations()
+            # Schema migrations are applied at deploy time, not during startup.
+            await verify_alembic_head(self._pool)
             if self._pool:
                 await create_room_modes_tables(self._pool)
                 await create_calendar_tables(self._pool)

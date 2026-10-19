@@ -10,6 +10,11 @@ Core control service on port 8001: device registry, 1-second control loop, PID/V
 - MCP23017 relays: I2C bus 0, address 39 decimal (`0x27`).
 - DFR0971 dimmers: I2C bus 1, decimal 88/89/90 (`0x58/0x59/0x5A`).
 
+Alembic schema migrations run at deploy time through
+`Infrastructure/scripts/db_migrate.py apply`, not during automation startup.
+Startup verifies the deployed database heads and logs a mismatch without
+blocking service operation.
+
 ## Registry and hardware ownership
 
 `device_registry` is the sole source of truth for device identity, relay channels, and DFR board/channel bindings. No YAML device definitions or commissioning path participates in runtime control.
