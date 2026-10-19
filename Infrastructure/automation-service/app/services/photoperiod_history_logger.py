@@ -252,9 +252,7 @@ class DatabasePhotoperiodHistoryStore:
                     cluster=room_key[1],
                     phase=Phase(str(phase_row["phase"])) if phase_row is not None else None,
                     phase_observed_at=phase_row["observed_at"] if phase_row is not None else None,
-                    coverage_state=(
-                        coverage_row["state"] if coverage_row is not None else None
-                    ),
+                    coverage_state=(coverage_row["state"] if coverage_row is not None else None),
                     coverage_observed_at=(
                         coverage_row["observed_at"] if coverage_row is not None else None
                     ),
@@ -388,9 +386,7 @@ class PhotoperiodHistoryLogger(PhotoperiodObservationSink, PhotoperiodLoggerHeal
                 logger.warning("Photoperiod history worker did not stop before deadline")
                 worker.cancel()
                 try:
-                    await asyncio.wait_for(
-                        worker, timeout=max(0.0, deadline - time.monotonic())
-                    )
+                    await asyncio.wait_for(worker, timeout=max(0.0, deadline - time.monotonic()))
                 except TimeoutError:
                     pass
                 except asyncio.CancelledError:  # pragma: no cover - timing dependent
@@ -598,7 +594,11 @@ class PhotoperiodHistoryLogger(PhotoperiodObservationSink, PhotoperiodLoggerHeal
                 and state.coverage_state == "available"
                 and row.observed_at >= state.gap_started_at
             )
-            return self._build_transition_packet(row, state, materialize_gap), state, materialize_gap
+            return (
+                self._build_transition_packet(row, state, materialize_gap),
+                state,
+                materialize_gap,
+            )
         if state.coverage_state == "unavailable":
             return (), state, False
         return (row,), state, False
@@ -644,18 +644,14 @@ class PhotoperiodHistoryLogger(PhotoperiodObservationSink, PhotoperiodLoggerHeal
         if not rows:
             return
         if self._emit(rows):
-            self._advance_packet_for(
-                observation, state, self._gap_materializes(observation, state)
-            )
+            self._advance_packet_for(observation, state, self._gap_materializes(observation, state))
             return
         if replay and self._defer_intent(observation):
             # Buffered intents from the seed replay must never be dropped by the
             # packet expansion; the raw fact defers in the same deque and its
             # whole packet materializes when a later flush frees space.
             return
-        self._reject_with_gap(
-            state, observation.observed_at, observation.runtime_snapshot_version
-        )
+        self._reject_with_gap(state, observation.observed_at, observation.runtime_snapshot_version)
 
     def _gap_materializes(self, row: PhotoperiodHistoryRow, state: _RoomState) -> bool:
         """Return whether this row should close the room's remembered gap."""
@@ -681,7 +677,9 @@ class PhotoperiodHistoryLogger(PhotoperiodObservationSink, PhotoperiodLoggerHeal
         rows: list[PhotoperiodHistoryRow] = []
         phase_changed = state.accepted_phase is None or observation.phase != state.accepted_phase
 
-        def _coverage_row(state_value: CoverageState, reason: CoverageReason) -> PhotoperiodCoverageObservation:
+        def _coverage_row(
+            state_value: CoverageState, reason: CoverageReason
+        ) -> PhotoperiodCoverageObservation:
             return PhotoperiodCoverageObservation(
                 observed_at=observation.observed_at,
                 location=observation.location,
@@ -712,9 +710,7 @@ class PhotoperiodHistoryLogger(PhotoperiodObservationSink, PhotoperiodLoggerHeal
                         cluster=observation.cluster,
                         state="unavailable",
                         reason="recording_gap",
-                        runtime_snapshot_version=(
-                            state.gap_pending_version or FALLBACK_VERSION
-                        ),
+                        runtime_snapshot_version=(state.gap_pending_version or FALLBACK_VERSION),
                     )
                 )
                 if phase_changed:
@@ -854,9 +850,7 @@ class PhotoperiodHistoryLogger(PhotoperiodObservationSink, PhotoperiodLoggerHeal
                 cluster=room_key[1],
                 state="unavailable",
                 reason="stopped",
-                runtime_snapshot_version=(
-                    state.version or state.seed_version or FALLBACK_VERSION
-                ),
+                runtime_snapshot_version=(state.version or state.seed_version or FALLBACK_VERSION),
             )
         )
         return tuple(rows)

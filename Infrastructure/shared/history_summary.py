@@ -1,4 +1,5 @@
 """Exact additive NUMERIC summary state shared by history readers."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -45,18 +46,18 @@ class SummaryState:
         self,
         record: Mapping[str, object],
         *,
-        minimum_key: str = 'min_value',
-        maximum_key: str = 'max_value',
+        minimum_key: str = "min_value",
+        maximum_key: str = "max_value",
     ) -> None:
-        count = record.get('sample_count')
+        count = record.get("sample_count")
         if count is not None:
             if type(count) is not int:
-                raise TypeError('summary sample_count must be an integer')
+                raise TypeError("summary sample_count must be an integer")
             self.count += count
-        value_sum = record.get('value_sum')
+        value_sum = record.get("value_sum")
         if value_sum is not None:
             self.value_sum = exact_add(self.value_sum, decimal(value_sum))
-        squares = record.get('value_sum_squares')
+        squares = record.get("value_sum_squares")
         if squares is not None:
             self.value_sum_squares = exact_add(self.value_sum_squares, decimal(squares))
         minimum = record.get(minimum_key)
@@ -67,7 +68,7 @@ class SummaryState:
         if maximum is not None:
             value = decimal(maximum)
             self.maximum = value if self.maximum is None else max(self.maximum, value)
-        self.present = self.present or record.get('present') is True
+        self.present = self.present or record.get("present") is True
 
     def absorb(self, state: SummaryState) -> None:
         """Fold one disjoint sufficient-statistic state into this state."""
@@ -75,9 +76,13 @@ class SummaryState:
         self.value_sum = exact_add(self.value_sum, state.value_sum)
         self.value_sum_squares = exact_add(self.value_sum_squares, state.value_sum_squares)
         if state.minimum is not None:
-            self.minimum = state.minimum if self.minimum is None else min(self.minimum, state.minimum)
+            self.minimum = (
+                state.minimum if self.minimum is None else min(self.minimum, state.minimum)
+            )
         if state.maximum is not None:
-            self.maximum = state.maximum if self.maximum is None else max(self.maximum, state.maximum)
+            self.maximum = (
+                state.maximum if self.maximum is None else max(self.maximum, state.maximum)
+            )
         self.present = self.present or state.present
 
     @property
@@ -85,7 +90,9 @@ class SummaryState:
         if not self.count:
             return None
         with localcontext() as context:
-            context.prec = max(28, len(self.value_sum.as_tuple().digits) + len(str(self.count)) + 16)
+            context.prec = max(
+                28, len(self.value_sum.as_tuple().digits) + len(str(self.count)) + 16
+            )
             return self.value_sum / Decimal(self.count)
 
     def sample_stddev_decimal(self) -> Decimal | None:
@@ -98,5 +105,7 @@ class SummaryState:
                 2 * len(self.value_sum.as_tuple().digits) + len(str(self.count)) + 16,
                 len(self.value_sum_squares.as_tuple().digits) + len(str(self.count)) + 16,
             )
-            variance = (self.value_sum_squares - self.value_sum * self.value_sum / count) / (count - 1)
+            variance = (self.value_sum_squares - self.value_sum * self.value_sum / count) / (
+                count - 1
+            )
             return max(variance, Decimal(0)).sqrt()

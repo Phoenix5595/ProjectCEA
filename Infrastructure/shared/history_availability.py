@@ -4,6 +4,7 @@ Closure is not removal. The latest operational hot window remains readable.
 Native monitoring scopes each DB statement so its guard and rows share the
 same repeatable-read snapshot; concurrent movement cannot return partial data.
 """
+
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Sequence
@@ -48,7 +49,11 @@ async def local_history_scope(
 
 
 async def require_local_history(
-    conn: HistoryConnection, *, room: str | None, start: datetime, end: datetime,
+    conn: HistoryConnection,
+    *,
+    room: str | None,
+    start: datetime,
+    end: datetime,
     source_tables: Sequence[str],
 ) -> None:
     """Require an intact original-source range, never load a cold/ZIP archive.
@@ -73,12 +78,19 @@ async def require_local_history(
         "WHERE source_rows_removed AND source_table=ANY($1::text[]) "
         "AND ($2::text IS NULL OR room IS NULL OR room=$2) "
         "AND start_at<$4 AND end_at>$3",
-        list(source_tables), room, start, end,
+        list(source_tables),
+        room,
+        start,
+        end,
     )
     if any(row["state"] == "expired" for row in rows):
         raise HTTPException(status_code=410, detail={"code": "history_expired"})
     dataset_ids = sorted({str(row["dataset_id"]) for row in rows if row["dataset_id"] is not None})
     if dataset_ids:
-        raise HTTPException(status_code=409, detail={
-            "code": "archive_selection_required", "dataset_ids": dataset_ids,
-        })
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "archive_selection_required",
+                "dataset_ids": dataset_ids,
+            },
+        )

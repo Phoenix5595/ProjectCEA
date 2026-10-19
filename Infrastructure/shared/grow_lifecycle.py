@@ -19,6 +19,7 @@ class GrowLifecycleInputError(ValueError):
 
     code = "grow_dates_invalid"
 
+
 @dataclass(frozen=True, slots=True)
 class GrowWindow:
     """One grow-associated Calendar phase as a half-open UTC interval."""
@@ -87,8 +88,6 @@ def toronto_midnight(day: date) -> datetime:
 
 def _value(record: Mapping[str, object], key: str) -> object:
     return record.get(key, _MISSING)
-
-
 
 
 def _required_text(value: object, field: str) -> str:

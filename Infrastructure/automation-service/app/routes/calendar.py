@@ -783,9 +783,9 @@ async def test_sync_connection(
         return [
             {
                 "name": calendar["name"],
-                "url": urlsplit(calendar["url"])._replace(
-                    netloc=urlsplit(calendar["url"]).hostname or ""
-                ).geturl(),
+                "url": urlsplit(calendar["url"])
+                ._replace(netloc=urlsplit(calendar["url"]).hostname or "")
+                .geturl(),
             }
             for calendar in calendars
         ]
