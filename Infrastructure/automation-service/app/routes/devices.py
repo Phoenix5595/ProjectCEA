@@ -274,6 +274,8 @@ async def get_control_history(
         return await database.control_action_repo.get_control_history_filtered(
             location, cluster, limit, channel, since, until
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.warning(f"get_control_history failed: {e}")
         return []

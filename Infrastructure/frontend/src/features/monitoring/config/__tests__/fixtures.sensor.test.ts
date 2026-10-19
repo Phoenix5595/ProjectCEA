@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { MonitoringResponse } from '../../api/contracts/sensor'
 import { alignSeries } from '../../data/alignSeries'
-import { sensorRangeFixture } from '../fixtures'
+import { emptyBulbSensorRangeFixture, sensorRangeFixture } from '../fixtures'
 
 describe('sensorRangeFixture', () => {
   it('includes the canonical Flower wet-bulb history series', () => {
@@ -31,5 +31,18 @@ describe('sensorRangeFixture', () => {
     expect(aligned.series.map(series => series.metric)).toEqual(
       expect.arrayContaining(['wet_bulb_f', 'wet_bulb_b'])
     )
+  })
+  it('provides a guarded empty-bulb payload without removing back temperature or RH', () => {
+    const response = MonitoringResponse.parse(
+      emptyBulbSensorRangeFixture(
+        'Flower Room',
+        '2026-08-02T11:00:00.000Z',
+        '2026-08-02T12:00:00.000Z'
+      )
+    )
+    expect(response.series.find(series => series.sensor === 'dry_bulb_f')?.points).toHaveLength(0)
+    expect(response.series.find(series => series.sensor === 'wet_bulb_f')?.points).toHaveLength(0)
+    expect(response.series.find(series => series.sensor === 'dry_bulb_b')?.points.length).toBeGreaterThan(0)
+    expect(response.series.find(series => series.sensor === 'rh_f')?.points.length).toBeGreaterThan(0)
   })
 })

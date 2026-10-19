@@ -1,17 +1,14 @@
 /**
  * Typed monitoring manifest contracts.
  *
- * A manifest is the frontend's read-only contract for a room's monitoring
- * dashboard, extracted from the canonical Grafana dashboard JSON
- * (`Infrastructure/iskra_stack/dashboards/{flower,veg}_sector/*.json`). It
- * captures the panel order, series names, display names, units, explicit soft
- * bounds, colors, line styles, and table semantics that the native uPlot
- * dashboards must reproduce.
+ * A manifest is the frontend's read-only contract for a room's native
+ * monitoring dashboard. It captures panel order, series names, display names,
+ * units, explicit soft bounds, colors, line styles, and table semantics.
  *
  * The parity test (`__tests__/canonicalManifestParity.test.ts`) maps every
  * canonical panel/series/row field onto these manifests and fails loudly on
  * unknown additions, so the manifest can never silently drift from the
- * deployed Grafana contract.
+ * deployed monitoring contract.
  */
 
 import type { UnitFamily } from '../api'
@@ -31,7 +28,7 @@ export interface SeriesSpec {
   /** Explicit soft bounds (from `custom.axisSoftMin` / `axisSoftMax`). */
   softMin?: number
   softMax?: number
-  /** Fixed color (hex or Grafana named color). */
+  /** Fixed color (hex or dashboard palette name). */
   color?: string
   /** Line style fill (solid / dot / dash). */
   lineStyle?: 'solid' | 'dot' | 'dash'

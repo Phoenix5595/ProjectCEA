@@ -4,14 +4,14 @@
 
 - NEVER call POST, PUT, PATCH, or DELETE against a production endpoint, database, or Redis instance. No exception.
 - NEVER modify production data unless explicitly requested.
-- NEVER run TRUNCATE, DELETE, DROP, or other destructive SQL against `cea_sensors`.
+- NEVER run TRUNCATE, DELETE, DROP, or other destructive SQL against either protected database name or case-insensitive substring alias: `cea_sensors` or `sj_cea`.
 - NEVER restart, reset, deploy, or reconfigure production services or hardware unless the owner explicitly asks.
 
 The 2026-07-07 `TRUNCATE TABLE device_registry` incident showed that a single destructive call can take lights and climate offline. Violation is a severe failure.
 
 ## Architecture Summary
 
-Sensors → CAN/Modbus/1-Wire/weather ingestion → Redis live state + TimescaleDB history → automation-service control loop → MCP23017 relays (I2C bus 0) + DFR0971 dimming (I2C bus 1) → React frontend + Grafana.
+Sensors → CAN/Modbus/1-Wire/weather ingestion → Redis live state + TimescaleDB history → automation-service control loop → MCP23017 relays (I2C bus 0) + DFR0971 dimming (I2C bus 1) → React frontend. Read-only monitoring is served by `monitoring-service` (`:8005`); source-row grow/Veg archives are owned by `grow-archive-service` (`:8006`).
 
 Current source: [`ARCHITECTURE.md`](ARCHITECTURE.md). Deployment state may lag; the deployed snapshot is external at `/opt/projectcea/current/deploy_manifest.json`.
 
@@ -26,7 +26,7 @@ Current source: [`ARCHITECTURE.md`](ARCHITECTURE.md). Deployment state may lag; 
 | Hardware addresses          | [`Infrastructure/automation-service/automation_config.yaml`](Infrastructure/automation-service/automation_config.yaml)                                                                                      |
 | Control cadence             | `automation_config.yaml` `control.update_interval` (1 s, valid 1–5 s)                                                                                                                                       |
 | Heating↔exhaust interlock   | Removed / unconfigured per `automation_config.yaml` line 77                                                                                                                                                 |
-| Aggregate ladders           | Backend: `Infrastructure/backend/app/repositories/sensor_repository.py`; Grafana: `Infrastructure/database/grafana_performance_migration.sql`                                                               |
+| Aggregate ladders           | Monitoring: `Infrastructure/monitoring-service/monitoring_service/sensor_models.py` (`compute_tier`); Backend: `Infrastructure/backend/app/repositories/sensor_repository.py` |
 
 ## Where to Look
 
@@ -40,9 +40,10 @@ Current source: [`ARCHITECTURE.md`](ARCHITECTURE.md). Deployment state may lag; 
 | CAN processor           | [`Infrastructure/can-processor-service/AGENTS.md`](Infrastructure/can-processor-service/AGENTS.md)                   |
 | Database / schema       | [`Infrastructure/database/AGENTS.md`](Infrastructure/database/AGENTS.md)                                             |
 | Frontend                | [`Infrastructure/frontend/AGENTS.md`](Infrastructure/frontend/AGENTS.md)                                             |
-| Monitoring feature      | Created by T6                                                                                                        |
+| Monitoring feature      | [`Infrastructure/frontend/src/features/monitoring/AGENTS.md`](Infrastructure/frontend/src/features/monitoring/AGENTS.md) |
+| Monitoring service      | [`Infrastructure/monitoring-service/AGENTS.md`](Infrastructure/monitoring-service/AGENTS.md)                         |
+| Grow archive service  | [`Infrastructure/grow-archive-service/AGENTS.md`](Infrastructure/grow-archive-service/AGENTS.md)                           |
 | Sensor nodes            | [`Sensor_Nodes/AGENTS.md`](Sensor_Nodes/AGENTS.md)                                                                   |
-| Iskra / Grafana         | [`Infrastructure/iskra_stack/AGENTS.md`](Infrastructure/iskra_stack/AGENTS.md)                                       |
 | Shared code             | [`Infrastructure/shared/AGENTS.md`](Infrastructure/shared/AGENTS.md)                                                 |
 
 ## Approved Local Commands
@@ -72,4 +73,4 @@ Do not extend these commands to contact production endpoints, databases, Redis, 
 
 ---
 
-_Last updated: 2026-08-10_
+_Last updated: 2026-10-18_

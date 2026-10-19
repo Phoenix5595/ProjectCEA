@@ -287,7 +287,7 @@ class DeviceProcessor:
                             err,
                         )
 
-            # Persist intended dimmer state so UI/Grafana reflects reality even when batching.
+            # Persist intended dimmer state so the UI reflects reality even when batching.
             # (Non-batch dimmer control writes to Redis inside DeviceController.)
             try:
                 redis_client = getattr(self.database, "_automation_redis", None)

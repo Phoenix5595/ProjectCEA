@@ -86,7 +86,7 @@ class DataWriter:
             password = load_postgres_password()
             self.db_config: dict[str, Any] = {
                 "host": os.getenv("POSTGRES_HOST", "localhost"),
-                "database": os.getenv("POSTGRES_DB", "cea_sensors"),
+                "database": os.getenv("POSTGRES_DB", "sj_cea"),
                 "user": os.getenv("POSTGRES_USER", "cea_user"),
                 "password": password,
             }

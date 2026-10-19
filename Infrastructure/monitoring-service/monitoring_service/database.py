@@ -14,6 +14,7 @@ from typing_extensions import override
 from monitoring_service.resources import DatabaseResourceSettings
 from monitoring_service.query_observation import QueryExecution, observe_acquire
 from monitoring_service.sensor_models import MonitoringUnavailableError
+from shared.history_availability import current_history_scope, require_local_history
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,6 +99,12 @@ class ReadOnlyDatabase:
                 self._pool.acquire(timeout=self._acquire_timeout_seconds)
             ) as connection:
                 async with connection.transaction(isolation="repeatable_read", readonly=True):
+                    history = current_history_scope()
+                    if history is not None:
+                        await require_local_history(
+                            connection, room=history.room, start=history.start,
+                            end=history.end, source_tables=history.source_tables,
+                        )
                     async with QueryExecution(query) as observation:
                         rows = await connection.fetch(query, *args)
                         observation.set_row_count(len(rows))

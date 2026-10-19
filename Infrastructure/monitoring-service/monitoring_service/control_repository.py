@@ -68,6 +68,7 @@ from shared.redis_keys import (
     monitoring_future_publication_key,
     monitoring_rich_trajectory_key,
 )
+from shared.history_availability import local_history_scope
 
 from monitoring_service.query_observation import request_observation
 from monitoring_service.sensor_models import (
@@ -113,7 +114,13 @@ class ControlHistoryRepository:
         """
         sources = select_control_history_sources(history_range, max_points, scope)
         try:
-            async with request_observation():
+            async with request_observation(), local_history_scope(
+                location, history_range.start, history_range.end,
+                ("effective_setpoints", "monitoring_room_photoperiod", "monitoring_photoperiod_coverage")
+                if scope == "lights" else
+                ("effective_setpoints", "automation_state",
+                 "monitoring_room_photoperiod", "monitoring_photoperiod_coverage"),
+            ):
                 setpoint_rows: Sequence[Mapping[str, object] | asyncpg.Record] = ()
                 state_rows: Sequence[Mapping[str, object] | asyncpg.Record] = ()
                 if sources.setpoints_sql is not None:
@@ -189,7 +196,10 @@ class RelayTimelineRepository:
             else None
         )
         try:
-            async with request_observation():
+            async with request_observation(), local_history_scope(
+                location, history_range.start, history_range.end,
+                ("relay_observation", "automation_state"),
+            ):
                 if cursor_state is None:
                     watermark_rows = await self._database.fetch(RELAY_WATERMARK_SQL)
                     watermark = (

@@ -83,20 +83,19 @@ export function buildFlowerGrowPlanPreview(input: FlowerGrowPlanInput): {
       {
         eventType: 'bed_veg',
         title: 'Bed veg',
-        location: 'Veg Room',
+        location: 'Flower Room',
         start: fmt(bedStart),
         end: fmt(bedEnd),
         phaseOrder: 3,
       }
     )
   } else {
-    const bedWeeksEff = input.bedWeeks + 2
     const bedEnd = addDays(flowerStart, -1)
-    const bedStart = addDays(bedEnd, -(bedWeeksEff * 7 - 1))
+    const bedStart = addDays(bedEnd, -(input.bedWeeks * 7 - 1))
     phases.push({
       eventType: 'bed_veg',
       title: 'Bed veg',
-      location: 'Veg Room',
+      location: 'Flower Room',
       start: fmt(bedStart),
       end: fmt(bedEnd),
       phaseOrder: 3,

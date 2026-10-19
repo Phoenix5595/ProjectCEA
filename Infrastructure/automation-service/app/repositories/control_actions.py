@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import asyncpg
+from fastapi import HTTPException
 
 from app.events.operational_models import AlarmPayload, OperationalEvent
+from shared.history_availability import require_local_history
 
 from .base import BaseRepository, logger
 
@@ -254,7 +256,18 @@ class ControlActionRepository(BaseRepository):
     ) -> list[dict[str, Any]]:
         """Return control_history rows with optional channel and time filters."""
         try:
-            async with self.pool.acquire() as conn:
+            since_at = datetime.fromisoformat(since.replace("Z", "+00:00")) if since else None
+            until_at = datetime.fromisoformat(until.replace("Z", "+00:00")) if until else None
+            if any(
+                value.tzinfo is None or value.utcoffset() is None
+                for value in (since_at, until_at)
+                if value is not None
+            ):
+                raise HTTPException(status_code=400, detail={"code": "history_dates_invalid"})
+            async with (
+                self.pool.acquire() as conn,
+                conn.transaction(isolation="repeatable_read", readonly=True),
+            ):
                 query = """
                     SELECT timestamp, location, cluster, device_name, old_state, new_state, mode, reason, load_percent, channel
                     FROM control_history
@@ -269,17 +282,27 @@ class ControlActionRepository(BaseRepository):
                     param_idx += 1
                 if since is not None:
                     query += f" AND timestamp >= ${param_idx}"
-                    params.append(since)
+                    params.append(since_at)
                     param_idx += 1
                 if until is not None:
                     query += f" AND timestamp <= ${param_idx}"
-                    params.append(until)
+                    params.append(until_at)
                     param_idx += 1
 
                 query += f" ORDER BY timestamp DESC LIMIT ${param_idx}"
                 params.append(limit)
 
                 rows = await conn.fetch(query, *params)
+                oldest = min(
+                    (row["timestamp"] for row in rows), default=datetime.min.replace(tzinfo=UTC)
+                )
+                await require_local_history(
+                    conn,
+                    room=location,
+                    start=since_at or oldest,
+                    end=(until_at or datetime.now(UTC)) + timedelta(microseconds=1),
+                    source_tables=("control_history",),
+                )
                 out: list[dict[str, Any]] = []
                 for row in rows:
                     ts = row["timestamp"]
@@ -298,9 +321,15 @@ class ControlActionRepository(BaseRepository):
                         }
                     )
                 return out
-        except Exception as e:
-            logger.error(f"Failed to get filtered control history: {e}")
-            return []
+        except HTTPException:
+            raise
+        except ValueError as error:
+            raise HTTPException(
+                status_code=400, detail={"code": "history_dates_invalid"}
+            ) from error
+        except Exception as error:
+            logger.error(f"Failed to get filtered control history: {error}")
+            raise HTTPException(status_code=503, detail={"code": "history_unavailable"}) from error
 
     async def get_last_changed_per_channel(self) -> list[dict[str, Any]]:
         """Return the most recent timestamp per relay channel (0-15).

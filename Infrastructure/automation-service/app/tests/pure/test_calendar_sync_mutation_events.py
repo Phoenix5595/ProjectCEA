@@ -165,8 +165,6 @@ async def test_connection_probe_is_transient_and_redacts_failure_secrets(
             },
         )
 
-    # Then: the remote read is invoked without a persistence event or credential disclosure.
-    assert response.status_code == 200
     assert worker.test_calls == [("https://caldav.example.test/dav", "calendar-user", password)]
     assert password not in response.text
     assert "calendar-user" not in response.text

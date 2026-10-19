@@ -22,7 +22,7 @@ def get_database_url() -> str:
     """Build PostgreSQL URL from environment variables."""
     host = os.getenv("POSTGRES_HOST", "localhost")
     port = os.getenv("POSTGRES_PORT", "5432")
-    database = os.getenv("POSTGRES_DB", "cea_sensors")
+    database = os.getenv("POSTGRES_DB", "sj_cea")
     user = os.getenv("POSTGRES_USER", "cea_user")
     # Prefer systemd LoadCredential (Phase 3.8), fall back to POSTGRES_PASSWORD
     # env var, and finally to "" (local dev peer-auth — unchanged behaviour).

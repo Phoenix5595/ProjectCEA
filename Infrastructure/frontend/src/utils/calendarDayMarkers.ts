@@ -14,20 +14,15 @@ export interface ScheduleBarMarker {
 }
 
 export interface DayMarkers {
+  events: CalendarEventDto[]
   tasks: CalendarEventDto[]
   notes: CalendarEventDto[]
   scheduleBars: ScheduleBarMarker[]
 }
 
 const GROW_PHASE_TYPES = new Set([
-  'clone_window',
-  'pot_veg',
-  'bed_veg',
-  'flip_to_flower',
-  'flower_stretch',
-  'flower_bulk',
-  'flower_ripen',
-  'drying',
+  'clone_window', 'pot_veg', 'bed_veg', 'flip_to_flower',
+  'flower_stretch', 'flower_bulk', 'flower_ripen', 'drying',
 ])
 
 /** Stable 'yyyy-MM-dd' key in CALENDAR_TZ; matches buildCalendarDayMarkers keys. */
@@ -45,7 +40,6 @@ function parseEventDate(iso: string): Date {
 }
 
 export function isGrowPlanPhase(ev: CalendarEventDto): boolean {
-  // Authoritative top-level plan UUID; metadata.grow_plan_id kept for legacy rows only.
   if (ev.growPlanId != null || ev.metadata?.grow_plan_id != null) return true
   return GROW_PHASE_TYPES.has(ev.eventType)
 }
@@ -59,14 +53,11 @@ export function calendarEventOccursOnDay(ev: CalendarEventDto, day: Date): boole
 }
 
 function isMultiDaySchedule(ev: CalendarEventDto): boolean {
-  const end = ev.end ?? ev.start
-  if (end > ev.start) return true
-  return isGrowPlanPhase(ev)
+  return (ev.end ?? ev.start) > ev.start || isGrowPlanPhase(ev)
 }
 
 function isTaskMarker(ev: CalendarEventDto): boolean {
-  if (ev.eventType === 'planned_task') return true
-  if (ev.source === 'mode_transition') return true
+  if (ev.eventType === 'planned_task' || ev.source === 'mode_transition') return true
   if (isMultiDaySchedule(ev)) return false
   if (ev.eventType === 'harvest') return true
   return !ev.end || ev.end === ev.start
@@ -80,68 +71,66 @@ function scheduleColor(location: string): string {
   return ROOM_CALENDAR_COLORS[location] ?? 'bg-slate-500'
 }
 
-/** Index visible month events into per-day task circles, note squares, and schedule lines. */
+/** Index visible month events into unique inclusive-day events and legacy groups. */
 export function buildCalendarDayMarkers(events: CalendarEventDto[]): Map<string, DayMarkers> {
   const map = new Map<string, DayMarkers>()
-
+  const seenEvents = new Map<string, Set<string>>()
   const ensure = (key: string): DayMarkers => {
-    let m = map.get(key)
-    if (!m) {
-      m = { tasks: [], notes: [], scheduleBars: [] }
-      map.set(key, m)
+    let markers = map.get(key)
+    if (!markers) {
+      markers = { events: [], tasks: [], notes: [], scheduleBars: [] }
+      map.set(key, markers)
     }
-    return m
+    return markers
   }
 
   for (const ev of events) {
     const start = parseEventDate(ev.start)
-    const end = parseEventDate(ev.end ?? ev.start)
-    const days = eachDayOfInterval({ start, end })
+    const days = eachDayOfInterval({ start, end: parseEventDate(ev.end ?? ev.start) })
+    for (const day of days) {
+      const key = calendarDayKey(day)
+      const markers = ensure(key)
+      let seen = seenEvents.get(key)
+      if (!seen) {
+        seen = new Set<string>()
+        seenEvents.set(key, seen)
+      }
+      if (!seen.has(ev.id)) {
+        seen.add(ev.id)
+        markers.events.push(ev)
+      }
+    }
 
     if (isMultiDaySchedule(ev)) {
-      for (const d of days) {
-        const key = calendarDayKey(d)
-        const m = ensure(key)
-        if (!m.scheduleBars.some(b => b.eventId === ev.id)) {
-          m.scheduleBars.push({
-            eventId: ev.id,
-            location: ev.location,
-            colorClass: scheduleColor(ev.location),
-            title: ev.title,
-          })
+      for (const day of days) {
+        const markers = ensure(calendarDayKey(day))
+        if (!markers.scheduleBars.some(bar => bar.eventId === ev.id)) {
+          markers.scheduleBars.push({ eventId: ev.id, location: ev.location, colorClass: scheduleColor(ev.location), title: ev.title })
         }
       }
     }
-
     if (isTaskMarker(ev)) {
-      const key = calendarDayKey(start)
-      const m = ensure(key)
-      if (!m.tasks.some(t => t.id === ev.id)) {
-        m.tasks.push(ev)
-      }
+      const markers = ensure(calendarDayKey(start))
+      if (!markers.tasks.some(task => task.id === ev.id)) markers.tasks.push(ev)
     }
-
     if (hasNotes(ev)) {
-      const noteDay = calendarDayKey(start)
-      const m = ensure(noteDay)
-      if (!m.notes.some(n => n.id === ev.id)) {
-        m.notes.push(ev)
-      }
+      const markers = ensure(calendarDayKey(start))
+      if (!markers.notes.some(note => note.id === ev.id)) markers.notes.push(ev)
     }
   }
 
+  for (const markers of map.values()) {
+    markers.events.sort((a, b) =>
+      calendarEventDayKey(a.start).localeCompare(calendarEventDayKey(b.start)) ||
+      a.location.localeCompare(b.location) || a.id.localeCompare(b.id)
+    )
+  }
   return map
 }
 
-export const MARKER_LIMITS = {
-  tasks: 2,
-  notes: 2,
-  scheduleBars: 3,
-} as const
-
+export const MARKER_LIMITS = { tasks: 2, notes: 2, scheduleBars: 3 } as const
 const DEFAULT_LABEL_MAX = 16
 
-/** Short label for task / note chips inside day cells. */
 export function truncateMarkerLabel(text: string, maxLen: number = DEFAULT_LABEL_MAX): string {
   const trimmed = text.trim().replace(/\s+/g, ' ')
   if (!trimmed) return '—'
@@ -149,7 +138,6 @@ export function truncateMarkerLabel(text: string, maxLen: number = DEFAULT_LABEL
   return `${trimmed.slice(0, Math.max(1, maxLen - 1))}…`
 }
 
-/** Prefer first line of notes; fall back to event title. */
 export function noteMarkerLabel(ev: CalendarEventDto, maxLen?: number): string {
   const raw = ev.notes?.trim()
   const line = raw ? raw.split(/\r?\n/)[0] : ev.title

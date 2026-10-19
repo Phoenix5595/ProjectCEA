@@ -5,7 +5,7 @@
  * scenario is selected via the `?scenario=` query param (threaded to the API
  * requests by the page). Asserts the expected status/banner appears, last-good
  * panels still render (never blanked), and transient failures clear on retry.
- * Also asserts no `/grafana/*` or external-origin request is ever made.
+ * Also asserts no external-origin request is ever made.
  */
 import { test, expect } from '@playwright/test'
 import { describeViolation } from '../../src/features/monitoring/config/originGuard'
@@ -24,7 +24,6 @@ function trackRequests(page: import('@playwright/test').Page): RequestEvidence {
   page.on('request', req => {
     const url = req.url()
     requests.push(url)
-    if (url.includes('/grafana/')) violations.push(`grafana: ${url}`)
     const violation = describeViolation(url)
     if (violation !== null) violations.push(`${violation}: ${url}`)
   })

@@ -7,16 +7,14 @@ const EXPECTED_FORBIDDEN = [
   'http://127.0.0.1:8001/api/health',
   'http://127.0.0.1:8003/api/health',
   'http://127.0.0.1:8080/api/health',
-  'http://iskraprojectcea:3001/grafana/',
   'https://example.invalid/monitoring-fixture',
-  'http://127.0.0.1:4173/grafana/forbidden',
 ]
 
 test('aborts and records every forbidden fixture request', async ({ page, context }, testInfo) => {
   const aborted: string[] = []
   await context.route('**/*', async route => {
     const url = route.request().url()
-    if (url.includes('/grafana/') || describeViolation(url) !== null) {
+    if (describeViolation(url) !== null) {
       aborted.push(url)
       await route.abort()
       return
@@ -35,6 +33,6 @@ test('aborts and records every forbidden fixture request', async ({ page, contex
 
   expect(aborted).toEqual(expect.arrayContaining(EXPECTED_FORBIDDEN))
   for (const url of aborted) {
-    expect(url.includes('/grafana/') || describeViolation(url) !== null).toBe(true)
+    expect(describeViolation(url) !== null).toBe(true)
   }
 })

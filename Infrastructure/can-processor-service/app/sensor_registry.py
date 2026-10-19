@@ -84,7 +84,7 @@ class MetadataWorker:
         if self._db_config is None:
             self._db_config = {
                 "host": os.getenv("POSTGRES_HOST", "localhost"),
-                "database": os.getenv("POSTGRES_DB", "cea_sensors"),
+                "database": os.getenv("POSTGRES_DB", "sj_cea"),
                 "user": os.getenv("POSTGRES_USER", "cea_user"),
             }
         self._observations: queue.Queue[int] = queue.Queue(maxsize=OBSERVATION_QUEUE_MAX)

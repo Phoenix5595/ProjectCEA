@@ -1,5 +1,5 @@
 /**
- * Veg Room monitoring page (native, no Grafana iframe).
+ * Veg Room monitoring page (native monitoring).
  *
  * The page owns its time range: URL parameters are parsed with the fixed-range
  * cap opt-out (`maxRangeMs: null`) before any data surface mounts, so a long
@@ -21,6 +21,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 
+import { ArchiveLog } from '../features/grow-archives/ArchiveLog'
+import { ArchiveView } from '../features/grow-archives/ArchiveView'
+import { ArchiveApi } from '../features/grow-archives/api'
+import {
+  createArchiveNavigationState,
+  loadedSelectionFromNavigation,
+  readArchiveNavigationState,
+  releaseLoadedSelection,
+} from '../features/grow-archives/selection'
+import type { ArchiveSelection } from '../features/grow-archives/selection'
 import '../features/monitoring/styles/monitoring.css'
 import { HistoryOverviewView, resolveHistoricalSelection } from '../features/history-overview'
 import { monitoringRequestContextFromSearchParams } from '../features/monitoring/api'
@@ -44,6 +54,7 @@ import {
   withSerializedRange,
 } from '../features/monitoring/components'
 import type { HistoricalToolbarControl } from '../features/monitoring/components'
+import { HistoricalViewSwitch } from '../features/monitoring/components/TimeRangeToolbar'
 import { vegManifest } from '../features/monitoring/config'
 import { createPanelAlignment } from '../features/monitoring/data'
 import { timeseriesPanels } from '../features/monitoring/pages/chartGroups'
@@ -331,22 +342,37 @@ function VegetationMonitoringOverview({
 function VegetationMonitoringRangeOwner() {
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
-  const { pathname } = useLocation()
+  const location = useLocation()
+  const { pathname } = location
   const historicalRoute = pathname === HISTORICAL_PATH
+  const navigationState = readArchiveNavigationState(location.state)
+  const activeArchive = loadedSelectionFromNavigation(location.state, ROOM)
+  const [archiveMode, setArchiveMode] = useState<'range' | 'archives'>(() =>
+    navigationState === null ? 'range' : 'archives'
+  )
   const requestContext = useMemo(
     () => monitoringRequestContextFromSearchParams(searchParams),
     [searchParams]
   )
-  // The calendar current-run action exists only on the Historical route; the
-  // regular Monitoring route passes null and never fetches it.
-  const currentRun = useCalendarCurrentRun(historicalRoute ? ROOM : null, requestContext)
-  // Parse the URL before mounting any reader: a long fixed range goes straight
-  // to the overview branch and never reaches the detailed store.
+  const archiveApi = useMemo(() => new ArchiveApi(), [])
+  // Calendar state is not fetched while the archive log/graph owns this page.
+  const currentRun = useCalendarCurrentRun(
+    historicalRoute && archiveMode === 'range' && navigationState === null ? ROOM : null,
+    requestContext
+  )
+  // Parse the URL before mounting any native reader. Archive ranges are owned
+  // by ArchiveView instead and never enter this reader branch.
   const [range, setRange] = useState<MonitoringRange>(() => resolvePageRange(searchParams))
   const rangeRef = useRef(range)
   rangeRef.current = range
+  const archiveInitialRange = useMemo(() => {
+    if (historicalRoute) return undefined
+    const parsed = parseUrlRange(searchParams, null)
+    return parsed.kind === 'fixed'
+      ? { kind: 'fixed' as const, start: parsed.start, end: parsed.end }
+      : undefined
+  }, [historicalRoute, searchParams])
 
-  /** Hand a fixed range to the room's regular Monitoring page, fixture query intact. */
   const routeToMonitoring = useCallback(
     (start: Date, end: Date): void => {
       const query = `?${withSerializedRange(searchParams, { kind: 'fixed', start, end }).toString()}`
@@ -357,10 +383,6 @@ function VegetationMonitoringRangeOwner() {
 
   const setRangeWithBoundaryUrl = useCallback(
     (next: MonitoringRange): void => {
-      // Switching into or out of the overview branch unmounts the branch-local
-      // toolbar before its own URL effect can run, so the URL is kept in step
-      // here. A write that only reproduces the current URL adds no history
-      // entry.
       if (isOverviewRange(next) || isOverviewRange(rangeRef.current)) {
         const merged = withSerializedRange(searchParams, next)
         if (merged.toString() !== searchParams.toString()) setSearchParams(merged)
@@ -370,9 +392,6 @@ function VegetationMonitoringRangeOwner() {
     [setSearchParams, searchParams]
   )
 
-  // Toolbar path (presets, absolute apply, current run). History minimum: a
-  // sub-five-day fixed range is the regular Monitoring surface, never history,
-  // so it hands off with the exact bounds instead of being stretched.
   const applyRange = useCallback(
     (next: MonitoringRange): void => {
       if (
@@ -388,11 +407,6 @@ function VegetationMonitoringRangeOwner() {
     [historicalRoute, routeToMonitoring, setRangeWithBoundaryUrl]
   )
 
-  // Chart path (zoom / click / drag). Historical selections are origin-aware:
-  // from the overview a sub-seven-day selection snaps to exactly seven days;
-  // from the detailed seven-day reader a sub-seven-day selection hands off to
-  // regular Monitoring with the exact range. Regular Monitoring keeps the
-  // plain fixed-range apply.
   const applyChartSelection = useCallback(
     (start: Date, end: Date): void => {
       if (!historicalRoute) {
@@ -406,19 +420,115 @@ function VegetationMonitoringRangeOwner() {
     [historicalRoute, routeToMonitoring, setRangeWithBoundaryUrl]
   )
 
-  // The unique calendar run spans from its Toronto-midnight calendar start to
-  // the current instant — never a planned future end.
   const applyCurrentRun = useCallback((): void => {
     if (currentRun.start === undefined) return
     applyRange({ kind: 'fixed', start: currentRun.start, end: new Date() })
   }, [applyRange, currentRun.start])
 
-  const historicalToolbar: HistoricalToolbarControl | undefined = historicalRoute
-    ? {
-        onMonitoringRoute: routeToMonitoring,
-        currentRun: { ready: currentRun.ready, title: currentRun.title, onSelect: applyCurrentRun },
-      }
-    : undefined
+  const onArchiveLoaded = useCallback(async (selection: ArchiveSelection): Promise<void> => {
+    if (activeArchive !== undefined && activeArchive.load_id !== selection.load_id) {
+      await archiveApi.releaseLoad(activeArchive.load_id)
+      releaseLoadedSelection(activeArchive.load_id)
+    }
+    setArchiveMode('archives')
+    navigate(
+      { pathname: location.pathname, search: location.search },
+      { replace: true, state: createArchiveNavigationState(selection, 'view') }
+    )
+  }, [activeArchive, archiveApi, location.pathname, location.search, navigate])
+
+  const leaveArchiveSurface = useCallback((): void => {
+    if (activeArchive !== undefined) {
+      navigate(
+        { pathname: location.pathname, search: location.search },
+        { replace: true, state: createArchiveNavigationState(activeArchive, 'view') }
+      )
+      return
+    }
+    if (navigationState !== null) {
+      setArchiveMode('range')
+      setRange({ kind: 'live', duration: VEG_DEFAULT_DURATION_MS })
+      navigate({ pathname: MONITORING_PATH, search: '' }, { replace: true, state: null })
+      return
+    }
+    setArchiveMode('range')
+  }, [activeArchive, location.pathname, location.search, navigate, navigationState])
+
+  const returnToArchiveLog = useCallback((archiveRange: FixedRange): void => {
+    if (activeArchive === undefined) return
+    if (historicalRoute) {
+      navigate(
+        { pathname: HISTORICAL_PATH, search: location.search },
+        { replace: true, state: createArchiveNavigationState(activeArchive, 'log') }
+      )
+      return
+    }
+    const query = withSerializedRange(searchParams, archiveRange)
+    navigate(
+      { pathname: HISTORICAL_PATH, search: `?${query.toString()}` },
+      { state: createArchiveNavigationState(activeArchive, 'log') }
+    )
+  }, [activeArchive, historicalRoute, location.search, navigate, searchParams])
+
+  const handoffArchiveRange = useCallback((archiveRange: FixedRange): void => {
+    if (activeArchive === undefined) return
+    const query = withSerializedRange(searchParams, archiveRange)
+    navigate(
+      { pathname: MONITORING_PATH, search: `?${query.toString()}` },
+      { state: createArchiveNavigationState(activeArchive, 'view') }
+    )
+  }, [activeArchive, navigate, searchParams])
+
+  const exitToLiveMonitoring = useCallback((): void => {
+    setArchiveMode('range')
+    setRange({ kind: 'live', duration: VEG_DEFAULT_DURATION_MS })
+    navigate({ pathname: MONITORING_PATH, search: '' }, { state: null })
+  }, [navigate])
+
+  const historicalToolbar: HistoricalToolbarControl | undefined =
+    historicalRoute && navigationState === null && archiveMode === 'range'
+      ? {
+          onMonitoringRoute: routeToMonitoring,
+          currentRun: { ready: currentRun.ready, title: currentRun.title, onSelect: applyCurrentRun },
+          view: archiveMode,
+          onViewChange: setArchiveMode,
+        }
+      : undefined
+
+  const archiveSurface = navigationState !== null || (historicalRoute && archiveMode === 'archives')
+  if (archiveSurface) {
+    const showLog = navigationState === null ||
+      navigationState.surface === 'log' ||
+      activeArchive === undefined
+    return (
+      <div className="mon-page">
+        {showLog ? (
+          <>
+            <HistoricalViewSwitch
+              view="archives"
+              standalone={true}
+              onChange={view => { if (view === 'range') leaveArchiveSurface() }}
+            />
+            <ArchiveLog
+              room={ROOM}
+              focusDatasetId={navigationState?.selection.dataset_id}
+              onLoaded={onArchiveLoaded}
+            />
+          </>
+        ) : activeArchive !== undefined ? (
+          <ArchiveView
+            selection={activeArchive}
+            room={ROOM}
+            manifest={vegManifest}
+            initialRange={archiveInitialRange}
+            onBackToLog={returnToArchiveLog}
+            onExit={exitToLiveMonitoring}
+            onHandoffToMonitoring={historicalRoute ? handoffArchiveRange : undefined}
+          />
+        ) : null}
+      </div>
+    )
+  }
 
   if (isOverviewRange(range)) {
     return (

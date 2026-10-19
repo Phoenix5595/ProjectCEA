@@ -13,7 +13,7 @@ def postgres_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Route tests resolve repositories lazily; construction must not need
     production credentials."""
     monkeypatch.setenv("POSTGRES_PASSWORD", "test-password")
-    monkeypatch.setenv("POSTGRES_DB", "cea_sensors")
+    monkeypatch.setenv("POSTGRES_DB", "monitoring_test_sensor_registry")
     monkeypatch.delenv("CREDENTIALS_DIRECTORY", raising=False)
 
 

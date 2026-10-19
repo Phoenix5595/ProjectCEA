@@ -1,4 +1,4 @@
-"""Live snapshot API routes for Grafana."""
+"""Live snapshot API routes for native monitoring."""
 
 from __future__ import annotations
 

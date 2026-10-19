@@ -11,7 +11,7 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1
         FROM monitoring_fixture_metadata
-        WHERE fixture_name = 'grafana-replacement-veg-flower'
+        WHERE fixture_name = 'native-monitoring'
           AND fixture_version = 1
     ) THEN
         RAISE EXCEPTION 'monitoring fixture metadata is missing';

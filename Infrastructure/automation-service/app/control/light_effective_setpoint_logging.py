@@ -1,4 +1,4 @@
-"""Per-light effective intensity logging to DB for Grafana (extracted from ControlEngine loop)."""
+"""Per-light effective intensity logging to DB for monitoring (extracted from ControlEngine loop)."""
 
 from __future__ import annotations
 

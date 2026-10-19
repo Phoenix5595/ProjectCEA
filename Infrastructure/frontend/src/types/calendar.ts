@@ -1,5 +1,7 @@
 import type { components } from '../generated/api'
 
+export type CalendarSyncStatus = 'pending_push' | 'pending_delete' | 'synced' | 'error' | 'conflict'
+
 /** Calendar event DTO from automation API. */
 export interface CalendarEventDto {
   id: string
@@ -15,7 +17,85 @@ export interface CalendarEventDto {
   numericId?: number
   growPlanId?: string
   notes?: string
+  sync_status?: CalendarSyncStatus
+  sync_error_code?: string | null
+  local_revision?: number
+  last_synced_at?: string | null
   metadata?: Record<string, unknown>
+}
+
+export interface GrowLifecycle {
+  grow_plan_id: string
+  crop_batch_id: number
+  state: 'open' | 'closed'
+  calendar_revision: number
+  original_drying_end: string | null
+  first_closed_at: string | null
+  closed_at: string | null
+  anniversary_at: string | null
+  dataset_id: string | null
+  data_revision: number | null
+  published_revision: number | null
+}
+
+export interface GrowClosePreview {
+  lifecycle: GrowLifecycle
+  revision: number
+  phase_windows: Array<Record<string, unknown>>
+  drying_end: string | null
+  affected_counts: Record<string, unknown>
+  gaps: Array<Record<string, unknown>>
+  scope_unresolved: Array<Record<string, unknown>>
+  conflicts: Array<Record<string, unknown>>
+  newly_included: Record<string, unknown>
+  released: Record<string, unknown>
+  unavailable: Array<Record<string, unknown>>
+}
+
+export interface CalendarMirrorPreview {
+  connection_id: number
+  generation: number
+  event_count: number
+  backup_required: true
+}
+
+export interface CalendarSyncResult {
+  ok: boolean
+  confirmed: number[]
+  pending: number[]
+  errors: Array<{ event_id: number; code: string }>
+  pushed: number
+  deleted: number
+}
+
+export interface CalendarReconnectResult {
+  connection_id: number
+  generation: number
+  event_count: number
+  sync: CalendarSyncResult
+}
+
+export interface CalendarTestEntry {
+  name: string
+  url: string
+  files_root_url?: string
+  principal_url?: string
+}
+
+export type CalendarTestResult = CalendarTestEntry[]
+
+export interface CalendarConnection {
+  id: number
+  instance_id: string
+  generation: number
+  files_root_url: string | null
+  enabled: boolean
+  caldav_base_url: string
+  target_calendar_url: string
+  account_email: string | null
+  display_name: string | null
+  last_sync_at: string | null
+  last_error: string | null
 }
 
 /** Generated OpenAPI request contracts for manual event writes. */

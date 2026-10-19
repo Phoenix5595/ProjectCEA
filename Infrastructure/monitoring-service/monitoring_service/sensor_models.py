@@ -51,7 +51,7 @@ class Node(StrEnum):
 
 
 class UnitFamily(StrEnum):
-    """Grafana-compatible sensor unit families."""
+    """Sensor unit families served to the monitoring UI."""
 
     CELSIUS = "celsius"
     PERCENT = "percent"

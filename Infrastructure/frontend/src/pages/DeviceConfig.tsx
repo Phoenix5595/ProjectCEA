@@ -1,11 +1,13 @@
 import { ArrowLeft } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 
 import DeviceManager from '../components/DeviceManager'
 
 export default function DeviceConfig() {
+  const [searchParams] = useSearchParams()
+  const calendarSettings = searchParams.get('tab') === 'settings' && searchParams.get('settings_tab') === 'calendar'
   return (
-    <div className="min-h-screen bg-surface-base p-4">
+    <div className={`${calendarSettings ? '' : 'min-h-screen'} bg-surface-base p-4`}>
       <div className="mx-auto max-w-[1800px]">
         <div className="mb-4 flex items-center gap-4">
           <Link

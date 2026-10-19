@@ -58,16 +58,16 @@ sleep 3
 echo "Creating database and user..."
 sudo -u postgres psql --set=cea_pw="$CEA_USER_PASSWORD" <<'EOF'
 -- Create database
-CREATE DATABASE cea_sensors;
+CREATE DATABASE sj_cea;
 
 -- Create user with operator-supplied password (no plaintext default in this script)
 \set quoted_pw '\'' :cea_pw '\''
 CREATE USER cea_user WITH PASSWORD :quoted_pw;
 
-GRANT ALL PRIVILEGES ON DATABASE cea_sensors TO cea_user;
+GRANT ALL PRIVILEGES ON DATABASE sj_cea TO cea_user;
 
 -- Connect to database and create extension
-\c cea_sensors
+\c sj_cea
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 
 -- Grant schema privileges
@@ -80,7 +80,7 @@ echo ""
 echo "=========================================="
 echo "PostgreSQL and TimescaleDB installation complete!"
 echo "=========================================="
-echo "Database: cea_sensors"
+echo "Database: sj_cea"
 echo "User: cea_user"
 echo "Password: <set via CEA_USER_PASSWORD env var at install time>"
 echo ""
@@ -95,23 +95,16 @@ echo "  echo \"POSTGRES_PASSWORD=\$NEW_PW\" | sudo install -m 0600 /dev/stdin /o
 echo "  sudo systemctl restart automation-service cea-backend soil-sensor-service weather-service onewire-worker can-processor"
 echo ""
 echo "Test connection:"
-echo "  psql -h localhost -U cea_user -d cea_sensors"
+echo "  psql -h localhost -U cea_user -d sj_cea"
 echo ""
 echo "=========================================="
-echo "Post-Install Optimization (Recommended)"
+echo "Post-Install Database Setup (Recommended)"
 echo "=========================================="
-echo "After creating your normalized tables, apply optimizations:"
+echo "Apply the normalized schema:"
 echo ""
 echo "1. Create normalized tables:"
-echo "   psql -h localhost -U cea_user -d cea_sensors -f /home/antoine/Project\\ CEA/Infrastructure/database/create_normalized_tables.sql"
+echo "   psql -h localhost -U cea_user -d sj_cea -f /home/antoine/Project\\ CEA/Infrastructure/database/create_normalized_tables.sql"
 echo "   (Note: Migration from can-worker to unified architecture complete)"
 echo ""
-echo "2. Enable compression (90-day threshold):"
-echo "   psql -h localhost -U cea_user -d cea_sensors -f /home/antoine/Project\\ CEA/Infrastructure/database/timescaledb_compression.sql"
-echo ""
-echo "3. Create continuous aggregates:"
-echo "   psql -h localhost -U cea_user -d cea_sensors -f /home/antoine/Project\\ CEA/Infrastructure/database/timescaledb_continuous_aggregates.sql"
-echo ""
-echo "See Infrastructure/database/TIMESCALEDB_OPTIMIZATION.md for details."
 echo "=========================================="
 

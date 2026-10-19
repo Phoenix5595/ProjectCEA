@@ -32,7 +32,7 @@ def _disposable_database_url() -> str:
         raise AssertionError(
             "sensor envelope integration test requires a monitoring_test_* database"
         )
-    if "cea_sensors" in database_name:
+    if "cea_sensors" in database_name or "sj_cea" in database_name:
         raise AssertionError("sensor envelope integration test refuses production database names")
     return database_url
 

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import Mapping
 from typing import Any
 
 import asyncpg
@@ -51,7 +52,7 @@ def db_config_from_env() -> dict[str, Any]:
 
     Reads:
       - ``POSTGRES_HOST``  (default ``"localhost"``)
-      - ``POSTGRES_DB``    (default ``"cea_sensors"``)
+      - ``POSTGRES_DB``    (default ``"sj_cea"``)
       - ``POSTGRES_USER``  (default ``"cea_user"``)
       - ``POSTGRES_PORT``  (default ``5432``)
 
@@ -63,7 +64,7 @@ def db_config_from_env() -> dict[str, Any]:
     """
     return {
         "host": os.getenv("POSTGRES_HOST", "localhost"),
-        "database": os.getenv("POSTGRES_DB", "cea_sensors"),
+        "database": os.getenv("POSTGRES_DB", "sj_cea"),
         "user": os.getenv("POSTGRES_USER", "cea_user"),
         "password": load_postgres_password(),
         "port": int(os.getenv("POSTGRES_PORT", "5432")),
@@ -77,6 +78,7 @@ async def create_pool(
     min_size: int = DEFAULT_MIN_POOL_SIZE,
     max_size: int = DEFAULT_MAX_POOL_SIZE,
     command_timeout: int = DEFAULT_COMMAND_TIMEOUT_SECONDS,
+    server_settings: Mapping[str, str] | None = None,
     max_retries: int = DEFAULT_MAX_CONNECT_RETRIES,
     base_retry_delay: float = DEFAULT_BASE_RETRY_DELAY_SECONDS,
     max_retry_delay: float = DEFAULT_MAX_RETRY_DELAY_SECONDS,
@@ -92,6 +94,11 @@ async def create_pool(
         min_size, max_size: Pool size bounds. Defaults match what every
             service was using before the lift.
         command_timeout: Per-query timeout in seconds.
+        server_settings: Extra PostgreSQL session settings applied at
+            connect time (e.g. ``{"statement_timeout": "5000",
+            "lock_timeout": "1000"}``). Values must be strings; they are
+            merged under the explicit ``application_name``, which always
+            wins.
         max_retries: Total connect attempts including the first. Set to 1 to
             disable the retry loop.
         base_retry_delay, max_retry_delay: Exponential backoff bounds. The
@@ -106,6 +113,9 @@ async def create_pool(
     if max_retries < 1:
         raise ValueError(f"max_retries must be >= 1, got {max_retries}")
 
+    session_settings: dict[str, str] = dict(server_settings or {})
+    session_settings["application_name"] = application_name
+
     last_exc: BaseException | None = None
     for attempt in range(1, max_retries + 1):
         try:
@@ -118,7 +128,7 @@ async def create_pool(
                 min_size=min_size,
                 max_size=max_size,
                 command_timeout=command_timeout,
-                server_settings={"application_name": application_name},
+                server_settings=session_settings,
             )
             logger.info(
                 f"Connected to TimescaleDB ({application_name}) on attempt {attempt}/{max_retries}"

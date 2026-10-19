@@ -222,6 +222,19 @@ expect_failure bash "$RESET_SCRIPT" --confirm
   exit 1
 }
 
+# The retired name and aliases must fail before reaching the stubbed clients.
+# Exact sj_cea remains the operator's allowlisted identity, exercised below.
+for protected_database in cea_sensors CEA_SENSORS prefix_cea_sensors_alias SJ_CEA prefix_sj_cea_alias sj_cea_suffix; do
+  base_environment
+  rm -f "$EVENT_LOG"
+  export PGDATABASE="$protected_database"
+  expect_failure bash "$RESET_SCRIPT" --confirm
+  [[ ! -e "$EVENT_LOG" ]] || {
+    printf 'invalid database identity reached an external stub: %s\n' "$protected_database" >&2
+    exit 1
+  }
+done
+
 base_environment
 export RESET_DEPLOY_STATE="$SANDBOX/deploy_state-active-candidate.json"
 expect_failure bash "$RESET_SCRIPT" --confirm
@@ -271,8 +284,9 @@ expect_failure bash "$RESET_SCRIPT" --confirm
 }
 rm -f "$EVENT_LOG"
 
-# Happy path
+# Exact allowlisted identity, using only sandbox psql/backup/service/Redis clients.
 base_environment
+export PGDATABASE=sj_cea PGUSER=cea_user PGHOST=localhost PGPORT=5432
 bash "$RESET_SCRIPT" --confirm
 
 shopt -s nullglob

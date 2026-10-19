@@ -9,20 +9,11 @@ Contracts for the React frontend. Architecture, service ports, and hardware boun
 - `npm run build` produces `dist/`, served by `automation-service` after deploy.
 - Single source of truth for API URLs: `src/config/env.ts`. Defaults resolve to Caddy `:8080`; `VITE_BACKEND_API_URL`, `VITE_AUTOMATION_API_URL`, `VITE_WEATHER_API_URL`, and `VITE_WEBSOCKET_URL` are emergency escape hatches only.
 
-## Grafana Embedding
+## Monitoring API Boundary
 
-The SPA embeds the production Grafana instance at `http://iskraprojectcea:3001`. `VITE_GRAFANA_BASE_URL` in `src/config/env.ts` defaults to that URL.
+Room monitoring reads (history, overview, control) go to the in-house read-only `monitoring-service` (`:8005`, behind Caddy `:8080`). `MONITORING_API_URL` in `src/config/env.ts` defaults to the Caddy base; there is no external dashboard product and no direct browser-to-database access.
 
-Embed requirements on the Grafana side (configured in `Infrastructure/iskra_stack/docker-compose.yml`):
-
-- `GF_SECURITY_ALLOW_EMBEDDING=true`
-- `GF_AUTH_ANONYMOUS_ENABLED=true` with `GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer`
-- `GF_DASHBOARDS_MIN_REFRESH_INTERVAL=1s`
-- `GF_DATE_FORMATS_DEFAULT_TIMEZONE=America/Toronto`
-
-Dashboards and datasources are provisioned from the repo; the frontend relies on stable datasource UIDs (`bf6vebq5ipybke` for PostgreSQL, `bf9yw6nuqt81sa` for Redis). Do not change datasource UIDs without updating the embedding code.
-
-Sensor display names in Grafana follow frontend mappings; backend sensor keys remain unchanged.
+Sensor display names in the monitoring manifests follow frontend mappings; backend sensor keys remain unchanged.
 
 ## Cluster Topology
 
@@ -73,7 +64,7 @@ Climate periods are keyed by `(location, cluster, mode_id, submode_id)`. Fetch t
 
 ## Monitoring
 
-Native room Monitoring and Historical pages (`/flower/monitoring`, `/flower/historical`, `/vegetation/monitoring`, `/vegetation/historical`) replace Grafana iframes. Visual and accessibility contracts live in `DESIGN.md`. Browser QA must use the guarded loopback fixture preview and must not contact production endpoints.
+Native room Monitoring and Historical pages (`/flower/monitoring`, `/flower/historical`, `/vegetation/monitoring`, `/vegetation/historical`) are the in-house dashboards; room history/overview/control reads go through `monitoring-service` (`:8005` via Caddy). Visual and accessibility contracts live in `DESIGN.md`. Browser QA must use the guarded loopback fixture preview and must not contact production endpoints.
 
 - Historical photoperiod points remain separate from `projectionHistory`. Forecast refreshes cannot recolor the past; tail history replaces only its own half-open overlap and preserves phase/provenance/metadata boundaries.
 - Historical background coverage ends at the earlier of Now and the history response end. Forecast bands apply only inside their publication window at or after Now. Missing evidence, recording gaps, and expired publications remain UNKNOWN and unpainted.

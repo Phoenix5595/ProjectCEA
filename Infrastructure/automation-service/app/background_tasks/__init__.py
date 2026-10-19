@@ -82,8 +82,6 @@ class BackgroundTasks(
         self._last_calendar_mode_tick: float = 0.0
         self._calendar_mode_interval = 60.0
         self._calendar_scheduler: CalendarModeScheduler | None = None
-        self._calendar_sync_interval = 300.0
-        self._last_calendar_sync_tick: float = 0.0
         self._control_failure_count = 0
         self._control_success_count = 0
         self._degraded_active = False

@@ -491,4 +491,67 @@ describe('panel alignment', () => {
     expect(lightValueAt(intensity?.lightTrajectory ?? [], FUTURE.getTime() + 15_000)).toBe(60)
     expect(lightValueAt(intensity?.lightTrajectory ?? [], gapStart.getTime() + 10_000)).toBeNull()
   })
+  it('omits only empty in-window bulb candidates from room climate alignment', () => {
+    const panel = flowerManifest.panels.find(
+      (candidate): candidate is TimeseriesPanelSpec =>
+        candidate.kind === 'timeseries' && candidate.id === 'flower-climate'
+    )
+    if (panel === undefined) throw new Error('Flower climate panel is required')
+    const front: SensorSeries = {
+      sensor: 'dry_bulb_f',
+      node: 'front',
+      unit_family: 'celsius',
+      unit: '°C',
+      points: [],
+    }
+    const back: SensorSeries = {
+      sensor: 'dry_bulb_b',
+      node: 'back',
+      unit_family: 'celsius',
+      unit: '°C',
+      points: [{ timestamp: START, average: 0, minimum: 0, maximum: 0, sample_count: 1 }],
+    }
+    const humidity: SensorSeries = {
+      sensor: 'rh_f',
+      node: 'front',
+      unit_family: 'percent',
+      unit: '%',
+      points: [{ timestamp: START, average: 62, minimum: 61, maximum: 63, sample_count: 2 }],
+    }
+    const source = [front, back, humidity]
+    const result = createPanelAlignment().align({
+      ...input({ series: source }),
+      panel,
+    })
+    expect(result.series.some(series => series.key.includes('dry_bulb_f'))).toBe(false)
+    expect(result.series.some(series => series.key.includes('dry_bulb_b'))).toBe(true)
+    expect(result.series.some(series => series.key.includes('rh_f'))).toBe(true)
+    expect(result.series.some(series => series.source === 'sensor' && series.y.includes(0))).toBe(true)
+    expect(source).toHaveLength(3)
+    expect(front.points).toEqual([])
+  })
+
+  it('ignores empty bulb points outside the selected window and restores on populated updates', () => {
+    const panel = flowerManifest.panels.find(
+      (candidate): candidate is TimeseriesPanelSpec =>
+        candidate.kind === 'timeseries' && candidate.id === 'flower-climate'
+    )
+    if (panel === undefined) throw new Error('Flower climate panel is required')
+    const empty: SensorSeries = {
+      sensor: 'wet_bulb_f',
+      node: 'front',
+      unit_family: 'celsius',
+      unit: '°C',
+      points: [{ timestamp: new Date(START.getTime() - 1), average: 18, minimum: 17, maximum: 19, sample_count: 1 }],
+    }
+    const alignment = createPanelAlignment()
+    const source = input({ series: [empty] })
+    expect(alignment.align({ ...source, panel }).series).toHaveLength(0)
+    const populated = {
+      ...empty,
+      points: [{ timestamp: START, average: 19, minimum: 18, maximum: 20, sample_count: 1 }],
+    }
+    expect(alignment.align({ ...source, series: [populated], panel }).series.length).toBeGreaterThan(0)
+    expect(alignment.align({ ...source, panel }).series).toHaveLength(0)
+  })
 })

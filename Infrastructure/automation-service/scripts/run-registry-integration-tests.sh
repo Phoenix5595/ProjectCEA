@@ -2,8 +2,9 @@
 set -euo pipefail
 
 database_name="${REGISTRY_TEST_DB_NAME:-registry_task6_test}"
-if [[ "${database_name,,}" == "cea_sensors" ]]; then
-  printf '%s\n' "Refusing to run registry integration tests against cea_sensors." >&2
+lowered_name="${database_name,,}"
+if [[ "$lowered_name" == *cea_sensors* || "$lowered_name" == *sj_cea* ]]; then
+  printf '%s\n' "Refusing to run registry integration tests against a protected database name." >&2
   exit 64
 fi
 if [[ -n "${PGHOST:-}" && "$PGHOST" != /tmp/* ]]; then

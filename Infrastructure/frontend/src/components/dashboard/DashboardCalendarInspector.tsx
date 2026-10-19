@@ -10,6 +10,8 @@ import type {
   CalendarEventCreate,
   CalendarEventDto,
   CalendarEventUpdate,
+  GrowLifecycle,
+  GrowClosePreview,
 } from '../../types/calendar'
 import {
   buildCalendarDayMarkers,
@@ -20,6 +22,17 @@ import {
 } from '../../utils/calendarDayMarkers'
 import { CALENDAR_TZ } from '../../utils/flowerGrowPlan'
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog'
+
+function calendarErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object' || !('response' in error)) return undefined
+  const response = error.response
+  if (!response || typeof response !== 'object' || !('data' in response)) return undefined
+  const data = response.data
+  if (!data || typeof data !== 'object') return undefined
+  const detail = 'detail' in data ? data.detail : data
+  return detail && typeof detail === 'object' && 'code' in detail && typeof detail.code === 'string'
+    ? detail.code : undefined
+}
 
 export interface DashboardCalendarInspectorProps {
   events: CalendarEventDto[]
@@ -113,6 +126,13 @@ export default function DashboardCalendarInspector({
   const [validation, setValidation] = useState<string | null>(null)
   const [apiError, setApiError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
+  const [lifecycle, setLifecycle] = useState<GrowLifecycle | null>(null)
+  const [closePreview, setClosePreview] = useState<GrowClosePreview | null>(null)
+  const [scopeTable, setScopeTable] = useState<'measurement' | 'actuator_events'>('measurement')
+  const [scopeIdentity, setScopeIdentity] = useState('')
+  const [scopeStart, setScopeStart] = useState('')
+  const [scopeEnd, setScopeEnd] = useState('')
+  const [scopeRoom, setScopeRoom] = useState('Flower Room')
   const dialogTriggerRef = useRef<HTMLElement | null>(null)
   const pendingFocusRestoreRef = useRef(false)
   const dashboardTriggerRef = useRef<HTMLElement | null>(null)
@@ -145,6 +165,16 @@ export default function DashboardCalendarInspector({
     setValidation(null)
     setApiError(null)
   }, [selectedDate])
+
+  const selectedGrowId = view.kind === 'event' ? view.event.growPlanId : undefined
+  useEffect(() => {
+    setLifecycle(null)
+    setClosePreview(null)
+    if (!selectedGrowId) return
+    void apiClient.getGrowLifecycle(selectedGrowId).then(setLifecycle).catch(error => {
+      setApiError(error?.response?.data?.detail ?? 'Unable to load grow lifecycle.')
+    })
+  }, [selectedGrowId])
 
   const markers = useMemo(() => buildCalendarDayMarkers(events), [events])
 
@@ -527,6 +557,143 @@ export default function DashboardCalendarInspector({
           </div>
         )}
       </dl>
+      {ev.sync_status && (
+        <p role="status" className="text-xs text-text-secondary">
+          {ev.sync_status === 'synced'
+            ? `Confirmed by Nextcloud${ev.last_synced_at ? ` · ${ev.last_synced_at}` : ''}`
+            : ev.sync_status === 'pending_push' || ev.sync_status === 'pending_delete'
+              ? 'Saved locally—awaiting Nextcloud'
+              : ev.sync_status === 'conflict'
+                ? `Nextcloud conflict${ev.sync_error_code ? ` · ${ev.sync_error_code}` : ''}`
+                : `Nextcloud unavailable${ev.sync_error_code ? ` · ${ev.sync_error_code}` : ''}`}
+        </p>
+      )}
+      {selectedGrowId === ev.growPlanId && lifecycle && (
+        <section className="flex flex-col gap-2 border-t border-border-subtle pt-2">
+          <h4 className="text-xs font-semibold text-text-default">Grow lifecycle: {lifecycle.state}</h4>
+          {lifecycle.state === 'closed' ? (
+            <button
+              type="button"
+              disabled={pending}
+              className="grow-cal-toolbar-btn"
+              onClick={async () => {
+                setPending(true)
+                try {
+                  setLifecycle(await apiClient.reopenGrow(ev.growPlanId!, lifecycle.calendar_revision))
+                  setClosePreview(null)
+                  await onRefresh()
+                } catch (error) {
+                  setApiError(calendarErrorCode(error) ?? 'Unable to reopen grow.')
+                } finally {
+                  setPending(false)
+                }
+              }}
+            >
+              Reopen grow
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                disabled={pending}
+                className="grow-cal-toolbar-btn"
+                onClick={async () => {
+                  setPending(true)
+                  setApiError(null)
+                  try {
+                    setClosePreview(await apiClient.previewGrowClose(ev.growPlanId!))
+                  } catch (error) {
+                    setApiError(calendarErrorCode(error) ?? 'Unable to preview closure.')
+                  } finally {
+                    setPending(false)
+                  }
+                }}
+              >
+                Preview close
+              </button>
+              {closePreview && (
+                <div className="text-xs text-text-secondary space-y-1">
+                  <p>Drying ends: {closePreview.drying_end ?? 'Missing'}</p>
+                  <p>Observation counts: {Object.entries(closePreview.affected_counts).map(([name, count]) => `${name}: ${JSON.stringify(count)}`).join(', ') || 'None reported'}</p>
+                  {closePreview.gaps.map((gap, index) => (
+                    <p key={index}>Coverage gap: {JSON.stringify(gap)}</p>
+                  ))}
+                  {closePreview.scope_unresolved.map((scope, index) => (
+                    <p key={index} role="alert">Unresolved scope: {JSON.stringify(scope)}</p>
+                  ))}
+                  {closePreview.scope_unresolved.length > 0 && (
+                    <form
+                      className="space-y-1 border-t border-border-subtle pt-1"
+                      onSubmit={async event => {
+                        event.preventDefault()
+                        const identityId = Number(scopeIdentity)
+                        if (!Number.isInteger(identityId) || identityId <= 0 || !scopeStart || !scopeEnd || scopeEnd <= scopeStart) {
+                          setApiError('Enter a valid source ID and date-bounded half-open interval.')
+                          return
+                        }
+                        setPending(true)
+                        try {
+                          await apiClient.createArchiveScopeCorrection({
+                            dataset_id: closePreview.lifecycle.dataset_id,
+                            expected_revision: closePreview.lifecycle.dataset_id ? closePreview.lifecycle.data_revision : null,
+                            source_table: scopeTable,
+                            source_identity: scopeTable === 'measurement' ? { sensor_id: identityId } : { device_id: identityId },
+                            start: new Date(scopeStart).toISOString(),
+                            end: new Date(scopeEnd).toISOString(),
+                            room: scopeRoom,
+                          })
+                          setClosePreview(await apiClient.previewGrowClose(ev.growPlanId!))
+                        } catch (error) {
+                          setApiError(calendarErrorCode(error) ?? 'Scope correction failed.')
+                        } finally {
+                          setPending(false)
+                        }
+                      }}
+                    >
+                      <p>Correct unresolved room assignment (reopen first for grow-associated changes).</p>
+                      <select aria-label="Scope source" value={scopeTable} onChange={event => setScopeTable(event.target.value as 'measurement' | 'actuator_events')}>
+                        <option value="measurement">Sensor measurement</option>
+                        <option value="actuator_events">Device actuator event</option>
+                      </select>
+                      <input aria-label="Source identity ID" inputMode="numeric" value={scopeIdentity} onChange={event => setScopeIdentity(event.target.value)} />
+                      <label>Start <input type="datetime-local" required value={scopeStart} onChange={event => setScopeStart(event.target.value)} /></label>
+                      <label>End <input type="datetime-local" required value={scopeEnd} onChange={event => setScopeEnd(event.target.value)} /></label>
+                      <select aria-label="Assigned room" value={scopeRoom} onChange={event => setScopeRoom(event.target.value)}>
+                        <option>Flower Room</option>
+                        <option>Veg Room</option>
+                      </select>
+                      <button type="submit" disabled={pending} className="grow-cal-toolbar-btn">Save scope correction</button>
+                    </form>
+                  )}
+                  {closePreview.conflicts.map((conflict, index) => (
+                    <p key={index} role="alert">Conflict: {JSON.stringify(conflict)}</p>
+                  ))}
+                  <button
+                    type="button"
+                    disabled={pending || closePreview.conflicts.length > 0 || closePreview.scope_unresolved.length > 0}
+                    className="grow-cal-toolbar-btn grow-cal-toolbar-btn--primary"
+                    onClick={async () => {
+                      setPending(true)
+                      setApiError(null)
+                      try {
+                        setLifecycle(await apiClient.closeGrow(ev.growPlanId!, closePreview.revision))
+                        setClosePreview(null)
+                        await onRefresh()
+                      } catch (error) {
+                        setApiError(calendarErrorCode(error) ?? 'Unable to close grow.')
+                      } finally {
+                        setPending(false)
+                      }
+                    }}
+                  >
+                    Close grow
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </section>
+      )}
       {eventIsEditable(ev) && (
         <button
           type="button"

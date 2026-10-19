@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 from app.models import DataPoint
 from app.repositories.base import BaseRepository, logger
 from shared.cluster_topology import sensor_name_like_pattern
+from shared.history_availability import require_local_history
 
 if TYPE_CHECKING:
     from asyncpg import Pool
@@ -27,11 +28,34 @@ class _AggregateTier:
     look-backs (weeks/months) from scanning the raw `measurement`
     hypertable, which is the single hottest table on the Pi.
 
-    Each CAGG (created by Alembic migration 005_phase5a_reconcile)
-    exposes the same value shape: ``bucket`` (TIMESTAMPTZ),
-    ``avg_value``, ``min_value``, ``max_value``, ``sample_count``.
-    Raw `measurement` uses ``time`` and ``value``. Both are normalised
-    here so the rest of the query body is identical.
+    Tiers read the current in-house monitoring read models only:
+
+    * ``monitoring_measurement_1min`` / ``monitoring_measurement_5min``
+      (``monitoring_read_models.sql``) bucket the raw hypertable by
+      1/5 minutes per sensor.
+    * ``monitoring_measurement_1hour`` / ``monitoring_measurement_1day``
+      (``monitoring_history_overview.sql``) carry mergeable hourly
+      sufficient statistics, with the daily tier rolling up its hourly
+      parent, both per sensor.
+
+    Tier ``name`` values (``daily``/``hourly``/``5min``/``1min``/``raw``)
+    are part of the public soil-history response contract and stay as
+    they were; only the backing relations change.
+
+    Every aggregate exposes the same sufficient-statistics shape:
+    ``bucket`` (TIMESTAMPTZ), ``sample_count``, ``value_sum``,
+    ``value_sum_squares``, ``min_value``, ``max_value``,
+    ``last_observed_at``. The chart value is the sample-count-weighted
+    mean ``value_sum / NULLIF(sample_count, 0)`` — never an average of
+    averages — cast to double precision like the legacy ``AVG(value)``
+    output. Raw `measurement` uses ``time`` and ``value``.
+
+    Native views are ``materialized_only``. A bucket is read from the view
+    only when it lies below the CAGG's real watermark and no pending
+    invalidation in its refresh chain overlaps it; every other bucket
+    (live tail, never-refreshed or late-corrected ranges) is recomputed from
+    raw ``measurement`` with the identical ``sum(value::NUMERIC)/count(value)``
+    statistic, so results are exact and never silently missing.
 
     The fields are interpolated into the SQL string via Python f-string
     formatting; they are NEVER reachable from request input — the
@@ -41,8 +65,8 @@ class _AggregateTier:
 
     name: str
     table: str
-    time_col: str
-    value_col: str
+    width: str | None = None
+    chain: tuple[str, ...] = ()
 
 
 # Coarsest first. _pick_tier walks this list and returns the first tier
@@ -50,32 +74,90 @@ class _AggregateTier:
 # deliberately conservative (~50–500 buckets per range, never fewer
 # than ~50) so charts never look granular-but-empty.
 _AGGREGATE_LADDER: list[tuple[float, _AggregateTier]] = [
-    (
-        30.0 * 24,
-        _AggregateTier(
-            name="daily", table="measurement_daily", time_col="bucket", value_col="avg_value"
-        ),
-    ),
-    (
-        7.0 * 24,
-        _AggregateTier(
-            name="hourly", table="measurement_hourly", time_col="bucket", value_col="avg_value"
-        ),
-    ),
-    (
-        24.0,
-        _AggregateTier(
-            name="5min", table="measurement_5min", time_col="bucket", value_col="avg_value"
-        ),
-    ),
-    (
-        2.0,
-        _AggregateTier(
-            name="1min", table="measurement_1min", time_col="bucket", value_col="avg_value"
-        ),
-    ),
-    (0.0, _AggregateTier(name="raw", table="measurement", time_col="time", value_col="value")),
+    (30.0 * 24, _AggregateTier(
+        name="daily", table="monitoring_measurement_1day", width="1 day",
+        chain=("monitoring_measurement_1day", "monitoring_measurement_1hour"))),
+    (7.0 * 24, _AggregateTier(
+        name="hourly", table="monitoring_measurement_1hour", width="1 hour",
+        chain=("monitoring_measurement_1hour",))),
+    (24.0, _AggregateTier(
+        name="5min", table="monitoring_measurement_5min", width="5 minutes",
+        chain=("monitoring_measurement_5min",))),
+    (2.0, _AggregateTier(
+        name="1min", table="monitoring_measurement_1min", width="1 minute",
+        chain=("monitoring_measurement_1min",))),
+    (0.0, _AggregateTier(name="raw", table="measurement")),
 ]
+
+# Invalidation endpoints below PostgreSQL's minimum finite timestamp map to
+# -infinity (same rule as monitoring_history_cagg_watermark).
+_MIN_FINITE_INTERNAL = -210866803200000000
+
+
+def _tier_source_sql(tier: _AggregateTier, start: str = "$2", end: str = "$3") -> str:
+    """Return exact per-bucket statistics for the tier.
+
+    Columns: ``time, sensor_id, sample_count, value_sum, min_value, max_value``.
+    ``start``/``end`` are the caller's bind placeholders; buckets are kept when
+    ``start <= bucket <= end`` and callers apply their own end exclusivity.
+    """
+    if tier.width is None:
+        # Raw keeps the original REAL exactly: REAL->NUMERIC would round.
+        return ("SELECT time, sensor_id, 1::bigint AS sample_count, "
+                "value::double precision AS value_sum, "
+                "value AS min_value, value AS max_value FROM measurement")
+    width = f"INTERVAL '{tier.width}'"
+    chain = ",".join(f"'{name}'" for name in tier.chain)
+
+    def endpoint(column: str) -> str:
+        return (f"CASE WHEN l.{column} < {_MIN_FINITE_INTERNAL} THEN '-infinity'::timestamptz "
+                f"ELSE _timescaledb_functions.to_timestamp(l.{column}) END")
+
+    return f"""
+        WITH coverage AS (
+            SELECT COALESCE(_timescaledb_functions.to_timestamp(
+                       _timescaledb_functions.cagg_watermark(c.mat_hypertable_id)),
+                       '-infinity'::timestamptz) AS through
+              FROM _timescaledb_catalog.continuous_agg c
+             WHERE c.user_view_schema = 'public' AND c.user_view_name = '{tier.table}'
+        ), stale AS (
+            SELECT {endpoint('lowest_modified_value')} AS lo,
+                   {endpoint('greatest_modified_value')} AS hi
+              FROM _timescaledb_catalog.continuous_agg c
+              JOIN LATERAL (
+                  SELECT lowest_modified_value, greatest_modified_value
+                    FROM _timescaledb_catalog.continuous_aggs_materialization_invalidation_log
+                   WHERE materialization_id = c.mat_hypertable_id
+                  UNION ALL
+                  SELECT lowest_modified_value, greatest_modified_value
+                    FROM _timescaledb_catalog.continuous_aggs_hypertable_invalidation_log
+                   WHERE hypertable_id = c.raw_hypertable_id
+              ) l ON TRUE
+             WHERE c.user_view_schema = 'public' AND c.user_view_name IN ({chain})
+        )
+        SELECT v.bucket AS time, v.sensor_id, v.sample_count, v.value_sum,
+               v.min_value, v.max_value
+          FROM {tier.table} v, coverage
+         WHERE v.bucket >= {start} AND v.bucket <= {end}
+           AND v.bucket + {width} <= coverage.through
+           AND NOT EXISTS (SELECT 1 FROM stale s
+                            WHERE s.lo < v.bucket + {width} AND s.hi >= v.bucket)
+        UNION ALL
+        SELECT r.bucket, r.sensor_id, r.sample_count, r.value_sum, r.min_value, r.max_value
+          FROM (
+              SELECT time_bucket({width}, raw.time) AS bucket, raw.sensor_id,
+                     count(raw.value) AS sample_count, sum(raw.value::NUMERIC) AS value_sum,
+                     min(raw.value) AS min_value, max(raw.value) AS max_value
+                FROM measurement raw
+               WHERE raw.time >= time_bucket({width}, {start}::timestamptz)
+                 AND raw.time < {end}::timestamptz + {width}
+               GROUP BY 1, 2
+          ) r, coverage
+         WHERE r.bucket >= {start} AND r.bucket <= {end}
+           AND (r.bucket + {width} > coverage.through
+                OR EXISTS (SELECT 1 FROM stale s
+                            WHERE s.lo < r.bucket + {width} AND s.hi >= r.bucket))
+    """
 
 
 def _pick_aggregate_tier(duration_hours: float) -> _AggregateTier:
@@ -144,18 +226,18 @@ class SensorRepository(BaseRepository):
         # input, so no SQL-injection surface.
         sql = f"""
             SELECT
-                m.{tier.time_col}    AS time,
+                m.time               AS time,
                 s.name               AS sensor_name,
                 s.unit               AS sensor_unit,
-                m.{tier.value_col}   AS value
-            FROM {tier.table} m
+                (m.value_sum / NULLIF(m.sample_count, 0))::double precision AS value
+            FROM ({_tier_source_sql(tier)}) m
             JOIN sensor s ON m.sensor_id = s.sensor_id
             JOIN device d ON s.device_id = d.device_id
             LEFT JOIN rack rk ON d.rack_id = rk.rack_id
             JOIN room r ON rk.room_id = r.room_id
             WHERE r.name = $1
-              AND m.{tier.time_col} >= $2
-              AND m.{tier.time_col} <= $3
+              AND m.time >= $2
+              AND m.time <= $3
               AND (
                   $4::text[] IS NULL
                   OR EXISTS (
@@ -164,16 +246,16 @@ class SensorRepository(BaseRepository):
                        WHERE s.name LIKE pat
                   )
               )
-            ORDER BY m.{tier.time_col} ASC, s.name ASC
+            ORDER BY m.time ASC, s.name ASC
         """
 
-        rows = await self._execute(
-            sql,
-            location,
-            start_time,
-            end_time,
-            patterns,
-        )
+        async with self._acquire() as conn:
+            async with conn.transaction(isolation="repeatable_read", readonly=True):
+                await require_local_history(
+                    conn, room=location, start=start_time, end=end_time,
+                    source_tables=("measurement",),
+                )
+                rows = await conn.fetch(sql, location, start_time, end_time, patterns)
 
         logger.debug(f"DB: Found {len(rows)} rows in database")
 

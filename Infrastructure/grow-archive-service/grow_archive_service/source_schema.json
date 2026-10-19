@@ -1,0 +1,1787 @@
+{
+  "format": "sj-cea-source-schema/1",
+  "description": "Checked-in lossless capture descriptors for every grow-lifecycle source stream. Repository DDL is the authority; production is never queried to build or validate this file. The per-stream fingerprint covers ordered columns plus type/nullability/generation, the primary key (and verified hybrid variants), unique constraints and the hypertable flag; the catalog fingerprint covers the whole stream list.",
+  "timescaledb": {
+    "minimum_version": "2.28.3"
+  },
+  "catalog_fingerprint": "015b068a234ceb89d196731afea67c76c9a9a74593c801574ce02f1d41caa3c9",
+  "streams": [
+    {
+      "name": "measurement",
+      "status": "defined",
+      "core": true,
+      "relation": "public.measurement",
+      "source_files": [
+        "Infrastructure/database/cea_schema.sql:121-152"
+      ],
+      "time_column": "time",
+      "stable_ordering": [
+        "sensor_id"
+      ],
+      "ownership": {
+        "mode": "registry_join",
+        "detail": "Snapshot sensor -> device -> rack -> room; registry placement must agree if present."
+      },
+      "default_record_role": "observation",
+      "hypertable": true,
+      "chunk_interval": "1 day",
+      "columns": [
+        {
+          "name": "time",
+          "type": "timestamp with time zone",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "sensor_id",
+          "type": "integer",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "value",
+          "type": "real",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "not_null": false,
+          "generation": null
+        }
+      ],
+      "primary_key": [
+        "time",
+        "sensor_id"
+      ],
+      "unique_constraints": [],
+      "foreign_keys": [
+        {
+          "columns": [
+            "sensor_id"
+          ],
+          "references": "public.sensor(sensor_id)",
+          "on_delete": "cascade"
+        }
+      ],
+      "checks": [
+        {
+          "name": "measurement_time_check",
+          "source": "time >= '2020-01-01'::timestamptz AND time <= NOW() + INTERVAL '1 day'"
+        },
+        {
+          "name": "measurement_value_check",
+          "source": "value > -1e6 AND value < 1e6"
+        },
+        {
+          "name": "measurement_status_check",
+          "source": "status IS NULL OR status IN ('ok', 'error', 'warning', 'calibrating')"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "measurement_pkey",
+          "columns": [
+            "time",
+            "sensor_id"
+          ],
+          "partial": null
+        },
+        {
+          "name": "idx_measurement_sensor_time",
+          "columns": [
+            "sensor_id",
+            "time DESC"
+          ],
+          "partial": null
+        },
+        {
+          "name": "idx_measurement_time",
+          "columns": [
+            "time DESC"
+          ],
+          "partial": null
+        },
+        {
+          "name": "idx_measurement_sensor_id",
+          "columns": [
+            "sensor_id"
+          ],
+          "partial": null
+        }
+      ],
+      "notes": null,
+      "fingerprint": "61ca38b681c4e781aa22699fa4c7ce41ec710db691cfc1653be6c8703eb771cd"
+    },
+    {
+      "name": "actuator_events",
+      "status": "defined",
+      "core": true,
+      "relation": "public.actuator_events",
+      "source_files": [
+        "Infrastructure/database/cea_schema.sql:210-225"
+      ],
+      "time_column": "time",
+      "stable_ordering": [
+        "event_id"
+      ],
+      "ownership": {
+        "mode": "registry_join",
+        "detail": "Snapshot device -> rack -> room."
+      },
+      "default_record_role": "observation",
+      "hypertable": true,
+      "chunk_interval": "1 day",
+      "columns": [
+        {
+          "name": "event_id",
+          "type": "integer",
+          "not_null": true,
+          "generation": "serial"
+        },
+        {
+          "name": "device_id",
+          "type": "integer",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "action",
+          "type": "text",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "value",
+          "type": "real",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "time",
+          "type": "timestamp with time zone",
+          "not_null": true,
+          "generation": null
+        }
+      ],
+      "primary_key": [
+        "event_id"
+      ],
+      "unique_constraints": [],
+      "foreign_keys": [
+        {
+          "columns": [
+            "device_id"
+          ],
+          "references": "public.device(device_id)",
+          "on_delete": "cascade"
+        }
+      ],
+      "checks": [],
+      "indexes": [
+        {
+          "name": "actuator_events_pkey",
+          "columns": [
+            "time",
+            "event_id"
+          ],
+          "partial": null,
+          "note": "Verified disposable-fixture shape; the documented baseline repository primary key cannot coexist with the TimescaleDB partitioning column."
+        },
+        {
+          "name": "idx_actuator_events_device_time",
+          "columns": [
+            "device_id",
+            "time DESC"
+          ],
+          "partial": null
+        }
+      ],
+      "notes": "Repository baseline primary key (event_id) cannot coexist with this source's TimescaleDB hypertable (unique indexes must include the partitioning column). The verified disposable fixture uses primary key (time, event_id); preflight accepts the baseline key only as an unbound descriptor shape and the exact listed variant, and blocks every other live shape until a verified descriptor is supplied. Column order, types and nullability are unchanged; all six repository indexes keep their names.",
+      "fingerprint": "791600f1f5a0192df9003e9029d2100d485467c6d1f013f3d63de79e81818300",
+      "primary_key_variants": [
+        [
+          "time",
+          "event_id"
+        ]
+      ],
+      "baseline_incompatibility": {
+        "baseline_primary_key": [
+          "event_id"
+        ],
+        "reason": "repository primary key does not include the TimescaleDB partitioning column; create_hypertable rejects it",
+        "disposable_variant": [
+          "time",
+          "event_id"
+        ],
+        "variance_verified_in": "Infrastructure/database/tests/fixtures/grow_data_lifecycle_fixture.sql"
+      }
+    },
+    {
+      "name": "automation_state",
+      "status": "defined",
+      "core": true,
+      "relation": "public.automation_state",
+      "source_files": [
+        "Infrastructure/automation-service/alembic/versions/001_baseline.py:126-160"
+      ],
+      "time_column": "timestamp",
+      "stable_ordering": [
+        "id"
+      ],
+      "ownership": {
+        "mode": "stored_columns",
+        "detail": "Stored location, cluster."
+      },
+      "default_record_role": "observation",
+      "hypertable": true,
+      "chunk_interval": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "not_null": true,
+          "generation": "bigserial"
+        },
+        {
+          "name": "timestamp",
+          "type": "timestamp with time zone",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "location",
+          "type": "text",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "cluster",
+          "type": "text",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "device_name",
+          "type": "text",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "device_state",
+          "type": "integer",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "device_mode",
+          "type": "text",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "pid_output",
+          "type": "real",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "duty_cycle_percent",
+          "type": "real",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "active_rule_ids",
+          "type": "integer[]",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "active_schedule_ids",
+          "type": "integer[]",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "control_reason",
+          "type": "text",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "schedule_ramp_up_duration",
+          "type": "integer",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "schedule_ramp_down_duration",
+          "type": "integer",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "schedule_photoperiod_hours",
+          "type": "real",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "pid_kp",
+          "type": "real",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "pid_ki",
+          "type": "real",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "pid_kd",
+          "type": "real",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "not_null": true,
+          "generation": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "unique_constraints": [],
+      "foreign_keys": [],
+      "checks": [],
+      "indexes": [
+        {
+          "name": "automation_state_pkey",
+          "columns": [
+            "timestamp",
+            "id"
+          ],
+          "partial": null,
+          "note": "Verified disposable-fixture shape; the documented baseline repository primary key cannot coexist with the TimescaleDB partitioning column."
+        },
+        {
+          "name": "automation_state_timestamp_idx",
+          "columns": [
+            "timestamp DESC"
+          ],
+          "partial": null
+        },
+        {
+          "name": "idx_automation_state_location",
+          "columns": [
+            "location",
+            "cluster"
+          ],
+          "partial": null
+        },
+        {
+          "name": "idx_automation_state_timestamp",
+          "columns": [
+            "timestamp DESC"
+          ],
+          "partial": null
+        },
+        {
+          "name": "idx_automation_state_device",
+          "columns": [
+            "location",
+            "cluster",
+            "device_name"
+          ],
+          "partial": null
+        },
+        {
+          "name": "monitoring_automation_state_id_idx",
+          "columns": [
+            "id"
+          ],
+          "partial": null
+        }
+      ],
+      "notes": "Repository baseline primary key (id) cannot coexist with this source's TimescaleDB hypertable. The verified disposable fixture uses primary key (timestamp, id); preflight accepts the baseline key or exactly the listed variant and blocks every other live shape until a verified descriptor is supplied. Column order, types and nullability are unchanged; all six automation_state indexes keep their names.",
+      "fingerprint": "80aae85d4471fcdee15541c4afb319a0403708fb09522da267f0a5d0aaeb4df5",
+      "primary_key_variants": [
+        [
+          "timestamp",
+          "id"
+        ]
+      ],
+      "baseline_incompatibility": {
+        "baseline_primary_key": [
+          "id"
+        ],
+        "reason": "repository primary key does not include the TimescaleDB partitioning column; create_hypertable rejects it",
+        "disposable_variant": [
+          "timestamp",
+          "id"
+        ],
+        "variance_verified_in": "Infrastructure/database/tests/fixtures/grow_data_lifecycle_fixture.sql"
+      }
+    },
+    {
+      "name": "effective_setpoints",
+      "status": "defined",
+      "core": true,
+      "relation": "public.effective_setpoints",
+      "source_files": [
+        "Infrastructure/automation-service/alembic/versions/001_baseline.py:162-193",
+        "Infrastructure/database/monitoring_read_models.sql:117-137"
+      ],
+      "time_column": "timestamp",
+      "stable_ordering": [
+        "monitoring_ingest_id"
+      ],
+      "ownership": {
+        "mode": "stored_columns",
+        "detail": "Stored location, cluster; ingested_at is retained as a separate fact."
+      },
+      "default_record_role": "observation",
+      "hypertable": true,
+      "chunk_interval": null,
+      "columns": [
+        {
+          "name": "timestamp",
+          "type": "timestamp with time zone",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "location",
+          "type": "text",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "cluster",
+          "type": "text",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "mode",
+          "type": "text",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "device_name",
+          "type": "text",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "effective_heating_setpoint",
+          "type": "real",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "effective_cooling_setpoint",
+          "type": "real",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "effective_humidity_setpoint",
+          "type": "real",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "effective_co2_setpoint",
+          "type": "real",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "effective_vpd_setpoint",
+          "type": "real",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "effective_light_intensity",
+          "type": "real",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "nominal_heating_setpoint",
+          "type": "real",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "nominal_cooling_setpoint",
+          "type": "real",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "nominal_humidity_setpoint",
+          "type": "real",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "nominal_co2_setpoint",
+          "type": "real",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "nominal_vpd_setpoint",
+          "type": "real",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "nominal_light_intensity",
+          "type": "real",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "ramp_progress_heating",
+          "type": "real",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "ramp_progress_cooling",
+          "type": "real",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "ramp_progress_humidity",
+          "type": "real",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "ramp_progress_co2",
+          "type": "real",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "ramp_progress_vpd",
+          "type": "real",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "ramp_progress_light",
+          "type": "real",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "monitoring_ingest_id",
+          "type": "bigint",
+          "not_null": false,
+          "generation": "bigserial"
+        },
+        {
+          "name": "ingested_at",
+          "type": "timestamp with time zone",
+          "not_null": false,
+          "generation": null
+        }
+      ],
+      "primary_key": [],
+      "unique_constraints": [],
+      "foreign_keys": [],
+      "checks": [],
+      "indexes": [
+        {
+          "name": "idx_effective_setpoints_location",
+          "columns": [
+            "location",
+            "cluster"
+          ],
+          "partial": null
+        },
+        {
+          "name": "idx_effective_setpoints_timestamp",
+          "columns": [
+            "timestamp DESC"
+          ],
+          "partial": null
+        },
+        {
+          "name": "idx_effective_setpoints_device",
+          "columns": [
+            "location",
+            "cluster",
+            "device_name",
+            "timestamp DESC"
+          ],
+          "partial": null
+        },
+        {
+          "name": "monitoring_effective_setpoints_ingest_id_idx",
+          "columns": [
+            "monitoring_ingest_id"
+          ],
+          "partial": "monitoring_ingest_id IS NOT NULL"
+        },
+        {
+          "name": "monitoring_effective_setpoints_ingested_at_idx",
+          "columns": [
+            "ingested_at"
+          ],
+          "partial": "ingested_at IS NOT NULL"
+        }
+      ],
+      "notes": "monitoring_ingest_id defaults from monitoring_effective_setpoints_ingest_id_seq; the cold store clones neither the default nor the sequence. The source table has no primary key or unique constraint, so capture must preserve row multiplicity with occurrence ordinals: monitoring_ingest_id is the plan's tie-breaker ordering column, not a unique key.",
+      "fingerprint": "41715a4dab74b813fb5fe82a87d673b7f2f29426c0110289364cfbad24ef763a"
+    },
+    {
+      "name": "control_history",
+      "status": "defined",
+      "core": true,
+      "relation": "public.control_history",
+      "source_files": [
+        "Infrastructure/automation-service/alembic/versions/001_baseline.py:40-68",
+        "Infrastructure/automation-service/alembic/versions/002_add_control_history_load_percent.py",
+        "Infrastructure/automation-service/alembic/versions/006_add_control_history_manual_expires_at.py"
+      ],
+      "time_column": "timestamp",
+      "stable_ordering": [
+        "id"
+      ],
+      "ownership": {
+        "mode": "stored_columns",
+        "detail": "Stored location, cluster."
+      },
+      "default_record_role": "observation",
+      "hypertable": true,
+      "chunk_interval": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "not_null": true,
+          "generation": "bigserial"
+        },
+        {
+          "name": "timestamp",
+          "type": "timestamp with time zone",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "location",
+          "type": "text",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "cluster",
+          "type": "text",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "device_name",
+          "type": "text",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "channel",
+          "type": "integer",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "old_state",
+          "type": "integer",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "new_state",
+          "type": "integer",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "mode",
+          "type": "text",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "reason",
+          "type": "text",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "sensor_value",
+          "type": "real",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "setpoint",
+          "type": "real",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "load_percent",
+          "type": "real",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "manual_expires_at",
+          "type": "timestamp with time zone",
+          "not_null": false,
+          "generation": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "unique_constraints": [],
+      "foreign_keys": [],
+      "checks": [
+        {
+          "name": "control_history_channel_check",
+          "source": "channel >= 0 AND channel <= 15"
+        },
+        {
+          "name": "control_history_old_state_check",
+          "source": "old_state IS NULL OR old_state IN (0, 1)"
+        },
+        {
+          "name": "control_history_new_state_check",
+          "source": "new_state IS NULL OR new_state IN (0, 1)"
+        },
+        {
+          "name": "control_history_mode_check",
+          "source": "mode IS NULL OR mode IN ('manual', 'auto', 'scheduled')"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "control_history_pkey",
+          "columns": [
+            "timestamp",
+            "id"
+          ],
+          "partial": null,
+          "note": "Verified disposable-fixture shape; the documented baseline repository primary key cannot coexist with the TimescaleDB partitioning column."
+        },
+        {
+          "name": "idx_control_history_location",
+          "columns": [
+            "location",
+            "cluster"
+          ],
+          "partial": null
+        },
+        {
+          "name": "idx_control_history_timestamp",
+          "columns": [
+            "timestamp DESC"
+          ],
+          "partial": null
+        },
+        {
+          "name": "idx_control_history_manual_expires",
+          "columns": [
+            "manual_expires_at"
+          ],
+          "partial": "manual_expires_at IS NOT NULL AND mode = 'manual'"
+        }
+      ],
+      "notes": "Repository baseline primary key (id) cannot coexist with this source's TimescaleDB hypertable. The verified disposable fixture uses primary key (timestamp, id); preflight accepts the baseline key or exactly the listed variant and blocks every other live shape until a verified descriptor is supplied. Column order, types and nullability are unchanged.",
+      "fingerprint": "45a37f9f39d4a85f6c16abbf8653da08d23de9d3f01db704aafe8d157b5ad437",
+      "primary_key_variants": [
+        [
+          "timestamp",
+          "id"
+        ]
+      ],
+      "baseline_incompatibility": {
+        "baseline_primary_key": [
+          "id"
+        ],
+        "reason": "repository primary key does not include the TimescaleDB partitioning column; create_hypertable rejects it",
+        "disposable_variant": [
+          "timestamp",
+          "id"
+        ],
+        "variance_verified_in": "Infrastructure/database/tests/fixtures/grow_data_lifecycle_fixture.sql"
+      }
+    },
+    {
+      "name": "relay_observation",
+      "status": "defined",
+      "core": true,
+      "relation": "public.relay_observation",
+      "source_files": [
+        "Infrastructure/automation-service/alembic/versions/05_relay_observation.py:18-58"
+      ],
+      "time_column": "observed_at",
+      "stable_ordering": [
+        "observation_id"
+      ],
+      "ownership": {
+        "mode": "stored_columns",
+        "detail": "Stored room/device; global session/heartbeat facts are shared context."
+      },
+      "default_record_role": "observation",
+      "hypertable": true,
+      "chunk_interval": null,
+      "columns": [
+        {
+          "name": "observation_id",
+          "type": "bigint",
+          "not_null": true,
+          "generation": "identity_always"
+        },
+        {
+          "name": "observed_at",
+          "type": "timestamp with time zone",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "session_id",
+          "type": "uuid",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "channel",
+          "type": "smallint",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "observed_state",
+          "type": "boolean",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "device_id",
+          "type": "integer",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "device_name",
+          "type": "text",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "device_type",
+          "type": "text",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "location",
+          "type": "text",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "cluster",
+          "type": "text",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "registry_version",
+          "type": "bigint",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "reason",
+          "type": "text",
+          "not_null": true,
+          "generation": null
+        }
+      ],
+      "primary_key": [
+        "observed_at",
+        "observation_id"
+      ],
+      "unique_constraints": [],
+      "foreign_keys": [],
+      "checks": [
+        {
+          "name": "ck_relay_observation_channel",
+          "source": "channel IS NULL OR channel BETWEEN 0 AND 15"
+        },
+        {
+          "name": "ck_relay_observation_reason",
+          "source": "reason IN ('initial', 'state_changed', 'stale', 'recovered', 'assignment_changed', 'recording_gap', 'heartbeat')"
+        },
+        {
+          "name": "ck_relay_observation_channel_reason",
+          "source": "(channel IS NULL) = (reason = 'heartbeat')"
+        },
+        {
+          "name": "ck_relay_observation_heartbeat_payload",
+          "source": "reason <> 'heartbeat' OR (observed_state IS NULL AND device_id IS NULL AND device_name IS NULL AND device_type IS NULL AND location IS NULL AND cluster IS NULL)"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "pk_relay_observation",
+          "columns": [
+            "observed_at",
+            "observation_id"
+          ],
+          "partial": null
+        },
+        {
+          "name": "idx_relay_observation_location_cluster_device_time",
+          "columns": [
+            "location",
+            "cluster",
+            "device_id",
+            "observed_at",
+            "observation_id"
+          ],
+          "partial": null
+        },
+        {
+          "name": "idx_relay_observation_channel_time",
+          "columns": [
+            "channel",
+            "observed_at",
+            "observation_id"
+          ],
+          "partial": null
+        }
+      ],
+      "notes": null,
+      "fingerprint": "f83aaa67abfe27e22857304d7d5b35f93f572d7707c1d15f9e0fe36c73703b48"
+    },
+    {
+      "name": "monitoring_room_photoperiod",
+      "status": "defined",
+      "core": true,
+      "relation": "public.monitoring_room_photoperiod",
+      "source_files": [
+        "Infrastructure/database/monitoring_read_models.sql:316-332"
+      ],
+      "time_column": "observed_at",
+      "stable_ordering": [
+        "id"
+      ],
+      "ownership": {
+        "mode": "stored_columns",
+        "detail": "Stored location, cluster; phase and coverage stay separate facts."
+      },
+      "default_record_role": "observation",
+      "hypertable": false,
+      "chunk_interval": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "not_null": true,
+          "generation": "identity_always"
+        },
+        {
+          "name": "observed_at",
+          "type": "timestamp with time zone",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "location",
+          "type": "text",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "cluster",
+          "type": "text",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "phase",
+          "type": "text",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "mode_id",
+          "type": "integer",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "submode_id",
+          "type": "integer",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "runtime_snapshot_version",
+          "type": "bigint",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "source",
+          "type": "text",
+          "not_null": true,
+          "generation": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "unique_constraints": [],
+      "foreign_keys": [],
+      "checks": [
+        {
+          "name": "monitoring_room_photoperiod_phase_check",
+          "source": "phase IN ('SUN', 'MOON', 'UNKNOWN')"
+        },
+        {
+          "name": "monitoring_room_photoperiod_runtime_snapshot_version_check",
+          "source": "runtime_snapshot_version >= 0"
+        },
+        {
+          "name": "monitoring_room_photoperiod_source_check",
+          "source": "btrim(source) <> ''"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "monitoring_room_photoperiod_pkey",
+          "columns": [
+            "id"
+          ],
+          "partial": null
+        },
+        {
+          "name": "monitoring_room_photoperiod_room_time_idx",
+          "columns": [
+            "location",
+            "cluster",
+            "observed_at DESC"
+          ],
+          "partial": null
+        },
+        {
+          "name": "monitoring_room_photoperiod_snapshot_idx",
+          "columns": [
+            "runtime_snapshot_version"
+          ],
+          "partial": null
+        }
+      ],
+      "notes": null,
+      "fingerprint": "4625cf859e3ff7f835ada965b126111e1a9e73ed140925dd98c97adf1f4cc06a"
+    },
+    {
+      "name": "monitoring_photoperiod_coverage",
+      "status": "defined",
+      "core": true,
+      "relation": "public.monitoring_photoperiod_coverage",
+      "source_files": [
+        "Infrastructure/database/monitoring_read_models.sql:334-349"
+      ],
+      "time_column": "observed_at",
+      "stable_ordering": [
+        "id"
+      ],
+      "ownership": {
+        "mode": "stored_columns",
+        "detail": "Stored location, cluster; recorder availability is independent of phase transitions."
+      },
+      "default_record_role": "observation",
+      "hypertable": false,
+      "chunk_interval": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "not_null": true,
+          "generation": "identity_always"
+        },
+        {
+          "name": "observed_at",
+          "type": "timestamp with time zone",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "location",
+          "type": "text",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "cluster",
+          "type": "text",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "state",
+          "type": "text",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "reason",
+          "type": "text",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "runtime_snapshot_version",
+          "type": "bigint",
+          "not_null": true,
+          "generation": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "unique_constraints": [
+        [
+          "location",
+          "cluster",
+          "observed_at",
+          "state"
+        ]
+      ],
+      "foreign_keys": [],
+      "checks": [
+        {
+          "name": "monitoring_photoperiod_coverage_state_check",
+          "source": "state IN ('available', 'unavailable')"
+        },
+        {
+          "name": "monitoring_photoperiod_coverage_reason_check",
+          "source": "reason IN ('initial', 'started', 'stopped', 'control_failure', 'recording_gap', 'recovered', 'unclean_restart')"
+        },
+        {
+          "name": "monitoring_photoperiod_coverage_runtime_snapshot_version_check",
+          "source": "runtime_snapshot_version >= 0"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "monitoring_photoperiod_coverage_pkey",
+          "columns": [
+            "id"
+          ],
+          "partial": null
+        },
+        {
+          "name": "monitoring_photoperiod_coverage_location_cluster_observed_at_state_key",
+          "columns": [
+            "location",
+            "cluster",
+            "observed_at",
+            "state"
+          ],
+          "partial": null
+        },
+        {
+          "name": "monitoring_photoperiod_coverage_room_time_idx",
+          "columns": [
+            "location",
+            "cluster",
+            "observed_at DESC",
+            "id DESC"
+          ],
+          "partial": null
+        }
+      ],
+      "notes": null,
+      "fingerprint": "050885d076164e470247cba82b7212f5357a26ee78bfce6084d60f9405fcdca8"
+    },
+    {
+      "name": "mode_transition_history",
+      "status": "defined",
+      "core": false,
+      "relation": "public.mode_transition_history",
+      "source_files": [
+        "Infrastructure/database/add_mode_transition_history.sql:5-17"
+      ],
+      "time_column": "triggered_at",
+      "stable_ordering": [
+        "id"
+      ],
+      "ownership": {
+        "mode": "stored_columns",
+        "detail": "Stored location, cluster."
+      },
+      "default_record_role": "observation",
+      "hypertable": false,
+      "chunk_interval": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "integer",
+          "not_null": true,
+          "generation": "serial"
+        },
+        {
+          "name": "location",
+          "type": "text",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "cluster",
+          "type": "text",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "old_mode_id",
+          "type": "integer",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "old_submode_id",
+          "type": "integer",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "new_mode_id",
+          "type": "integer",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "new_submode_id",
+          "type": "integer",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "triggered_by",
+          "type": "text",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "triggered_at",
+          "type": "timestamp with time zone",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "parameters_synced",
+          "type": "jsonb",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "success",
+          "type": "boolean",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "error_message",
+          "type": "text",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "not_null": false,
+          "generation": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "unique_constraints": [],
+      "foreign_keys": [
+        {
+          "columns": [
+            "old_mode_id"
+          ],
+          "references": "public.room_modes(id)",
+          "on_delete": null
+        },
+        {
+          "columns": [
+            "old_submode_id"
+          ],
+          "references": "public.flower_submodes(id)",
+          "on_delete": null
+        },
+        {
+          "columns": [
+            "new_mode_id"
+          ],
+          "references": "public.room_modes(id)",
+          "on_delete": null
+        },
+        {
+          "columns": [
+            "new_submode_id"
+          ],
+          "references": "public.flower_submodes(id)",
+          "on_delete": null
+        }
+      ],
+      "checks": [
+        {
+          "name": "mode_transition_history_triggered_by_check",
+          "source": "triggered_by IN ('api', 'schedule', 'system')"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "mode_transition_history_pkey",
+          "columns": [
+            "id"
+          ],
+          "partial": null
+        },
+        {
+          "name": "idx_mode_transition_history_loc_clus_time",
+          "columns": [
+            "location",
+            "cluster",
+            "triggered_at DESC"
+          ],
+          "partial": null
+        }
+      ],
+      "notes": "Cold binding must keep the nullable triggered_at exactly as the source defines it and use the migration-owned _archive_partition_time TIMESTAMPTZ NOT NULL as the physical partition column; NULL-time rows are recorded as context and never strengthen source nullability. Source table shape here is repository authority and unchanged.",
+      "fingerprint": "7747661af7257148f6a018c8b0c4b72773354882b72920e24e3e16094f264309"
+    },
+    {
+      "name": "pid_parameter_history",
+      "status": "defined",
+      "core": false,
+      "relation": "public.pid_parameter_history",
+      "source_files": [
+        "Infrastructure/automation-service/alembic/versions/001_baseline.py:216-228",
+        "Infrastructure/automation-service/alembic/versions/007_add_pid_parameters_per_room.py:40-48"
+      ],
+      "time_column": "timestamp",
+      "stable_ordering": [
+        "id"
+      ],
+      "ownership": {
+        "mode": "stored_columns",
+        "detail": "Stored location, cluster; the plan also expects a changed_at fact to be retained."
+      },
+      "default_record_role": "observation",
+      "hypertable": false,
+      "chunk_interval": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "not_null": true,
+          "generation": "bigserial"
+        },
+        {
+          "name": "timestamp",
+          "type": "timestamp with time zone",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "device_type",
+          "type": "text",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "kp",
+          "type": "real",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "ki",
+          "type": "real",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "kd",
+          "type": "real",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "updated_by",
+          "type": "text",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "source",
+          "type": "text",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "location",
+          "type": "text",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "cluster",
+          "type": "text",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "binary_hysteresis",
+          "type": "real",
+          "not_null": false,
+          "generation": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "unique_constraints": [],
+      "foreign_keys": [],
+      "checks": [],
+      "indexes": [
+        {
+          "name": "pid_parameter_history_pkey",
+          "columns": [
+            "id"
+          ],
+          "partial": null
+        },
+        {
+          "name": "idx_pid_parameter_history_device_type",
+          "columns": [
+            "device_type",
+            "timestamp DESC"
+          ],
+          "partial": null
+        }
+      ],
+      "notes": "Positive: registry/core or present/bind keys and oss_bits_stream are part of the page-per-column mulberry ownership binding and core mark. Checked-in descriptors carry plan-level time/key/ownership metadata only, so schema.py cannot drift against your parameter or column renames. Plan-side wait: pid_parameter_history may carry a changed_at fact that no repository DDL defines; if the live relation has it, preflight blocks as an unknown column until a lossless descriptor is supplied.",
+      "fingerprint": "620d6776623cbc7cd8efbd42b5fa2afae020ec82f292e21ae7b20a9d6bf4c80a"
+    },
+    {
+      "name": "config_versions",
+      "status": "defined",
+      "core": false,
+      "relation": "public.config_versions",
+      "source_files": [
+        "Infrastructure/automation-service/alembic/versions/001_baseline.py:233-252"
+      ],
+      "time_column": "timestamp",
+      "stable_ordering": [
+        "version_id"
+      ],
+      "ownership": {
+        "mode": "stored_scope",
+        "detail": "Stored scope; global config changes are shared replay context."
+      },
+      "default_record_role": "context",
+      "hypertable": false,
+      "chunk_interval": null,
+      "columns": [
+        {
+          "name": "version_id",
+          "type": "bigint",
+          "not_null": true,
+          "generation": "bigserial"
+        },
+        {
+          "name": "timestamp",
+          "type": "timestamp with time zone",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "author",
+          "type": "text",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "comment",
+          "type": "text",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "config_type",
+          "type": "text",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "location",
+          "type": "text",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "cluster",
+          "type": "text",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "changes",
+          "type": "jsonb",
+          "not_null": false,
+          "generation": null
+        }
+      ],
+      "primary_key": [
+        "version_id"
+      ],
+      "unique_constraints": [],
+      "foreign_keys": [],
+      "checks": [],
+      "indexes": [
+        {
+          "name": "config_versions_pkey",
+          "columns": [
+            "version_id"
+          ],
+          "partial": null
+        },
+        {
+          "name": "idx_config_versions_timestamp",
+          "columns": [
+            "timestamp DESC"
+          ],
+          "partial": null
+        },
+        {
+          "name": "idx_config_versions_type",
+          "columns": [
+            "config_type"
+          ],
+          "partial": null
+        }
+      ],
+      "notes": null,
+      "fingerprint": "f68c4bea68763871004bdc74ca77b5a194107ecbf53fa6501b68ed414171bf2a"
+    },
+    {
+      "name": "calendar_mode_application",
+      "status": "defined",
+      "core": false,
+      "relation": "public.calendar_mode_application",
+      "source_files": [
+        "Infrastructure/database/add_calendar_tables.sql:42-51"
+      ],
+      "time_column": "applied_at",
+      "stable_ordering": [
+        "id"
+      ],
+      "ownership": {
+        "mode": "calendar_phase",
+        "detail": "Associated Calendar phase; context, not Calendar expiry."
+      },
+      "default_record_role": "context",
+      "hypertable": false,
+      "chunk_interval": null,
+      "columns": [
+        {
+          "name": "id",
+          "type": "integer",
+          "not_null": true,
+          "generation": "serial"
+        },
+        {
+          "name": "event_id",
+          "type": "integer",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "applied_date",
+          "type": "date",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "mode_id",
+          "type": "integer",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "submode_id",
+          "type": "integer",
+          "not_null": false,
+          "generation": null
+        },
+        {
+          "name": "applied_at",
+          "type": "timestamp with time zone",
+          "not_null": true,
+          "generation": null
+        },
+        {
+          "name": "triggered_by",
+          "type": "text",
+          "not_null": true,
+          "generation": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "unique_constraints": [
+        [
+          "event_id",
+          "applied_date"
+        ]
+      ],
+      "foreign_keys": [
+        {
+          "columns": [
+            "event_id"
+          ],
+          "references": "public.calendar_event(id)",
+          "on_delete": "cascade"
+        }
+      ],
+      "checks": [],
+      "indexes": [
+        {
+          "name": "calendar_mode_application_pkey",
+          "columns": [
+            "id"
+          ],
+          "partial": null
+        },
+        {
+          "name": "calendar_mode_application_event_id_applied_date_key",
+          "columns": [
+            "event_id",
+            "applied_date"
+          ],
+          "partial": null
+        }
+      ],
+      "notes": null,
+      "fingerprint": "2f3147eb28a8b3ad4b77456d71bbd63c533aeb6835f16d92965a7b76ae4e9845"
+    },
+    {
+      "name": "light_state_history",
+      "status": "unavailable",
+      "core": false,
+      "reason": "No CREATE TABLE or ALTER TABLE definition exists anywhere in the tracked repository.",
+      "evidence": [
+        "plan step 2 observation-stream table"
+      ],
+      "plan_hints": {
+        "time_column": "triggered_at",
+        "stable_ordering": [
+          "id"
+        ],
+        "ownership": "Stored location, cluster.",
+        "default_record_role": "observation"
+      },
+      "fingerprint": null,
+      "notes": "If the live relation exists, preflight blocks it as schema_descriptor_unavailable until a lossless descriptor is supplied."
+    },
+    {
+      "name": "pid_adjustments",
+      "status": "unavailable",
+      "core": false,
+      "reason": "No CREATE TABLE or ALTER TABLE definition exists anywhere in the tracked repository.",
+      "evidence": [
+        "plan step 2 observation-stream table"
+      ],
+      "plan_hints": {
+        "time_column": "created_at",
+        "stable_ordering": [
+          "id"
+        ],
+        "ownership": "Stored location, cluster.",
+        "default_record_role": "observation"
+      },
+      "fingerprint": null,
+      "notes": "If the live relation exists, preflight blocks it as schema_descriptor_unavailable until a lossless descriptor is supplied."
+    },
+    {
+      "name": "setpoint_history",
+      "status": "unavailable",
+      "core": false,
+      "reason": "Only an INSERT column list exists (timestamp, location, cluster, mode, heating_setpoint, cooling_setpoint, humidity, co2, vpd); no DDL, types or nullability exist to describe it losslessly.",
+      "evidence": [
+        "Infrastructure/automation-service/app/background_tasks/setpoint_history.py:51 INSERT consumer only"
+      ],
+      "plan_hints": {
+        "time_column": "timestamp",
+        "stable_ordering": [
+          "id"
+        ],
+        "ownership": "Stored location, cluster.",
+        "default_record_role": "observation"
+      },
+      "fingerprint": null,
+      "notes": "Insert-list column names are never promoted into an invented schema; if the live relation exists, preflight blocks until a lossless descriptor is supplied."
+    },
+    {
+      "name": "rollout_events",
+      "status": "unavailable",
+      "core": false,
+      "reason": "No CREATE TABLE or ALTER TABLE definition exists anywhere in the tracked repository.",
+      "evidence": [
+        "plan step 2 observation-stream table"
+      ],
+      "plan_hints": {
+        "time_column": null,
+        "stable_ordering": [],
+        "ownership": "Explicit JSON scope only; otherwise shared context.",
+        "default_record_role": "context"
+      },
+      "fingerprint": null,
+      "notes": "Full-row binary ordering/occurrence is used when captured; if the live relation exists, preflight blocks until a lossless descriptor is supplied."
+    }
+  ],
+  "stream_fingerprint_fields": [
+    "relation",
+    "columns (name, type, not_null, generation)",
+    "primary_key",
+    "primary_key_variants",
+    "unique_constraints",
+    "hypertable"
+  ]
+}

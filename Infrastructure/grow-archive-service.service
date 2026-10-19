@@ -1,0 +1,71 @@
+[Unit]
+Description=CEA Grow Archive Service
+After=redis-server.service postgresql.service network-online.target
+Requires=redis-server.service postgresql.service
+Wants=network-online.target
+OnFailure=service-error-handler@%n.service
+
+[Service]
+Type=simple
+# Archive storage/lifecycle service: read-only Redis (monitoring publication
+# freshness), read/write TimescaleDB and an owned archive directory. It never
+# touches GPIO/I2C/1-Wire/CAN and holds no Redis-write or control authority.
+User=root
+Group=root
+WorkingDirectory=/opt/projectcea/current/Infrastructure/grow-archive-service
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# `Infrastructure` for shared.* helpers; `Infrastructure/monitoring-service`
+# for the existing read-only monitoring wire-model helpers (no second copy of
+# the contract).
+Environment=PYTHONPATH=/opt/projectcea/current/Infrastructure:/opt/projectcea/current/Infrastructure/monitoring-service
+Environment=REDIS_URL=redis://localhost:6379
+Environment=POSTGRES_HOST=localhost
+Environment=POSTGRES_DB=sj_cea
+Environment=POSTGRES_USER=cea_user
+# The archive API is never served without the shared API key.
+Environment=CEA_API_KEY_REQUIRE=true
+# Destructive lifecycle schedules stay disabled until separately authorized
+# activation (operator override lives in grow-archive.env).
+Environment=ARCHIVE_LIFECYCLE_ENABLED=false
+# POSTGRES_PASSWORD is loaded from /opt/projectcea/shared/env/postgres.env
+# (owner root, mode 0640). `-` prefix = optional, so the unit still starts
+# during first-boot bootstrap before the file is materialised.
+EnvironmentFile=-/opt/projectcea/shared/env/postgres.env
+# Shared API key (CEA_API_KEY).
+EnvironmentFile=-/opt/projectcea/shared/env/api_key.env
+# Grow-archive settings (archive root, local cache limits, worker
+# concurrency, Nextcloud/CalDAV encryption key). Materialised during
+# authorized service setup; absent here on purpose.
+EnvironmentFile=-/opt/projectcea/shared/env/grow-archive.env
+ExecStart=/opt/projectcea/current/Infrastructure/grow-archive-service/.venv/bin/python -m uvicorn grow_archive_service.main:app --host 127.0.0.1 --port 8006
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# --- Phase 3.8 convention shared with automation-service: the Postgres
+# password is passed via systemd credentials, with the POSTGRES_PASSWORD env
+# path retained as a fallback so a broken credential file cannot brick the
+# service.
+LoadCredential=postgres_password:/opt/projectcea/shared/env/postgres_password
+
+# --- Heavy Parquet/ZIP work is deliberately deprioritised: it must never
+# compete with the control loop, and one full core is enough for the single
+# bounded archive worker.
+Nice=19
+CPUQuota=100%
+IOSchedulingClass=idle
+MemoryMax=2G
+UMask=0077
+
+# --- Exploit containment (same additive set as the other services).
+NoNewPrivileges=yes
+LockPersonality=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+
+[Install]
+WantedBy=multi-user.target

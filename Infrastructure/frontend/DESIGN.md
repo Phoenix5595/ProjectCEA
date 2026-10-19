@@ -2,7 +2,7 @@
 
 Visual and accessibility contract for the native Flower and Veg monitoring dashboards at `/flower/monitoring` and `/vegetation/monitoring`. Every monitoring color, size, and state traces back to a named token defined here and in `src/styles/themes.css`.
 
-The monitoring token set is additive-only: it never removes or renames an existing theme variable, and it never touches product pages or Grafana code. `src/features/monitoring/designTokens.ts` and `__tests__/designTokens.test.ts` enforce that every monitoring token exists in all six themes.
+The monitoring token set is additive-only: it never removes or renames an existing theme variable, and it never touches product pages or code outside the monitoring feature. `src/features/monitoring/designTokens.ts` and `__tests__/designTokens.test.ts` enforce that every monitoring token exists in all six themes.
 
 ## Design Tokens
 
@@ -76,7 +76,7 @@ Required tokens are listed in `src/features/monitoring/designTokens.ts` (`REQUIR
 
 ### Table and card
 
-- Semantic HTML tables retain Grafana ordering, units, and Last Update rows. Tables double as the chart's accessible data alternative.
+- Semantic HTML tables retain the canonical dashboard ordering, units, and Last Update rows. Tables double as the chart's accessible data alternative.
 - Cards wrap each chart region and table with existing surface/border tokens.
 - Historical uses the finest fitting 1–12-hour bucket with an explicit 1000-point budget; partial edge buckets count. Keep min/max envelopes and sensor-only statistics below the two graphs, with the established 780px/320px chart heights and no internally scrolling wrappers.
 

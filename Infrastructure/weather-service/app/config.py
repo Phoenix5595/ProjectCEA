@@ -50,7 +50,7 @@ class ConfigLoader(YamlConfigLoader):
             )
         return {
             "host": db_config.get("host", "localhost"),
-            "database": db_config.get("database", "cea_sensors"),
+            "database": db_config.get("database", "sj_cea"),
             "user": db_config.get("user", "cea_user"),
             "password": db_config.get("password"),
             "port": db_config.get("port", 5432),

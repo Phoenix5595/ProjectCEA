@@ -14,8 +14,20 @@ const TH =
 const TD = 'px-1 py-1 border-b border-border-subtle'
 const SENSOR_HEADERS = ['Sensor', 'Count', 'Min', 'Average', 'Max', 'Std Dev'] as const
 
+export interface HistorySummaryStatistic {
+  readonly sensor: string
+  readonly sample_count: number
+  readonly minimum: number | null
+  readonly maximum: number | null
+  readonly average: number | null
+  readonly stddev_samp: number | null
+  readonly stddev_quality?: 'exact' | 'approximate'
+}
+
 export interface HistoryOverviewTablesProps {
   readonly sensor?: HistoryOverviewSensorResponse | null
+  /** Exact detailed or overview sensor statistics from an archive graph response. */
+  readonly statistics?: readonly HistorySummaryStatistic[] | null
   readonly manifest?: MonitoringManifest
 }
 
@@ -36,9 +48,11 @@ function specLabel(specs: SeriesSpec[], name: string, fallback: string): string 
 
 export function HistoryOverviewTables({
   sensor,
+  statistics: suppliedStatistics,
   manifest,
 }: HistoryOverviewTablesProps): ReactElement | null {
-  if (sensor === null || sensor === undefined || sensor.statistics.length === 0) return null
+  const statistics = suppliedStatistics ?? sensor?.statistics ?? []
+  if (statistics.length === 0) return null
   const specs = manifestSeriesSpecs(manifest)
   return (
     <table className="w-full text-xs">
@@ -53,7 +67,7 @@ export function HistoryOverviewTables({
         </tr>
       </thead>
       <tbody>
-        {sensor.statistics.map(statistics => {
+        {statistics.map(statistics => {
           const stdDevText =
             statistics.stddev_samp === null
               ? '—'

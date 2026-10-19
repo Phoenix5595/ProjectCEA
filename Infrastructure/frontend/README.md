@@ -5,6 +5,7 @@ React + TypeScript frontend for the CEA (Controlled Environment Agriculture) gre
 ## Features
 
 - **Real-time Dashboard**: View sensor data (temperature, humidity, CO₂, VPD) and device states via WebSocket
+- **Native Monitoring**: In-house Flower/Veg monitoring and historical dashboards (`/flower/monitoring`, `/vegetation/monitoring`) backed by the read-only `monitoring-service` (`:8005`)
 - **Zone-based Configuration**: Edit setpoints, PID parameters, and schedules per zone
 - **Climate Periods**: Configure named climate periods with start/end times and ramp_minutes
 - **VPD Control**: Set VPD setpoints that control dehumidifying devices (fans, dehumidifiers)

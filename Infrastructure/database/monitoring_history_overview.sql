@@ -55,7 +55,7 @@
 --   * Disposable proof harness: connect to a fresh `monitoring_test_*`
 --     database and SET app.grow_cycle_history_disposable = '1' for the
 --     session, then apply this file; or
---   * Production owner: connect as the owner of database `cea_sensors` and
+--   * Production owner: connect to the source-target database `sj_cea` and
 --     SET app.grow_cycle_history_authorized = '1' for the session, then apply
 --     this file.
 -- Inherited PG*/DATABASE_URL/MONITORING_TEST_DATABASE_URL environments are
@@ -80,7 +80,7 @@ BEGIN
         IF current_setting('app.grow_cycle_history_disposable', true) IS DISTINCT FROM '1' THEN
             RAISE EXCEPTION 'disposable grow-cycle-history authorization required';
         END IF;
-    ELSIF current_database() = 'cea_sensors' THEN
+    ELSIF current_database() = 'sj_cea' THEN
         IF current_setting('app.grow_cycle_history_authorized', true) IS DISTINCT FROM '1' THEN
             RAISE EXCEPTION 'owner grow-cycle-history authorization required';
         END IF;

@@ -8,7 +8,7 @@ import sys
 
 from base_monitor import CYAN, GREEN, MAGENTA, NC, RED, YELLOW, BaseMonitor
 
-DB_CONFIG = "host=localhost dbname=cea_sensors user=cea_user"
+DB_CONFIG = "host=localhost dbname=sj_cea user=cea_user"
 
 
 def _psql_env() -> dict:

@@ -1,11 +1,9 @@
 /**
  * Veg Room monitoring manifest.
  *
- * Extracted from the canonical Grafana dashboard
- * `Infrastructure/iskra_stack/dashboards/veg_sector/veg_sector.json`
- * (panels 24-1257). Panel order follows the canonical grid layout; series
- * names, display names, units, soft bounds, colors, and line styles are taken
- * from the canonical `fieldConfig` defaults and overrides.
+ * This is the Veg Room's native monitoring panel contract. Panel order,
+ * names, units, bounds, colors, and line styles follow the established
+ * dashboard layout.
  *
  * The parity test maps every canonical panel/series/row onto this manifest and
  * rejects unknown additions.

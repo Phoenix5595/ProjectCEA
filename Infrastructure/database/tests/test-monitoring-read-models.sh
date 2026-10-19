@@ -61,13 +61,13 @@ assert_safe_database_url() {
   esac
 
   case "$lower_host" in
-    *mothernode* | *iskra* | *projectcea*)
+    *mothernode* | *projectcea*)
       fail "refusing production-looking database host: $host"
       return 1
       ;;
   esac
 
-  if [[ "$lower_database_name" == 'cea_sensors' || "$lower_database_name" == 'cea_sensors_test' || "$lower_database_name" == *cea_sensors* ]]; then
+  if [[ "$lower_database_name" == *cea_sensors* || "$lower_database_name" == *sj_cea* ]]; then
     fail "refusing production database name: $database_name"
     return 1
   fi
@@ -166,15 +166,24 @@ cleanup_monitoring_test_db() {
   set +e
 
   if ((MONITORING_DATABASE_CREATED)); then
-    if sudo -u postgres psql -X --set=ON_ERROR_STOP=1 \
-      --host="$POSTGRES_ADMIN_HOST" \
-      --dbname="$POSTGRES_ADMIN_DATABASE" \
-      --command="DROP DATABASE \"$MONITORING_DATABASE_NAME\" WITH (FORCE)" >/dev/null 2>&1; then
-      printf 'dropped monitoring database: %s\n' "$MONITORING_DATABASE_NAME"
-    else
-      printf 'failed to drop monitoring database: %s\n' "$MONITORING_DATABASE_NAME" >&2
-      cleanup_status=1
-    fi
+    local cleanup_database
+    for cleanup_database in "${MONITORING_DATABASE_CREATED_NAMES[@]}"; do
+      if [[ ! "$cleanup_database" =~ ^monitoring_test_[a-z0-9_]+$ ]] || \
+        [[ "${cleanup_database,,}" == *cea_sensors* || "${cleanup_database,,}" == *sj_cea* ]]; then
+        printf 'refusing to clean unowned or protected database name: %s\n' "$cleanup_database" >&2
+        cleanup_status=1
+        continue
+      fi
+      if sudo -u postgres psql -X --set=ON_ERROR_STOP=1 \
+        --host="$POSTGRES_ADMIN_HOST" \
+        --dbname="$POSTGRES_ADMIN_DATABASE" \
+        --command="DROP DATABASE IF EXISTS \"$cleanup_database\" WITH (FORCE)" >/dev/null 2>&1; then
+        printf 'cleaned owned monitoring database name: %s\n' "$cleanup_database"
+      else
+        printf 'failed to drop owned monitoring database: %s\n' "$cleanup_database" >&2
+        cleanup_status=1
+      fi
+    done
   fi
 
   if ((MONITORING_ROLE_CREATED)); then
@@ -218,6 +227,7 @@ with_monitoring_test_db() (
   MONITORING_DATABASE_NAME="monitoring_test_$token"
   MONITORING_ROLE_NAME="monitoring_role_$token"
   MONITORING_DATABASE_CREATED=0
+  MONITORING_DATABASE_CREATED_NAMES=()
   MONITORING_ROLE_CREATED=0
   local database_password
   database_password="$(openssl rand -hex 24)"
@@ -250,6 +260,7 @@ with_monitoring_test_db() (
     --dbname="$POSTGRES_ADMIN_DATABASE" \
     --command="CREATE DATABASE \"$MONITORING_DATABASE_NAME\" OWNER \"$MONITORING_ROLE_NAME\" TEMPLATE template0" >/dev/null
   MONITORING_DATABASE_CREATED=1
+  MONITORING_DATABASE_CREATED_NAMES=("$MONITORING_DATABASE_NAME")
   printf 'created monitoring database: %s\n' "$MONITORING_DATABASE_NAME"
 
   database_url="postgresql://$MONITORING_ROLE_NAME:$database_password@127.0.0.1:$database_port/$MONITORING_DATABASE_NAME"
@@ -272,10 +283,18 @@ with_monitoring_test_db() (
   psql -X --set=ON_ERROR_STOP=1 --file="$effective_fixture" "$database_url"
   printf 'loaded monitoring fixtures into: %s\n' "$MONITORING_DATABASE_NAME"
 
-  env \
-    MONITORING_HARNESS_INTERNAL=1 \
-    MONITORING_TEST_DATABASE_URL="$database_url" \
+  if [[ "${MONITORING_TEST_IN_PROCESS:-0}" == '1' ]]; then
+    # The rename case must update this shell's owned-name list so EXIT cleanup
+    # can remove either generated name after a failed rename-back.
+    export MONITORING_HARNESS_INTERNAL=1
+    export MONITORING_TEST_DATABASE_URL="$database_url"
     "$@"
+  else
+    env \
+      MONITORING_HARNESS_INTERNAL=1 \
+      MONITORING_TEST_DATABASE_URL="$database_url" \
+      "$@"
+  fi
 )
 
 usage() {

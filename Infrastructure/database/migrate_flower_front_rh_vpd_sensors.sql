@@ -1,8 +1,7 @@
 -- Register Flower Room front-cluster RH/VPD logical sensors on Node 2 (same device
--- as dry_bulb_f) so Grafana/dashboard SQL expecting rh_f + vpd_f always resolves,
+-- as dry_bulb_f) so native monitoring readers expecting rh_f + vpd_f always resolve,
 -- and can-processor can bind readings once CAN mappings publish those names.
 -- Safe no-op if rows exist (device_id + name unique).
--- Apply on PRIMARY only; physical replica inherits rows via WAL.
 
 BEGIN;
 

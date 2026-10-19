@@ -119,17 +119,19 @@ Alarm and error lifecycle events are durable for 30 days using the existing `con
 
 Normal control-history reads keep `channel >= 0`, so alarm rows never appear as duplicate relay activity.
 
-## Retention activation and rollback irreversibility
+## Legacy retention proof and lifecycle boundary
 
-Control-history retention policies are in [`Infrastructure/database/operational_history_retention.sql`](../../database/operational_history_retention.sql). They are **operator-controlled** and **idempotent**.
-
-- Raw `automation_state` and `effective_setpoints`: 7 days.
-- `control_history`, `monitoring_automation_state_1min/5min`, `monitoring_effective_setpoints_1min/5min`: 30 days.
-- Aggregate refresh policies start at a 6-day offset, leaving one day of margin before raw rows expire.
-- The script aborts unless the database name matches `monitoring_test_*` and `app.operational_retention_disposable=1`. `cea_sensors` is explicitly rejected.
-- The script is not referenced by `deploy.sh`, `finalize-deploy.sh`, service startup, or any supervisor path.
-
-Rollback warning: removing or disabling a retention policy stops future deletion, but it cannot restore rows that the policy already dropped. Plan separate backups before enabling policies in production.
+`Infrastructure/database/operational_history_retention.sql` is exercised only
+by the explicitly marked disposable retention test harness; it is not a current
+production policy or service-startup path. The grow/Veg lifecycle owns future
+source retention. Its read-only activation gate blocks on any scheduled
+source-table `policy_compression`/`policy_retention` job and leaves unrelated
+aggregate refresh jobs untouched. The old applied Alembic 005 revision is
+historical and is not edited; separately authorized owner reconciliation must
+pause only inventoried conflicting source jobs before lifecycle activation.
+Both `cea_sensors` and `sj_cea` (including case and substring aliases) are
+protected from disposable tests. Disabling a policy cannot restore rows it
+already removed; require a verified backup before any future policy change.
 
 ## Unknown type compatibility
 

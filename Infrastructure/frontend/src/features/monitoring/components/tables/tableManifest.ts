@@ -1,7 +1,7 @@
 /**
  * Mapping helpers between manifest table rows and sensor names.
  *
- * The canonical Grafana tables order rows by a fixed CASE expression
+ * The native monitoring tables order rows by a fixed CASE expression
  * (dry_bulb, wet_bulb, rh, vpd, co2, pressure, secondary_temp, secondary_rh,
  * water_level). This module maps a manifest display label back to its base
  * sensor name and, given a node suffix, to the full sensor name used by the

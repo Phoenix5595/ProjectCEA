@@ -24,7 +24,7 @@ from app.middleware.exception_handler import (
     ServiceUnavailableError,
     ValidationAPIError,
 )
-from app.repositories.sensor_repository import _pick_aggregate_tier
+from app.repositories.sensor_repository import _pick_aggregate_tier, _tier_source_sql
 from app.sensor_registry_models import (
     RS485_BEDS,
     SOIL_HISTORY_MAX_POINTS,
@@ -659,17 +659,19 @@ class SensorRegistryRepository:
                 ORDER BY bucket_index, m.sensor_id
             """
         else:
+            # Native views are materialized-only; the shared source serves
+            # unrefreshed/invalidated buckets exactly from raw measurement.
             sql = f"""
                 SELECT
                     m.sensor_id,
-                    floor(extract(epoch FROM (m.{tier.time_col} - $1)) / $2)::int AS bucket_index,
-                    sum(m.avg_value * m.sample_count) / NULLIF(sum(m.sample_count), 0) AS avg_value,
+                    floor(extract(epoch FROM (m.time - $1)) / $2)::int AS bucket_index,
+                    (sum(m.value_sum) / NULLIF(sum(m.sample_count), 0))::double precision AS avg_value,
                     min(m.min_value) AS min_value,
                     max(m.max_value) AS max_value,
                     sum(m.sample_count) AS sample_count
-                FROM {tier.table} m
+                FROM ({_tier_source_sql(tier, start="$1", end="$4")}) m
                 WHERE m.sensor_id = ANY($3::int[])
-                  AND m.{tier.time_col} >= $1 AND m.{tier.time_col} < $4
+                  AND m.time >= $1 AND m.time < $4
                 GROUP BY bucket_index, m.sensor_id
                 ORDER BY bucket_index, m.sensor_id
             """

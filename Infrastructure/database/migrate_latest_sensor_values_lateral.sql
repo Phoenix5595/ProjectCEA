@@ -2,8 +2,8 @@
 -- index-backed "last row" (ORDER BY time DESC LIMIT 1) via LATERAL.
 -- Without this, max(time) / DISTINCT ON paths read millions of rows per sensor
 -- (see EXPLAIN ANALYZE on: SELECT max(m.time) FROM measurement m JOIN sensor s ...).
--- Apply on PRIMARY only; physical replica applies catalog + data via WAL.
--- Date: 2026-05-09 (Iskra Grafana / redis_sync slowness investigation)
+-- Retained as a database object; no in-repo service currently consumes this view.
+-- Date: 2026-05-09 (latest-values query performance investigation).
 
 BEGIN;
 

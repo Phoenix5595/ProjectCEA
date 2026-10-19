@@ -1,4 +1,4 @@
-"""Redis state query endpoints for Grafana and other consumers."""
+"""Redis state query endpoints for the native monitoring UI and other consumers."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ async def get_schedule_state(
 ) -> dict[str, Any]:
     """Get schedule state from database.
 
-    This endpoint is used by Grafana to query current schedule state.
+    This endpoint is used by the native monitoring UI to query current schedule state.
 
     Args:
         location: Location name (e.g., 'Veg Room', 'Flower Room')

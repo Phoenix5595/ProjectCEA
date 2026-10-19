@@ -1,6 +1,6 @@
 # CEA Monitoring Feature
 
-Native Flower and Veg monitoring dashboards at `/flower/monitoring` and `/vegetation/monitoring`. Replaces Grafana iframes for those rooms.
+Native Flower and Veg monitoring dashboards at `/flower/monitoring` and `/vegetation/monitoring`. The in-house dashboards are the only monitoring surface; room history/overview/control reads go through the read-only `monitoring-service` (`:8005` via Caddy).
 
 ## Boundary Parsing
 
@@ -25,7 +25,7 @@ Native Flower and Veg monitoring dashboards at `/flower/monitoring` and `/vegeta
 
 - `config/originGuard.ts` is the single source of truth for allowed origins.
 - The fixture preview binds to `127.0.0.1` on `MONITORING_FIXTURE_PORT` (default 4187; allowed range 4187–4199).
-- **Production and fixture origins must never mix.** Fixture/browser tests must never contact ports `8000`, `8001`, `8003`, `8080` or host `iskraprojectcea`.
+- **Production and fixture origins must never mix.** Fixture/browser tests must never contact service ports `8000`, `8001`, `8003`, or `8080;` the exact-origin guard rejects every non-fixture host.
 - `tests/monitoring/network-guard.spec.ts` and `__tests__/monitoringBrowserHarness.test.ts` enforce this.
 
 ## Design and Accessibility
@@ -49,4 +49,4 @@ The Playwright config builds `dist/` and serves it through `vite.monitoring.conf
 - Let a test build reach a production service URL.
 - Skip Zod parsing and pass `Response` objects into components.
 - Add dashboard series without updating the manifest parity test (`__tests__/canonicalManifestParity.test.ts`).
-- Reference old Grafana hosts (`localhost:3000`, `iskradocker:3000`) as current.
+- Reference any external dashboard product or host as the current monitoring surface.

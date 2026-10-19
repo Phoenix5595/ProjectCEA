@@ -11,6 +11,7 @@ LOCAL_TZ = ZoneInfo("America/Toronto")
 
 FLOWER_PHASE_TYPES = frozenset(
     {
+        "bed_veg",
         "flip_to_flower",
         "flower_stretch",
         "flower_bulk",
@@ -20,7 +21,7 @@ FLOWER_PHASE_TYPES = frozenset(
     }
 )
 
-VEG_PHASE_TYPES = frozenset({"clone_window", "pot_veg", "bed_veg"})
+VEG_PHASE_TYPES = frozenset({"clone_window", "pot_veg"})
 GROW_PLAN_PHASE_TYPES = VEG_PHASE_TYPES | FLOWER_PHASE_TYPES
 
 
@@ -114,7 +115,7 @@ def build_flower_grow_plan(inp: FlowerGrowPlanInput) -> tuple[list[PhaseRange], 
                 PhaseRange(
                     "bed_veg",
                     "Bed veg",
-                    "Veg Room",
+                    "Flower Room",
                     "main",
                     bed_start,
                     bed_end,
@@ -126,14 +127,13 @@ def build_flower_grow_plan(inp: FlowerGrowPlanInput) -> tuple[list[PhaseRange], 
             ]
         )
     else:
-        bed_weeks_eff = inp.bed_weeks + 2
         bed_end = flower_start - timedelta(days=1)
-        bed_start = bed_end - timedelta(days=bed_weeks_eff * 7 - 1)
+        bed_start = bed_end - timedelta(days=inp.bed_weeks * 7 - 1)
         phases.append(
             PhaseRange(
                 "bed_veg",
                 "Bed veg",
-                "Veg Room",
+                "Flower Room",
                 "main",
                 bed_start,
                 bed_end,

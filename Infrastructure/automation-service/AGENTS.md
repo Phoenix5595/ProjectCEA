@@ -47,6 +47,45 @@ Producers call `emit_nowait()` at authoritative decision or commit edges. The di
 
 Repositories live in `app/repositories/` and own all DB access. Routes live in `app/routes/` and cover schedules, lights, climate periods, devices/registry, hardware, PID, room modes, alarms, system config, and the operational event endpoints. See `Infrastructure/automation-service/REQUIREMENTS.md` for normative behavior and `ARCHITECTURE.md` for service boundaries.
 
+## Explicit grow boundaries
+
+Calendar grow mutations use sorted room advisory locks, then grow/catalog row
+locks, with overlap checks in the same transaction. Phase dates and rooms,
+not creation time or the active lighting schedule, determine membership.
+Generated bed vegetation is two or three weeks in Flower Room; clone/pot
+vegetation stays in Veg Room. Existing/manual dates are not clamped.
+
+`/api/calendar/grow-plans/{uuid}/close-preview`, `/close` and `/reopen` expose
+explicit owner closure with Calendar revision checks. Closed phase edits,
+deletes and grow deletion return `grow_closed`. First closure fixes the
+original drying end and twelve-calendar-month anniversary; reopening does not
+reset either or silently restore ZIP history. Closing queues an `export`; the
+service publishes a verified ZIP before anniversary expiry can delete source
+rows. `ARCHIVE_LIFECYCLE_ENABLED` defaults to `false`, so destructive lifecycle
+execution does not run by default.
+
+After verified source deletion, a scope correction overlapping removed time is
+rejected with `archive_correction_requires_source`. Rebuilds use the prior
+verified ZIP plus current source rows for the affected time window; deleted
+rows cannot be reassigned to another room or identity.
+
+## Confirmed outbound Calendar mirroring
+
+Event writes commit locally before syncing their exact changed IDs within one
+five-second wall-clock deadline. Four remote operations maximum; a one-second
+due poll drains the same leased queue. UID reconciliation and conditional
+ETags prevent duplicate uncertain creates and blind remote overwrites.
+Generation/revision/lease compare-and-set fences reject older responses.
+
+Fresh Nextcloud credentials are entered in Calendar settings. Saving verified
+settings leaves the connection disabled until the explicit backup-confirmed
+“Reconnect and mirror all local events” action. Existing Growing and writable
+Files root are discovered separately; no calendar is created or cleared.
+Secrets stay Fernet-encrypted with `CALENDAR_SYNC_ENCRYPTION_KEY`, and missing
+or wrong keys expose unavailable status without discarding local data.
+
+Proof: `bash Infrastructure/database/tests/test-grow-data-lifecycle.sh --case calendar-sync`.
+
 ## Local verification
 
 ```bash

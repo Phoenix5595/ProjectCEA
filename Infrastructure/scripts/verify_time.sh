@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # verify_time.sh — fail if NTP/time sync is unhealthy on this host.
-# Rationale: time_bucket boundaries, CAGG refresh windows, schedule start/stop,
-# replication timestamps, and Redis TTL comparisons all rely on clock alignment.
-# Run as a deploy.sh preflight and from verify_iskra.sh on the replica host.
+# Rationale: CAGG bucket boundaries, schedule start/stop, and Redis TTL comparisons
+# all rely on clock alignment.
+# Run as a deploy.sh preflight.
 
 set -euo pipefail
 

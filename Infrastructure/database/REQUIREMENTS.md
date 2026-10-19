@@ -7,64 +7,49 @@ Schema and runbook contracts for the CEA database layer. See `ARCHITECTURE.md` f
 - PostgreSQL with the TimescaleDB extension.
 - Normalized metadata tables: `room`, `rack`, `device`, `sensor`.
 - Time-series data lives in the `measurement` hypertable.
-- Continuous aggregates preserve min/max/avg: `measurement_1min`, `measurement_5min`, `measurement_hourly`, `measurement_daily`.
-
-## Primary and Replica
-
-The Pi primary hosts `cea_sensors` and streams WAL to the Iskra standby. Required primary settings:
-
-| Setting | Value |
-|---|---|
-| `wal_level` | `replica` |
-| `wal_keep_size` | `4GB` |
-| `max_slot_wal_keep_size` | `16GB` |
-| `max_wal_senders` | `5` |
-
-Replication slot `iskra_recovery` must exist on the primary and be consumed by the standby. If the standby falls behind beyond `max_slot_wal_keep_size`, re-base it.
-
-The Iskra standby enables `hot_standby_feedback = on`, `jit = off`, and `max_parallel_workers_per_gather = 0` so Grafana and `redis_sync` queries are not canceled by recovery conflicts.
+- Native continuous aggregates preserve min/max/avg: `monitoring_measurement_1min`, `monitoring_measurement_5min`, `monitoring_measurement_1hour`, and `monitoring_measurement_1day`.
 
 ## Aggregate Ladders
 
-Grafana and the backend API use different ladders. Always filter by time range.
+Consumer-specific ladders; always filter by time range.
 
-### Grafana (`get_sensor_data_optimized`)
+### Monitoring service (`compute_tier`)
 
-| Span | Source |
+`Infrastructure/monitoring-service/monitoring_service/sensor_models.py`:
+
+| Duration | Source |
 |---|---|
 | ≤ 1 h | raw `measurement` |
-| (1 h, 6 h] | `measurement_1min` |
-| (6 h, 24 h] | `measurement_5min` |
-| > 24 h | `measurement_hourly` |
+| (1 h, 6 h] | `monitoring_measurement_1min` |
+| > 6 h | `monitoring_measurement_5min` |
 
-Source: `Infrastructure/database/grafana_performance_migration.sql`.
+Source: `Infrastructure/database/monitoring_read_models.sql`. Overview reads add the hour/day aggregates from `Infrastructure/database/monitoring_history_overview.sql` with whole-hour buckets of 1–12 hours chosen by point budget.
 
 ### Backend API (`_pick_aggregate_tier`)
 
 | Span | Source |
 |---|---|
 | < 2 h | raw `measurement` |
-| ≥ 2 h | `measurement_1min` |
-| ≥ 24 h | `measurement_5min` |
-| ≥ 7 d | `measurement_hourly` |
-| ≥ 30 d | `measurement_daily` |
+| ≥ 2 h | `monitoring_measurement_1min` |
+| ≥ 24 h | `monitoring_measurement_5min` |
+| ≥ 7 d | `monitoring_measurement_1hour` |
+| ≥ 30 d | `monitoring_measurement_1day` |
 
 Source: `Infrastructure/backend/app/repositories/sensor_repository.py`.
 
-Do not use hourly aggregates for ranges under 7 days on the backend, or for ranges under 24 hours in Grafana.
+Do not use hourly aggregates for ranges under 7 days on the backend, or for ranges under 6 hours in the monitoring service.
 
 ## Query Guidance
 
-All Grafana and backend historical queries must include a time-range filter so TimescaleDB chunk exclusion works. Filter by `sensor_name` whenever possible; `sensor.name` is indexed.
+All monitoring-service and backend historical queries must include a time-range filter so TimescaleDB chunk exclusion works. Filter by `sensor_name` whenever possible; `sensor.name` is indexed.
 
-Use these optimized views and functions instead of ad-hoc hypertable scans:
+Use these canonical views and read models instead of ad-hoc hypertable scans:
 
-- `measurement_with_metadata` / `measurement_timeseries` for time-series panels.
-- `latest_sensor_values` for one-row-per-sensor "latest" panels.
-- `get_latest_by_pattern('%_suffix')` for latest-value lookups by sensor name pattern.
-- `get_sensor_data_optimized(...)` for Grafana historical panels (uses the aggregate ladder above).
+- `measurement_with_metadata` for ad-hoc time-series queries.
+- `latest_sensor_values` remains defined as a one-row-per-sensor view, but has no in-repo consumer.
+- The `monitoring_*` aggregates above for native monitoring reads (they own the monitoring ladder and bucketing).
 
-Avoid `MAX(time)` subqueries over the hypertable for "latest" values; they are slower than the dedicated view/functions.
+Avoid `MAX(time)` subqueries over the hypertable for "latest" values; they are slower than `latest_sensor_values`.
 
 ## Setpoints, Photoperiod Overlays, and Light Intensity
 
@@ -91,9 +76,9 @@ The older `cea_schema.sql` setpoints definition (room_id/variable/target) is not
 
 The `effective_setpoints` hypertable logs the actual setpoint values used at every control tick, including ramp progress and light intensity. Columns include `effective_heating_setpoint`, `effective_cooling_setpoint`, `effective_vpd_setpoint`, `effective_light_intensity`, `nominal_heating_setpoint`, `nominal_cooling_setpoint`, `nominal_vpd_setpoint`, `ramp_progress_heating`, `ramp_progress_cooling`, `ramp_progress_vpd`, `timestamp`.
 
-For Grafana temperature/VPD panels:
+For native monitoring temperature/VPD series:
 
-- Query `effective_setpoints` for the active heating and VPD setpoint series.
+- The monitoring service serves these from its read models; the underlying rules are: effective heating and VPD series come from `effective_setpoints`.
 - Determine DAY/NIGHT mode by matching the timestamp against `schedules` rows (`location`, `cluster`, `mode`, `enabled`, `start_time`, `end_time`, optional `day_of_week`). Use `tp.time::time` comparisons so overnight ranges are handled correctly.
 - If no DAY schedule matches, fall back to NIGHT setpoints.
 - Only `DAY` and `NIGHT` modes are considered; legacy `NULL`/`TRANSITION` values are ignored.
@@ -106,7 +91,7 @@ For photoperiod chart overlays (DAY/NIGHT shading):
 - Moon-authority modes (`drying`, `sleep`) suppress the DAY band and show NIGHT for the full 24h. The SQL list `('drying', 'sleep')` must stay aligned with `Infrastructure/shared/room_light_authority.py` (`MOON_AUTHORITY_MODE_NAMES`).
 - Before the first `mode_transition_history` row for a room/cluster, overlays use schedule only.
 
-Room light intensity curves in Grafana come from `effective_setpoints.effective_light_intensity`, not from Redis `light:*` keys (those are for the live UI). Always filter light-intensity queries by `device_name` (`light_1`, `light_2`, …). Flower/Veg sector dashboards include a "Light effective_setpoints — sample freshness" table showing seconds since the last row per light; use it to detect a fixture that stops logging.
+Room light intensity curves in the native monitoring dashboards come from `effective_setpoints.effective_light_intensity`, not from Redis `light:*` keys (those are for the live UI). Always filter light-intensity queries by `device_name` (`light_1`, `light_2`, …). The monitoring freshness coverage detects a fixture that stops logging `effective_setpoints`; the monitoring-service readiness/coverage gates surface missing or dirty source history instead of serving partial data.
 
 An optional operator panel can list actual DB device names with:
 
@@ -127,11 +112,11 @@ WHERE location = '$room'
 
 ## Redis vs Postgres
 
-Redis owns live/current state; Postgres owns history and configuration. Grafana current-value panels read Redis hashes populated by `redis_sync`; time-series graphs read the Iskra Postgres replica.
+Redis owns live/current state; Postgres owns history and configuration. The monitoring service reads Redis publications for current values and TimescaleDB (Pi primary) for history.
 
 ## Latest Values
 
-Use the `latest_sensor_values` view for one-row-per-sensor latest values. It is implemented as `LATERAL` index probes per sensor, not `DISTINCT ON` over the hypertable.
+The retained `latest_sensor_values` view uses LATERAL index probes per sensor, not `DISTINCT ON` over the hypertable. No in-repo service currently consumes it.
 
 ## Anti-Patterns
 
@@ -139,3 +124,13 @@ Use the `latest_sensor_values` view for one-row-per-sensor latest values. It is 
 - Use hourly aggregates for short ranges.
 - Drop min/max from rollups.
 - Rely on session timezone for exported data.
+
+## Database rename and grow-policy activation boundary
+
+Checked-in source defaults and operator examples target the lowercase
+`sj_cea` database. This is a source target only: it does not mean the deployed
+database has been renamed, external service settings have changed, or history
+retention has been activated. Production rename, configuration reconciliation,
+and lifecycle activation remain owner-authorized future actions. Source
+hypertables must not receive age-only compression or retention policies;
+grow/Veg lifecycle activation requires a read-only source-age policy preflight.

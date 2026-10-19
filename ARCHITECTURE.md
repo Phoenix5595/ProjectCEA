@@ -22,7 +22,12 @@ flowchart LR
   Automation --> Frontend
   Automation --> Events[Operational event stream]
   Events --> Frontend
-  Timescale --> Grafana[Grafana iskraprojectcea:3001]
+  Timescale --> MonitoringSvc[monitoring-service :8005]
+  Redis --> MonitoringSvc
+  MonitoringSvc --> Frontend
+  Timescale --> Archive[Grow archive service :8006]
+  Archive --> ZIPStore[Verified Nextcloud ZIPs]
+  Frontend --> Archive
 ```
 
 ## Service Inventory
@@ -36,6 +41,8 @@ flowchart LR
 | soil-sensor-service | soil-sensor-service.service | 8002 | Modbus soil → Redis + DB |
 | weather-service | weather-service.service | 8003 | YUL METAR → Redis + DB |
 | automation-service | automation-service.service | 8001 | Control loop, device registry, SPA host |
+| monitoring-service | monitoring-service.service | 8005 | Read-only monitoring API |
+| grow-archive-service | grow-archive-service.service | 8006 | Grow archive storage/lifecycle API |
 | redis-aof-check | redis-aof-check.service | n/a | Boot-time AOF check |
 
 Source: `Infrastructure/services.yaml`.
@@ -111,7 +118,33 @@ Sources of truth: `Infrastructure/shared/cluster_topology.py` (Python) and `Infr
 
 Redis holds live state and streams. `sensor:raw` is the main telemetry stream; `stream:control` carries effective-setpoint decisions. Both streams cap at 100,000 entries (`Infrastructure/shared/redis_keys.py`).
 
-TimescaleDB on the Pi primary holds history and configuration. It streams WAL to the Iskra standby (`iskraprojectcea`). Grafana on Iskra reads the local WAL replica; live current-value panels read Redis via `redis_sync`.
+TimescaleDB on the Pi primary holds history and configuration. The read-only `monitoring-service` (`:8005`) reads TimescaleDB for history and Redis for current publications; it never writes either. Its database target is configured by `MONITORING_POSTGRES_DSN`.
+
+## Grow/Veg Archive Lifecycle
+
+`grow-archive-service` (`grow-archive-service.service`, port 8006) exports
+source rows directly from TimescaleDB to verified Nextcloud ZIPs. Historical
+rows stay in their normal tables until the archive has been verified and its
+deletion cutoff arrives: a closed Flower grow uses its anniversary, Veg source
+rows expire after twelve months, and nongrow source rows use twelve-month
+expiry. Before deleting rows, the service rechecks the ZIP's row count and
+canonical digest against the source slice inside the deleting transaction;
+removed ranges are recorded for history-availability guards and derived
+history is refreshed.
+
+Raw archives contain every selected row from every defined source stream,
+including per-second measurements and device-control history. Graph buckets
+are additive and never substitute for raw rows. Native source compression is
+scheduled after three months. Export work runs in a dedicated low-priority,
+duty-cycle-limited worker; `ARCHIVE_CPU_DUTY_CYCLE` defaults to `0.25`.
+`ARCHIVE_LIFECYCLE_ENABLED` defaults to `false`, so exports and ZIP loads remain
+available while automatic source deletion stays disabled.
+
+Historical loads select verified ZIPs only. After deletion, corrections rebuild
+only the affected time window from the prior verified ZIP plus current source
+rows; room or identity reassignment of deleted rows is rejected. See
+[`Infrastructure/grow-archive-service/AGENTS.md`](Infrastructure/grow-archive-service/AGENTS.md)
+for module ownership, errors, disposable proof commands, and safety boundaries.
 
 The automation service also records sample-time MCP23017 state and event-time device assignments in the append-only `relay_observation` hypertable. A bounded asynchronous writer preserves observation order without blocking the control tick; stale, recovery, assignment, restart, and recording-gap boundaries remain explicit. The table starts at deployment with no physical-state backfill.
 
@@ -134,6 +167,18 @@ Source of truth for the contract, producers, and API is [`Infrastructure/automat
 | Durability | Alarm/error lifecycle is also journaled to existing `control_history` for 30 days |
 
 The log coexists with existing authorities: `GET /api/devices/control-snapshot`, the config event stream, monitoring-service history, and `control_history` remain the canonical sources for their existing consumers.
+
+## Monitoring Read Models
+
+Native monitoring history is served by `monitoring-service` from the read models defined by three canonical SQL sources:
+
+| File | Responsibility |
+|---|---|
+| `Infrastructure/database/monitoring_read_models.sql` | Base monitoring continuous aggregates (`monitoring_measurement_1min/5min`, `monitoring_effective_setpoints_1min/5min`, `monitoring_automation_state_1min/5min`), photoperiod coverage, and the monitoring read-model helpers |
+| `Infrastructure/database/monitoring_history_overview.sql` | Hour/day overview aggregates (`monitoring_measurement_1hour/1day`, `monitoring_light_intensity_1hour/1day`, `monitoring_requested_pid_1hour/1day`), coverage/watermark tables, and the relay include |
+| `Infrastructure/database/monitoring_relay_history_overview.sql` | Relay-duration hour source, daily aggregate, overview progress, and rebuild procedures (included by `monitoring_history_overview.sql`) |
+
+Overview graph buckets are the finest whole-hour width from 1 to 12 hours that fits the request's point budget (`monitoring_service/history_buckets.py`); partial edge buckets count against the budget. Production activation of these read models and their policies remains separately owner-authorized; nothing in this document implies a live database change.
 
 ## Local Verification
 

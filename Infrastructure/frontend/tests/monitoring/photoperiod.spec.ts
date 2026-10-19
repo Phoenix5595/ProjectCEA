@@ -21,7 +21,7 @@
  * 6. zero origin violations and unchanged chart/page geometry throughout.
  *
  * The guarded fixture origin is the only permitted request origin
- * (`describeViolation`); no production, external, or Grafana traffic occurs.
+ * (`describeViolation`); no production, external, or out-of-origin traffic occurs.
  */
 import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test'
 
@@ -148,7 +148,6 @@ function trackViolations(page: Page): string[] {
   const violations: string[] = []
   page.on('request', request => {
     const url = request.url()
-    if (url.includes('/grafana/')) violations.push(`grafana: ${url}`)
     const violation = describeViolation(url)
     if (violation !== null) violations.push(`${violation}: ${url}`)
   })

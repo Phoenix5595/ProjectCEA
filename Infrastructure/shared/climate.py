@@ -28,7 +28,7 @@ The two functions differ only in units for the saturation pressure base
 (``calculate_rh`` returns RH in %, derived from hPa-scaled e_s; ``calculate_vpd``
 returns VPD in kPa, derived from kPa-scaled e_s). The legacy code split them
 this way and both sets of unit conventions are baked into downstream consumers
-(Grafana dashboards, automation thresholds), so we preserve the split here
+(monitoring dashboards, automation thresholds), so we preserve the split here
 rather than refactor the calling sides too.
 """
 

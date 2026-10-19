@@ -173,6 +173,34 @@ describe('DashboardCalendarInspector selection flow', () => {
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
   })
 
+  it('shows local-pending, confirmed, unavailable and conflict sync states in event details', async () => {
+    const user = userEvent.setup()
+    const events = [
+      makeEvent({ id: 'pending', title: 'Pending save', sync_status: 'pending_push' }),
+      makeEvent({ id: 'confirmed', title: 'Confirmed save', sync_status: 'synced', last_synced_at: '2026-10-14T12:00:00Z' }),
+      makeEvent({ id: 'failed', title: 'Unavailable save', sync_status: 'error', sync_error_code: 'calendar_auth_failed' }),
+      makeEvent({ id: 'conflict', title: 'Conflict save', sync_status: 'conflict', sync_error_code: 'calendar_remote_conflict' }),
+    ]
+    renderInspector({
+      events,
+      selectedDate: new Date('2026-09-21T16:00:00Z'),
+      selectedDateEvents: events,
+    })
+
+    await user.click(screen.getByRole('button', { name: /Pending save/ }))
+    expect(screen.getByText('Saved locally—awaiting Nextcloud')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Back|Close/i }))
+    await user.click(screen.getByRole('button', { name: /Confirmed save/ }))
+    expect(screen.getByText(/Confirmed by Nextcloud/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Back|Close/i }))
+    await user.click(screen.getByRole('button', { name: /Unavailable save/ }))
+    expect(screen.getByText(/Nextcloud unavailable · calendar_auth_failed/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Back|Close/i }))
+    await user.click(screen.getByRole('button', { name: 'All 4 events' }))
+    await user.click(screen.getByRole('button', { name: /Conflict save/ }))
+    expect(screen.getByText(/Nextcloud conflict · calendar_remote_conflict/)).toBeInTheDocument()
+  })
+
   it('resets to the matching date view when selectedDate changes', () => {
     const events = [makeEvent({ title: 'Top dress', start: '2026-09-22' })]
     const { rerender } = render(

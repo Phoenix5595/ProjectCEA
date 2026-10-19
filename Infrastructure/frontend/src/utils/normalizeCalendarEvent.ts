@@ -5,6 +5,8 @@ export function normalizeCalendarEvent(raw: Record<string, unknown>): CalendarEv
   const start = String(raw.start ?? raw.start_date ?? '')
   const endRaw = raw.end ?? raw.end_date
   const growPlanIdRaw = raw.grow_plan_id ?? raw.growPlanId
+  const syncStatus = raw.sync_status
+  const allowedSyncStatuses = ['pending_push', 'pending_delete', 'synced', 'error', 'conflict']
   return {
     id: String(raw.id ?? ''),
     source: (raw.source as CalendarEventDto['source']) ?? 'manual',
@@ -19,6 +21,13 @@ export function normalizeCalendarEvent(raw: Record<string, unknown>): CalendarEv
     numericId: typeof raw.numericId === 'number' ? raw.numericId : (raw.id as number | undefined),
     // Only the authoritative top-level UUID establishes plan membership.
     growPlanId: growPlanIdRaw != null ? String(growPlanIdRaw) : undefined,
+    sync_status:
+      typeof syncStatus === 'string' && allowedSyncStatuses.includes(syncStatus)
+        ? (syncStatus as CalendarEventDto['sync_status'])
+        : undefined,
+    sync_error_code: raw.sync_error_code != null ? String(raw.sync_error_code) : undefined,
+    local_revision: typeof raw.local_revision === 'number' ? raw.local_revision : undefined,
+    last_synced_at: raw.last_synced_at != null ? String(raw.last_synced_at) : undefined,
     notes: raw.notes != null && String(raw.notes).trim() ? String(raw.notes) : undefined,
     metadata:
       raw.metadata && typeof raw.metadata === 'object'

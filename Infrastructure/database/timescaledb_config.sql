@@ -1,5 +1,5 @@
 -- TimescaleDB Configuration Optimizations for CEA Sensor Data
--- These settings optimize PostgreSQL for time-series workloads
+-- Source database target: sj_cea (deployment rename remains owner-authorized).
 
 -- Note: Some settings require PostgreSQL configuration file changes (postgresql.conf)
 -- Others can be set at the database or session level
@@ -32,7 +32,7 @@
 -- ============================================
 
 -- Set default statistics target for better query planning
-ALTER DATABASE cea_sensors SET default_statistics_target = 100;
+ALTER DATABASE sj_cea SET default_statistics_target = 100;
 
 -- ============================================
 -- Recommended postgresql.conf settings
@@ -60,26 +60,6 @@ ALTER DATABASE cea_sensors SET default_statistics_target = 100;
 -- After making changes, restart PostgreSQL:
 -- sudo systemctl restart postgresql
 --
--- ============================================
--- Grafana Data Source Connection Settings
--- ============================================
---
--- In Grafana, when configuring the PostgreSQL data source:
---
--- Connection:
---   Host: localhost:5432
---   Database: cea_sensors
---   User: cea_user
---   Password: [your password]
---   SSL Mode: disable
---   TimescaleDB: Enable (checkbox)
---
--- Connection limits:
---   Max open: 100
---   Max idle: 100
---   Max lifetime: 14400 (4 hours)
---
--- These settings allow Grafana to maintain a connection pool for better performance.
 
 -- ============================================
 -- Verify current settings

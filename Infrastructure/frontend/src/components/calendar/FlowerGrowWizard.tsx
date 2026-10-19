@@ -209,13 +209,14 @@ export default function FlowerGrowWizard({ open, onClose, onCreated }: FlowerGro
           )}
           <label>
             Bed (w)
-            <input
-              type="number"
-              min={1}
-              className="w-full px-1 py-0.5 rounded border border-border-default bg-surface-secondary"
+            <select
               value={bedWeeks}
               onChange={e => setBedWeeks(Number(e.target.value))}
-            />
+              className="w-full px-1 py-0.5 rounded border border-border-default bg-surface-secondary"
+            >
+              <option value={2}>2 weeks</option>
+              <option value={3}>3 weeks</option>
+            </select>
           </label>
           <label>
             Stretch (d)

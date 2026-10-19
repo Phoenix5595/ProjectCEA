@@ -12,8 +12,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Root
-         * @description Root endpoint.
+         * Serve Frontend
+         * @description Serve frontend index.html.
          */
         get: operations["get_"];
         put?: never;
@@ -92,6 +92,159 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/archives": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Archives */
+        get: operations["get_api_archives"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/archives/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Archive Job */
+        get: operations["get_api_archives_jobs_{job_id}"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/archives/jobs/{job_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Archive Job */
+        post: operations["post_api_archives_jobs_{job_id}_retry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/archives/loads/{load_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Release Archive Load */
+        delete: operations["delete_api_archives_loads_{load_id}"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/archives/{dataset_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Archive Detail */
+        get: operations["get_api_archives_{dataset_id}"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/archives/{dataset_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download Archive */
+        get: operations["get_api_archives_{dataset_id}_download"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/archives/{dataset_id}/exports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Export Archive */
+        post: operations["post_api_archives_{dataset_id}_exports"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/archives/{dataset_id}/graph": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Archive Graph */
+        get: operations["get_api_archives_{dataset_id}_graph"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/archives/{dataset_id}/loads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Load Archive */
+        post: operations["post_api_archives_{dataset_id}_loads"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/calendar/current-run": {
         parameters: {
             query?: never;
@@ -149,6 +302,23 @@ export interface paths {
         patch: operations["patch_api_calendar_events_{event_id}"];
         trace?: never;
     };
+    "/api/calendar/events/{event_id}/grow-association": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Associate Grow Phase */
+        post: operations["post_api_calendar_events_{event_id}_grow-association"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/calendar/flower-mode-transitions": {
         parameters: {
             query?: never;
@@ -196,6 +366,74 @@ export interface paths {
         post?: never;
         /** Delete Grow Plan */
         delete: operations["delete_api_calendar_grow-plans_{grow_plan_id}"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/calendar/grow-plans/{grow_plan_id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Close Grow */
+        post: operations["post_api_calendar_grow-plans_{grow_plan_id}_close"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/calendar/grow-plans/{grow_plan_id}/close-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Preview Grow Close */
+        get: operations["get_api_calendar_grow-plans_{grow_plan_id}_close-preview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/calendar/grow-plans/{grow_plan_id}/lifecycle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Grow Lifecycle */
+        get: operations["get_api_calendar_grow-plans_{grow_plan_id}_lifecycle"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/calendar/grow-plans/{grow_plan_id}/reopen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reopen Grow */
+        post: operations["post_api_calendar_grow-plans_{grow_plan_id}_reopen"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -265,6 +503,40 @@ export interface paths {
         put?: never;
         /** Test Sync Connection */
         post: operations["post_api_calendar_sync_connections_test"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/calendar/sync/connections/{connection_id}/mirror-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Mirror Preview */
+        get: operations["get_api_calendar_sync_connections_{connection_id}_mirror-preview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/calendar/sync/connections/{connection_id}/reconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reconnect And Mirror */
+        post: operations["post_api_calendar_sync_connections_{connection_id}_reconnect"];
         delete?: never;
         options?: never;
         head?: never;
@@ -535,7 +807,7 @@ export interface paths {
         };
         /**
          * Get Light Schedule Health
-         * @description Per-light schedule resolution and last Grafana DB sample age (effective_setpoints).
+         * @description Per-light schedule resolution and last DB sample age (effective_setpoints).
          */
         get: operations["get_api_debug_light-schedule-health_{location}_{cluster}"];
         put?: never;
@@ -1473,7 +1745,7 @@ export interface paths {
          * Get Schedule State
          * @description Get schedule state from database.
          *
-         *     This endpoint is used by Grafana to query current schedule state.
+         *     This endpoint is used by the native monitoring UI to query current schedule state.
          *
          *     Args:
          *         location: Location name (e.g., 'Veg Room', 'Flower Room')
@@ -1722,6 +1994,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/favicon.ico": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Favicon Ico
+         * @description Serve favicon.ico (browser default request).
+         */
+        get: operations["get_favicon.ico"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        /**
+         * Favicon Ico
+         * @description Serve favicon.ico (browser default request).
+         */
+        head: operations["head_favicon.ico"];
+        patch?: never;
+        trace?: never;
+    };
+    "/favicon.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Favicon Png
+         * @description Serve favicon.png.
+         */
+        get: operations["get_favicon.png"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        /**
+         * Favicon Png
+         * @description Serve favicon.png.
+         */
+        head: operations["head_favicon.png"];
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -1741,6 +2061,30 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/logo.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Logo
+         * @description Serve logo.png favicon.
+         */
+        get: operations["get_logo.png"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        /**
+         * Logo
+         * @description Serve logo.png favicon.
+         */
+        head: operations["head_logo.png"];
         patch?: never;
         trace?: never;
     };
@@ -1768,6 +2112,26 @@ export interface paths {
          *     ``check_redis_async_client``.
          */
         get: operations["get_ready"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/{path}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Serve Frontend Routes
+         * @description Serve frontend routes (SPA fallback).
+         */
+        get: operations["get_{path}"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1881,6 +2245,300 @@ export interface components {
             /** State */
             state: string;
         };
+        /** ArchiveAvailability */
+        ArchiveAvailability: {
+            /** Aggregates Refreshed */
+            aggregates_refreshed: boolean;
+            /**
+             * End At
+             * Format: date-time
+             */
+            end_at: string;
+            /** Room */
+            room?: string | null;
+            /** Source Rows Removed */
+            source_rows_removed: boolean;
+            /** Source Table */
+            source_table: string;
+            /**
+             * Start At
+             * Format: date-time
+             */
+            start_at: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "captured" | "expired";
+        };
+        /** ArchiveContainer */
+        ArchiveContainer: {
+            /**
+             * Dataset Id
+             * Format: uuid
+             */
+            dataset_id: string;
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "veg_year";
+            /** Remote Download Url */
+            remote_download_url?: string | null;
+            /** Revision */
+            revision: number;
+        };
+        /** ArchiveDetail */
+        ArchiveDetail: {
+            /** Anniversary At */
+            anniversary_at?: string | null;
+            /**
+             * Availability
+             * @default []
+             */
+            availability: components["schemas"]["ArchiveAvailability"][];
+            container?: components["schemas"]["ArchiveContainer"] | null;
+            /**
+             * Coverage
+             * @enum {string}
+             */
+            coverage: "complete" | "gapped" | "unknown";
+            /**
+             * Dataset Id
+             * Format: uuid
+             */
+            dataset_id: string;
+            /** Download Label */
+            download_label?: string | null;
+            /** End */
+            end?: string | null;
+            /**
+             * Export Status
+             * @enum {string}
+             */
+            export_status: "not_exported" | "pending" | "verified" | "blocked";
+            /**
+             * Gap Intervals
+             * @default []
+             */
+            gap_intervals: components["schemas"]["ArchiveGap"][];
+            /**
+             * Identity Snapshots
+             * @default []
+             */
+            identity_snapshots: Record<string, never>[];
+            job?: components["schemas"]["ArchiveJobSummary"] | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "grow" | "veg_quarter" | "veg_year";
+            /** Lifecycle State */
+            lifecycle_state?: ("open" | "closed") | null;
+            /**
+             * Local Tier
+             * @enum {string}
+             */
+            local_tier: "hot" | "zip_cache" | "remote_zip" | "none";
+            /** Name */
+            name: string;
+            /**
+             * Phases
+             * @default []
+             */
+            phases: components["schemas"]["GrowPhase"][];
+            /** Published Revision */
+            published_revision?: number | null;
+            /** Remote Download Url */
+            remote_download_url?: string | null;
+            /** Revision */
+            revision: number;
+            /** Room */
+            room: string;
+            schema: components["schemas"]["ArchiveSchema"];
+            /** Start */
+            start?: string | null;
+            /** State */
+            state: string;
+            /** Zip Bytes */
+            zip_bytes?: number | null;
+        };
+        /** ArchiveEntry */
+        ArchiveEntry: {
+            /** Anniversary At */
+            anniversary_at?: string | null;
+            container?: components["schemas"]["ArchiveContainer"] | null;
+            /**
+             * Coverage
+             * @enum {string}
+             */
+            coverage: "complete" | "gapped" | "unknown";
+            /**
+             * Dataset Id
+             * Format: uuid
+             */
+            dataset_id: string;
+            /** Download Label */
+            download_label?: string | null;
+            /** End */
+            end?: string | null;
+            /**
+             * Export Status
+             * @enum {string}
+             */
+            export_status: "not_exported" | "pending" | "verified" | "blocked";
+            /**
+             * Gap Intervals
+             * @default []
+             */
+            gap_intervals: components["schemas"]["ArchiveGap"][];
+            job?: components["schemas"]["ArchiveJobSummary"] | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "grow" | "veg_quarter" | "veg_year";
+            /** Lifecycle State */
+            lifecycle_state?: ("open" | "closed") | null;
+            /**
+             * Local Tier
+             * @enum {string}
+             */
+            local_tier: "hot" | "zip_cache" | "remote_zip" | "none";
+            /** Name */
+            name: string;
+            /** Published Revision */
+            published_revision?: number | null;
+            /** Remote Download Url */
+            remote_download_url?: string | null;
+            /** Revision */
+            revision: number;
+            /** Room */
+            room: string;
+            /** Start */
+            start?: string | null;
+            /** State */
+            state: string;
+            /** Zip Bytes */
+            zip_bytes?: number | null;
+        };
+        /** ArchiveGap */
+        ArchiveGap: {
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /** Reason */
+            reason: string;
+            /**
+             * Source Tables
+             * @default []
+             */
+            source_tables: string[];
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+        };
+        /** ArchiveGraphResponse */
+        ArchiveGraphResponse: {
+            archive: components["schemas"]["ArchiveSelectionMeta"];
+            /** Lights */
+            lights: components["schemas"]["HistoryOverviewControlSeries"][];
+            /** Photoperiod */
+            photoperiod: components["schemas"]["PhotoperiodFact"][];
+            /** Photoperiod Coverage */
+            photoperiod_coverage: components["schemas"]["PhotoperiodCoverageFact"][];
+            /** Sensors */
+            sensors: components["schemas"]["MonitoringResponse"] | components["schemas"]["HistoryOverviewSensorResponse"];
+            /**
+             * Tier
+             * @enum {string}
+             */
+            tier: "detailed" | "overview";
+        };
+        /** ArchiveJobSummary */
+        ArchiveJobSummary: {
+            /** Attempts */
+            attempts: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Dataset Id
+             * Format: uuid
+             */
+            dataset_id: string;
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "export" | "annual_merge" | "load" | "expire" | "artifact_cleanup";
+            /** Last Error Code */
+            last_error_code?: string | null;
+            /**
+             * Next Attempt At
+             * Format: date-time
+             */
+            next_attempt_at: string;
+            /** Progress */
+            progress?: Record<string, never>;
+            /** Requested Revision */
+            requested_revision: number;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "pending" | "running" | "succeeded" | "blocked" | "failed";
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** ArchiveList */
+        ArchiveList: {
+            /** Items */
+            items: components["schemas"]["ArchiveEntry"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+        };
+        /** ArchiveSchema */
+        ArchiveSchema: {
+            /** Graph Schema */
+            graph_schema?: Record<string, never>;
+            /** Source Schema */
+            source_schema?: Record<string, never>;
+        };
+        /** ArchiveSelectionMeta */
+        ArchiveSelectionMeta: {
+            /**
+             * Coverage
+             * @enum {string}
+             */
+            coverage: "complete" | "gapped" | "unknown";
+            /**
+             * Dataset Id
+             * Format: uuid
+             */
+            dataset_id: string;
+            /**
+             * Gaps
+             * @default []
+             */
+            gaps: components["schemas"]["ArchiveGap"][];
+            /** Revision */
+            revision: number;
+        };
         /**
          * AutoCommand
          * @description Release an assigned device back to automatic control.
@@ -1939,6 +2597,8 @@ export interface components {
              * @default planned_task
              */
             event_type: string;
+            /** Grow Plan Id */
+            grow_plan_id?: string | null;
             /** Location */
             location: string;
             /** Metadata */
@@ -1961,6 +2621,8 @@ export interface components {
             end_date?: string | null;
             /** Event Type */
             event_type?: string | null;
+            /** Grow Plan Id */
+            grow_plan_id?: string | null;
             /** Location */
             location?: string | null;
             /** Metadata */
@@ -2255,6 +2917,41 @@ export interface components {
          * @enum {string}
          */
         EventSource: "automation" | "api" | "operator" | "system" | "transport";
+        /** ExpectedRevision */
+        ExpectedRevision: {
+            /** Expected Revision */
+            expected_revision: number;
+        };
+        /** ExportQueued */
+        ExportQueued: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /**
+             * State
+             * @default pending
+             * @constant
+             */
+            state: "pending";
+        };
+        /** ExportReady */
+        ExportReady: {
+            /**
+             * Artifact Id
+             * Format: uuid
+             */
+            artifact_id: string;
+            /** Revision */
+            revision: number;
+            /**
+             * State
+             * @default verified
+             * @constant
+             */
+            state: "verified";
+        };
         /**
          * FailsafeSnapshotResponse
          * @description Active room failsafe authority included in the control read model.
@@ -2273,6 +2970,22 @@ export interface components {
             before?: string | number | boolean | null;
             /** Key */
             key: string;
+        };
+        /**
+         * FixedHistoryBucket
+         * @description An epoch-aligned whole-hour overview bucket.
+         */
+        FixedHistoryBucket: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "fixed";
+            /**
+             * Seconds
+             * @enum {integer}
+             */
+            seconds: 3600 | 7200 | 10800 | 14400 | 18000 | 21600 | 25200 | 28800 | 32400 | 36000 | 39600 | 43200;
         };
         /** FlowerCalendarModeTransitionUpdate */
         FlowerCalendarModeTransitionUpdate: {
@@ -2360,6 +3073,96 @@ export interface components {
             /** Week Start */
             week_start?: number | null;
         };
+        /** GrowAssociationRequest */
+        GrowAssociationRequest: {
+            /** Expected Revision */
+            expected_revision: number;
+            /**
+             * Grow Plan Id
+             * Format: uuid
+             */
+            grow_plan_id: string;
+        };
+        /** GrowClosePreviewResponse */
+        GrowClosePreviewResponse: {
+            /** Affected Counts */
+            affected_counts: Record<string, never>;
+            /** Conflicts */
+            conflicts: Record<string, never>[];
+            /** Drying End */
+            drying_end: string | null;
+            /** Gaps */
+            gaps: Record<string, never>[];
+            lifecycle: components["schemas"]["GrowLifecycleResponse"];
+            /** Newly Included */
+            newly_included: Record<string, never>;
+            /** Phase Windows */
+            phase_windows: Record<string, never>[];
+            /** Released */
+            released: Record<string, never>;
+            /** Revision */
+            revision: number;
+            /** Scope Unresolved */
+            scope_unresolved: Record<string, never>[];
+            /** Unavailable */
+            unavailable: Record<string, never>[];
+        };
+        /** GrowLifecycleResponse */
+        GrowLifecycleResponse: {
+            /** Anniversary At */
+            anniversary_at: string | null;
+            /** Calendar Revision */
+            calendar_revision: number;
+            /** Closed At */
+            closed_at: string | null;
+            /** Crop Batch Id */
+            crop_batch_id: number;
+            /** Data Revision */
+            data_revision: number | null;
+            /** Dataset Id */
+            dataset_id: string | null;
+            /** First Closed At */
+            first_closed_at: string | null;
+            /**
+             * Grow Plan Id
+             * Format: uuid
+             */
+            grow_plan_id: string;
+            /** Original Drying End */
+            original_drying_end: string | null;
+            /** Published Revision */
+            published_revision: number | null;
+            /** State */
+            state: string;
+        };
+        /** GrowPhase */
+        GrowPhase: {
+            /**
+             * End At
+             * Format: date-time
+             */
+            end_at: string;
+            /** End Date */
+            end_date?: string | null;
+            /** Event Id */
+            event_id: number;
+            /** Phase Type */
+            phase_type: string;
+            /** Room */
+            room: string;
+            /**
+             * Start At
+             * Format: date-time
+             */
+            start_at: string;
+            /** Start Date */
+            start_date: string;
+        };
+        /** GrowRevisionRequest */
+        GrowRevisionRequest: {
+            /** Expected Revision */
+            expected_revision: number;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -2402,6 +3205,136 @@ export interface components {
             require_mcp?: boolean | null;
             /** Simulation */
             simulation?: boolean | null;
+        };
+        /**
+         * HistoryOverviewControlSeries
+         * @description One location-scoped control summary series keyed by recorded identity.
+         */
+        HistoryOverviewControlSeries: {
+            /** Cluster */
+            cluster: string;
+            /** Device Name */
+            device_name: string;
+            /** Location */
+            location: string;
+            /** Points */
+            points: components["schemas"]["HistoryOverviewPoint"][];
+        };
+        /**
+         * HistoryOverviewMetadata
+         * @description Common bounded-overview response metadata.
+         */
+        HistoryOverviewMetadata: {
+            /**
+             * All Aggregated
+             * @default true
+             * @constant
+             */
+            all_aggregated: true;
+            /** Bucket */
+            bucket: components["schemas"]["FixedHistoryBucket"];
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            range: components["schemas"]["HistoryOverviewRange"];
+            /** Requested Max Points */
+            requested_max_points: number;
+            room: components["schemas"]["RoomMetadata"];
+            /**
+             * Source Coverage
+             * @enum {string}
+             */
+            source_coverage: "ready" | "unavailable";
+        };
+        /**
+         * HistoryOverviewPoint
+         * @description One aligned overview bucket with nullable sampled statistics.
+         */
+        HistoryOverviewPoint: {
+            /** Average */
+            average?: number | null;
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /** Maximum */
+            maximum?: number | null;
+            /** Minimum */
+            minimum?: number | null;
+            /** Partial */
+            partial: boolean;
+            /** Sample Count */
+            sample_count: number;
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+        };
+        /**
+         * HistoryOverviewRange
+         * @description An aware-UTC half-open overview interval with no arbitrary maximum.
+         */
+        HistoryOverviewRange: {
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+        };
+        /**
+         * HistoryOverviewSensorResponse
+         * @description The bounded all-history sensor overview response.
+         */
+        HistoryOverviewSensorResponse: {
+            metadata: components["schemas"]["HistoryOverviewMetadata"];
+            /** Series */
+            series: components["schemas"]["HistoryOverviewSensorSeries"][];
+            /** Statistics */
+            statistics: components["schemas"]["HistoryOverviewSensorStatistics"][];
+        };
+        /**
+         * HistoryOverviewSensorSeries
+         * @description One named, node-scoped sensor overview series.
+         */
+        HistoryOverviewSensorSeries: {
+            node: components["schemas"]["Node"];
+            /** Points */
+            points: components["schemas"]["HistoryOverviewPoint"][];
+            /** Sensor */
+            sensor: string;
+            /** Unit */
+            unit: string;
+            unit_family: components["schemas"]["UnitFamily"];
+        };
+        /**
+         * HistoryOverviewSensorStatistics
+         * @description Nullable range statistics honoring zero- and single-sample boundaries.
+         */
+        HistoryOverviewSensorStatistics: {
+            /** Average */
+            average?: number | null;
+            /** Maximum */
+            maximum?: number | null;
+            /** Minimum */
+            minimum?: number | null;
+            node: components["schemas"]["Node"];
+            /** Sample Count */
+            sample_count: number;
+            /** Sensor */
+            sensor: string;
+            /** @default exact */
+            stddev_quality: components["schemas"]["StddevQuality"];
+            /** Stddev Samp */
+            stddev_samp?: number | null;
         };
         /**
          * IntensityControl
@@ -2581,6 +3514,47 @@ export interface components {
             /** Unit */
             unit: string;
         };
+        /** LoadQueued */
+        LoadQueued: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /**
+             * State
+             * @default pending
+             * @constant
+             */
+            state: "pending";
+        };
+        /** LoadReady */
+        LoadReady: {
+            /** Download Label */
+            download_label: string | null;
+            /**
+             * Load Id
+             * Format: uuid
+             */
+            load_id: string;
+            /** Remote Download Url */
+            remote_download_url: string | null;
+            /** Revision */
+            revision: number;
+            /**
+             * Source Kind
+             * @constant
+             */
+            source_kind: "zip";
+            /** Stale */
+            stale: boolean;
+            /**
+             * State
+             * @default ready
+             * @constant
+             */
+            state: "ready";
+        };
         /**
          * ManualOffCommand
          * @description Hold an assigned device safely OFF until released.
@@ -2715,6 +3689,51 @@ export interface components {
              */
             source: string;
         };
+        /**
+         * MonitoringMetadata
+         * @description Tier, range, generation, and topology details for a response.
+         */
+        MonitoringMetadata: {
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /** Interval Seconds */
+            interval_seconds?: number | null;
+            range: components["schemas"]["MonitoringRange"];
+            /** Requested Max Points */
+            requested_max_points?: number | null;
+            room: components["schemas"]["RoomMetadata"];
+            tier: components["schemas"]["Tier"];
+        };
+        /**
+         * MonitoringRange
+         * @description An aware-UTC half-open interval ``[start, end)``.
+         */
+        MonitoringRange: {
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+        };
+        /**
+         * MonitoringResponse
+         * @description The legacy-compatible range or statistics response.
+         */
+        MonitoringResponse: {
+            metadata: components["schemas"]["MonitoringMetadata"];
+            /** Series */
+            series: components["schemas"]["SensorSeries"][];
+            /** Statistics */
+            statistics: components["schemas"]["SensorStatistics"][];
+        };
         /** MutationPayload */
         MutationPayload: {
             /** Changes */
@@ -2727,6 +3746,12 @@ export interface components {
             /** Operation */
             operation: string;
         };
+        /**
+         * Node
+         * @description Canonical URL nodes used by monitored rooms.
+         * @enum {string}
+         */
+        Node: "front" | "back" | "main";
         /** NotesBody */
         NotesBody: {
             /** Content */
@@ -2887,6 +3912,42 @@ export interface components {
             mode_id?: number | null;
             /** Periods */
             periods: components["schemas"]["PeriodInput"][];
+            /** Submode Id */
+            submode_id?: number | null;
+        };
+        /** PhotoperiodCoverageFact */
+        PhotoperiodCoverageFact: {
+            /** Id */
+            id: number;
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            /** Reason */
+            reason: string;
+            /** Runtime Snapshot Version */
+            runtime_snapshot_version: number;
+            /** State */
+            state: string;
+        };
+        /** PhotoperiodFact */
+        PhotoperiodFact: {
+            /** Id */
+            id: number;
+            /** Mode Id */
+            mode_id?: number | null;
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            /** Phase */
+            phase: string;
+            /** Runtime Snapshot Version */
+            runtime_snapshot_version: number;
+            /** Source */
+            source: string;
             /** Submode Id */
             submode_id?: number | null;
         };
@@ -3085,6 +4146,21 @@ export interface components {
             window: components["schemas"]["UtcWindow"];
         };
         /**
+         * Room
+         * @description Rooms supported by the sensor monitoring API.
+         * @enum {string}
+         */
+        Room: "Flower Room" | "Veg Room";
+        /**
+         * RoomMetadata
+         * @description The canonical room and its ordered sensor nodes.
+         */
+        RoomMetadata: {
+            /** Nodes */
+            nodes: components["schemas"]["Node"][];
+            room: components["schemas"]["Room"];
+        };
+        /**
          * RoomMode
          * @description Room mode definition.
          */
@@ -3248,6 +4324,70 @@ export interface components {
             submode?: string | null;
         };
         /**
+         * SensorSeries
+         * @description One named, node-scoped sensor series.
+         */
+        SensorSeries: {
+            node: components["schemas"]["Node"];
+            /**
+             * Point Count
+             * @default 0
+             */
+            point_count: number;
+            /** Points */
+            points: components["schemas"]["SeriesPoint"][];
+            /**
+             * Sample Count Total
+             * @default 0
+             */
+            sample_count_total: number;
+            /** Sensor */
+            sensor: string;
+            /** Unit */
+            unit: string;
+            unit_family: components["schemas"]["UnitFamily"];
+        };
+        /**
+         * SensorStatistics
+         * @description Exact summary statistics for one sensor.
+         */
+        SensorStatistics: {
+            /** Average */
+            average: number;
+            /** Maximum */
+            maximum: number;
+            /** Minimum */
+            minimum: number;
+            node: components["schemas"]["Node"];
+            /** Sample Count */
+            sample_count: number;
+            /** Sensor */
+            sensor: string;
+            /** @default exact */
+            stddev_quality: components["schemas"]["StddevQuality"];
+            /** Stddev Samp */
+            stddev_samp: number;
+        };
+        /**
+         * SeriesPoint
+         * @description Average and envelope at one UTC timestamp.
+         */
+        SeriesPoint: {
+            /** Average */
+            average: number;
+            /** Maximum */
+            maximum: number;
+            /** Minimum */
+            minimum: number;
+            /** Sample Count */
+            sample_count: number;
+            /**
+             * Timestamp
+             * Format: date-time
+             */
+            timestamp: string;
+        };
+        /**
          * SetModeRequest
          * @description Request model for setting room mode.
          */
@@ -3264,6 +4404,12 @@ export interface components {
             /** Submode Name */
             submode_name?: string | null;
         };
+        /**
+         * StddevQuality
+         * @description How precisely the selected statistics source can report sample deviation.
+         * @enum {string}
+         */
+        StddevQuality: "exact" | "approximate";
         /**
          * StepTrajectorySegment
          * @description A finite value that holds throughout its UTC half-open interval.
@@ -3326,6 +4472,13 @@ export interface components {
             /** Username */
             username: string;
         };
+        /** SyncReconnectRequest */
+        SyncReconnectRequest: {
+            /** Backup Confirmed */
+            backup_confirmed: boolean;
+            /** Expected Generation */
+            expected_generation: number;
+        };
         /** SystemPayload */
         SystemPayload: {
             /** Component */
@@ -3358,6 +4511,12 @@ export interface components {
             /** Target Intensity */
             target_intensity: number;
         };
+        /**
+         * Tier
+         * @description Storage resolution selected from the request duration.
+         * @enum {string}
+         */
+        Tier: "raw" | "1min" | "5min";
         /**
          * TimedOnCommand
          * @description Turn an assigned device ON until its bounded expiry.
@@ -3592,6 +4751,12 @@ export interface components {
             unit: string;
         };
         /**
+         * UnitFamily
+         * @description Sensor unit families served to the monitoring UI.
+         * @enum {string}
+         */
+        UnitFamily: "celsius" | "percent" | "kpa" | "ppm" | "hpa" | "mm";
+        /**
          * UpdateParametersRequest
          * @description Request model for updating mode parameters (photoperiod/light only).
          */
@@ -3760,6 +4925,318 @@ export interface operations {
             };
         };
     };
+    get_api_archives: {
+        parameters: {
+            query: {
+                room: string;
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchiveList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "get_api_archives_jobs_{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchiveJobSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "post_api_archives_jobs_{job_id}_retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchiveJobSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "delete_api_archives_loads_{load_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                load_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "get_api_archives_{dataset_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchiveDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "get_api_archives_{dataset_id}_download": {
+        parameters: {
+            query: {
+                load_id: string;
+            };
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "post_api_archives_{dataset_id}_exports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExpectedRevision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportReady"];
+                };
+            };
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportQueued"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "get_api_archives_{dataset_id}_graph": {
+        parameters: {
+            query: {
+                load_id: string;
+                start: string;
+                end: string;
+                max_points?: number;
+            };
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchiveGraphResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "post_api_archives_{dataset_id}_loads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExpectedRevision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoadReady"];
+                };
+            };
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoadQueued"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     "get_api_calendar_current-run": {
         parameters: {
             query: {
@@ -3907,9 +5384,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": Record<string, never>;
                 };
             };
             /** @description Validation Error */
@@ -3935,6 +5410,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["CalendarEventUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "post_api_calendar_events_{event_id}_grow-association": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GrowAssociationRequest"];
             };
         };
         responses: {
@@ -4066,6 +5576,138 @@ export interface operations {
                 };
                 content: {
                     "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "post_api_calendar_grow-plans_{grow_plan_id}_close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                grow_plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GrowRevisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrowLifecycleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "get_api_calendar_grow-plans_{grow_plan_id}_close-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                grow_plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrowClosePreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "get_api_calendar_grow-plans_{grow_plan_id}_lifecycle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                grow_plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrowLifecycleResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "post_api_calendar_grow-plans_{grow_plan_id}_reopen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                grow_plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GrowRevisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrowLifecycleResponse"];
                 };
             };
             /** @description Validation Error */
@@ -4230,6 +5872,72 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "get_api_calendar_sync_connections_{connection_id}_mirror-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "post_api_calendar_sync_connections_{connection_id}_reconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncReconnectRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
                 };
             };
             /** @description Validation Error */
@@ -6741,6 +8449,86 @@ export interface operations {
             };
         };
     };
+    "get_favicon.ico": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    "head_favicon.ico": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    "get_favicon.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    "head_favicon.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     get_health: {
         parameters: {
             query?: never;
@@ -6761,6 +8549,46 @@ export interface operations {
             };
         };
     };
+    "get_logo.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    "head_logo.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     get_ready: {
         parameters: {
             query?: never;
@@ -6777,6 +8605,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    "get_{path}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                path: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

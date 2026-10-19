@@ -32,6 +32,19 @@ It may read TimescaleDB and Redis publication data; it never writes either.
 - Reuse `shared.health` rather than creating custom connectivity probes.
 - Keep operational configuration in `MONITORING_*` environment variables.
 
+Ordinary sensor/overview/control/relay history scopes are carried by
+`shared.history_availability.local_history_scope`. `ReadOnlyDatabase.fetch`
+checks `require_local_history` inside the same repeatable-read transaction
+as the requested statement. Source ranges removed after verified archive
+deletion are recorded in `archive_availability`; these reads return 409 with
+dataset IDs. Expired nongrow ranges return 410. Current Redis publications
+and latest/predecessor control snapshots never load archives.
+
+Native and archive overview readers share `shared.history_summary.SummaryState`.
+Merge NUMERIC count/sum/squared-sum/extrema before final float presentation;
+never average averages or round source contributions through Python floats.
+The zero-sample nullable and one-sample zero-deviation contracts are unchanged.
+
 ## Local checks
 
 ```bash

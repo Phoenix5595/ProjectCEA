@@ -116,6 +116,16 @@
 	}
 
 	# ------------------------------------------------------------------
+	# Grow archive service - port 8006. Archive log, explicit loads,
+	# exports and streaming downloads; API-key enforced by the service
+	# itself (same X-API-Key header as the other SPA consumers).
+	# ------------------------------------------------------------------
+	@archive_api path /api/archives /api/archives/*
+	handle @archive_api {
+		reverse_proxy 127.0.0.1:8006
+	}
+
+	# ------------------------------------------------------------------
 	# Fallback: automation service (API + SPA static assets at /).
 	# ------------------------------------------------------------------
 	handle {

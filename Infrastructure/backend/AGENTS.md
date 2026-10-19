@@ -24,12 +24,26 @@ The backend historical endpoint uses its own ladder in `app/repositories/sensor_
 | Range | Tier |
 |---|---|
 | < 2 h | `measurement` raw |
-| >= 2 h | `measurement_1min` |
-| >= 24 h | `measurement_5min` |
-| >= 7 d | `measurement_hourly` |
-| >= 30 d | `measurement_daily` |
+| >= 2 h | `monitoring_measurement_1min` |
+| >= 24 h | `monitoring_measurement_5min` |
+| >= 7 d | `monitoring_measurement_1hour` |
+| >= 30 d | `monitoring_measurement_1day` |
 
-Grafana uses the separate `get_sensor_data_optimized` ladder in `Infrastructure/database/grafana_performance_migration.sql`. Do not conflate the two consumers.
+The native views are materialized-only. Sensor and soil history read a view
+bucket only below that CAGG's watermark with no overlapping pending
+invalidation in its refresh chain; other buckets (live tail, late corrections,
+never-refreshed ranges) are recomputed from raw `measurement` with the same
+`sum(value::NUMERIC)/count(value)` statistic. Proof:
+`test-grow-data-lifecycle.sh --case native-readers`.
+
+The monitoring service uses its own duration ladder (`compute_tier`: raw ≤1 h, `monitoring_measurement_1min` ≤6 h, `monitoring_measurement_5min` above) in `Infrastructure/monitoring-service/monitoring_service/sensor_models.py`. Do not conflate the two consumers.
+
+`shared/history_availability.py` guards sensor and soil history within the
+same repeatable-read transaction as the range query. Ranges removed after a
+verified archive deletion are recorded in `archive_availability` and return
+409 `archive_selection_required`; expired nongrow ranges return 410
+`history_expired`. Closure alone does not block retained source rows. Live
+Redis and operational latest/predecessor reads never load archives.
 
 ## Native monitoring ownership
 

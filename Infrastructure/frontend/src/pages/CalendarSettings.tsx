@@ -12,23 +12,35 @@ import {
 
 import { apiClient } from '../services/api'
 import { extractErrorMessage } from '../utils/errors'
+import type { CalendarConnection, CalendarMirrorPreview } from '../types/calendar'
 
 export default function CalendarSettings() {
-  const [connection, setConnection] = useState<Record<string, unknown> | null>(null)
+  const [connection, setConnection] = useState<CalendarConnection | null>(null)
   const [caldavBaseUrl, setCaldavBaseUrl] = useState('')
   const [username, setUsername] = useState('')
   const [appPassword, setAppPassword] = useState('')
   const [targetCalendarUrl, setTargetCalendarUrl] = useState('')
   const [calendars, setCalendars] = useState<Array<{ name: string; url: string }>>([])
   const [syncing, setSyncing] = useState(false)
+  const [mirrorPreview, setMirrorPreview] = useState<CalendarMirrorPreview | null>(null)
+  const [backupConfirmed, setBackupConfirmed] = useState(false)
+  const [connectionValidated, setConnectionValidated] = useState(false)
+  const [reconnecting, setReconnecting] = useState(false)
   const [flowerCalendarTransitionsEnabled, setFlowerCalendarTransitionsEnabled] = useState(true)
   const [savingFlowerCalendarTransitions, setSavingFlowerCalendarTransitions] = useState(false)
 
   useEffect(() => {
     void apiClient
       .getCalendarSyncConnection()
-      .then(setConnection)
-      .catch(() => setConnection(null))
+      .then(row => {
+        setConnection(row)
+        if (row) {
+          setCaldavBaseUrl(row.caldav_base_url)
+          setUsername(row.account_email ?? '')
+          setTargetCalendarUrl(row.target_calendar_url)
+        }
+      })
+      .catch(error => toast.error(extractErrorMessage(error, 'Calendar settings unavailable')))
     void apiClient
       .getFlowerCalendarModeTransitions()
       .then(setting => setFlowerCalendarTransitionsEnabled(setting.enabled))
@@ -58,13 +70,17 @@ export default function CalendarSettings() {
         app_password: appPassword,
       })
       setCalendars(list)
+      setTargetCalendarUrl(list.find(calendar => calendar.name === 'Growing')?.url ?? '')
+      setConnectionValidated(true)
       toast.success(`Found ${list.length} calendar(s)`)
     } catch {
+      setConnectionValidated(false)
       toast.error('Connection test failed')
     }
   }
 
   const handleSave = async () => {
+    if (!connectionValidated || !targetCalendarUrl) return
     try {
       const row = await apiClient.saveCalendarSyncConnection({
         caldav_base_url: caldavBaseUrl,
@@ -73,9 +89,40 @@ export default function CalendarSettings() {
         target_calendar_url: targetCalendarUrl,
       })
       setConnection(row)
-      toast.success('Nextcloud connected')
+      setMirrorPreview(null)
+      setAppPassword('')
+      setConnectionValidated(false)
+      toast.success('Credentials saved securely—reconnect to mirror local events')
     } catch {
       toast.error('Failed to save connection')
+    }
+  }
+
+  const handleMirrorPreview = async () => {
+    if (!connection) return
+    try {
+      setMirrorPreview(await apiClient.previewCalendarReconnect(connection.id))
+      setBackupConfirmed(false)
+    } catch {
+      toast.error('Unable to preview Calendar mirror')
+    }
+  }
+
+  const handleReconnect = async () => {
+    if (!mirrorPreview || !backupConfirmed) return
+    setReconnecting(true)
+    try {
+      const result = await apiClient.reconnectCalendar(
+        mirrorPreview.connection_id,
+        mirrorPreview.generation
+      )
+      toast.success(`Mirror: ${result.sync.confirmed.length} confirmed, ${result.sync.pending.length} pending, ${result.sync.errors.length} errors`)
+      setConnection(current => current ? { ...current, enabled: true, generation: result.generation } : current)
+      setMirrorPreview(null)
+    } catch {
+      toast.error('Reconnect failed; local events remain saved')
+    } finally {
+      setReconnecting(false)
     }
   }
 
@@ -114,7 +161,7 @@ export default function CalendarSettings() {
       </div>
       {connection && (
         <p className="text-sm text-text-secondary mb-4">
-          Connected: {String(connection.display_name ?? connection.account_email ?? 'Nextcloud')}
+          {connection.enabled ? 'Connected: ' : 'Saved—awaiting reconnect: '}{String(connection.display_name ?? connection.account_email ?? 'Nextcloud')}
           {connection.last_sync_at ? ` · Last sync ${String(connection.last_sync_at)}` : null}
         </p>
       )}
@@ -123,20 +170,20 @@ export default function CalendarSettings() {
           placeholder="CalDAV base URL"
           aria-label="CalDAV base URL"
           value={caldavBaseUrl}
-          onChange={e => setCaldavBaseUrl(e.target.value)}
+          onChange={e => { setCaldavBaseUrl(e.target.value); setConnectionValidated(false) }}
         />
         <Input
           placeholder="Username"
           aria-label="Username"
           value={username}
-          onChange={e => setUsername(e.target.value)}
+          onChange={e => { setUsername(e.target.value); setConnectionValidated(false) }}
         />
         <Input
           type="password"
           placeholder="App password"
           aria-label="App password"
           value={appPassword}
-          onChange={e => setAppPassword(e.target.value)}
+          onChange={e => { setAppPassword(e.target.value); setConnectionValidated(false) }}
         />
         <div className="flex gap-2">
           <button
@@ -175,7 +222,8 @@ export default function CalendarSettings() {
           <button
             type="button"
             onClick={() => void handleSave()}
-            className="px-3 py-1 rounded bg-accent-vivid text-accent-vivid-foreground"
+            disabled={!connectionValidated || !targetCalendarUrl}
+            className="px-3 py-1 rounded bg-accent-vivid text-accent-vivid-foreground disabled:opacity-50"
           >
             Save
           </button>
@@ -188,6 +236,36 @@ export default function CalendarSettings() {
             Sync now
           </button>
         </div>
+      {connection && (
+        <div className="mt-3 space-y-2">
+          <button
+            type="button"
+            disabled={reconnecting}
+            onClick={() => void handleMirrorPreview()}
+            className="px-3 py-1 rounded bg-surface-secondary text-text-default disabled:opacity-50"
+          >
+            Reconnect and mirror all local events
+          </button>
+          {mirrorPreview && (
+            <div className="space-y-2 text-sm text-text-default">
+              <p>Mirror {mirrorPreview.event_count} non-deleted local events into Growing.</p>
+              <p>Back up the existing Calendar collection before reconnecting.</p>
+              <label className="flex items-start gap-2">
+                <input type="checkbox" checked={backupConfirmed} onChange={event => setBackupConfirmed(event.target.checked)} />
+                <span>I have backed up the existing Growing calendar.</span>
+              </label>
+              <button
+                type="button"
+                disabled={!backupConfirmed || reconnecting}
+                onClick={() => void handleReconnect()}
+                className="px-3 py-1 rounded bg-accent-vivid text-accent-vivid-foreground disabled:opacity-50"
+              >
+                {reconnecting ? 'Reconnecting…' : 'Confirm reconnect'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       </div>
     </div>
   )

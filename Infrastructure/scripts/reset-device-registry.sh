@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly EXPECTED_DATABASE="cea_sensors"
+readonly EXPECTED_DATABASE="sj_cea"
 readonly EXPECTED_USER="cea_user"
 readonly EXPECTED_HOST="localhost"
 readonly EXPECTED_PORT="5432"
@@ -250,13 +250,13 @@ cat > "$RUN_DIRECTORY/restore-device-registry.sh" <<'RESTORE'
 set -euo pipefail
 
 readonly BACKUP_DIRECTORY="${1:?Usage: restore-device-registry.sh BACKUP_DIRECTORY}"
-readonly DATABASE="${PGDATABASE:-cea_sensors}"
+readonly DATABASE="${PGDATABASE:-sj_cea}"
 readonly DATABASE_USER="${PGUSER:-cea_user}"
 readonly DATABASE_HOST="${PGHOST:-localhost}"
 readonly DATABASE_PORT="${PGPORT:-5432}"
 
-[[ "$DATABASE" == "cea_sensors" && "$DATABASE_USER" == "cea_user" ]] || {
-  printf 'restore refused: expected cea_sensors as cea_user\n' >&2
+[[ "$DATABASE" == "sj_cea" && "$DATABASE_USER" == "cea_user" ]] || {
+  printf 'restore refused: expected sj_cea as cea_user\n' >&2
   exit 1
 }
 [[ "$DATABASE_HOST" == "localhost" && "$DATABASE_PORT" == "5432" ]] || {

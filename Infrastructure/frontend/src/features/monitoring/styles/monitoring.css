@@ -315,7 +315,7 @@
   cursor: pointer;
 }
 
-/* Grafana-style monitoring layout: sidebar tables left, dominant charts right */
+/* Native monitoring layout: sidebar tables left, dominant charts right */
 .mon-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -395,5 +395,84 @@
 
   .mon-layout--beds .mon-side .mon-card {
     margin: 0;
+  }
+}
+
+/* Archive surfaces keep semantic hues legible in every room palette. */
+.archive-log td {
+  overflow-wrap: anywhere;
+}
+
+.archive-log .text-text-muted,
+.archive-view .text-text-muted {
+  color: color-mix(in srgb, var(--text-muted) 40%, var(--text-default));
+}
+
+.archive-status {
+  color: var(--text-default);
+}
+
+.archive-status--success {
+  color: color-mix(in srgb, var(--status-success) 35%, var(--text-default));
+}
+
+.archive-status--danger {
+  color: color-mix(in srgb, var(--status-danger) 35%, var(--text-default));
+}
+
+.archive-status--warning {
+  color: color-mix(in srgb, var(--status-warning) 35%, var(--text-default));
+}
+
+@media (min-width: 1100px) {
+  .archive-view {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    /* Permanent 30px room navigation plus the monitoring page's 2 × 4px padding. */
+    height: calc(100dvh - 30px - 0.5rem);
+    min-height: 0;
+  }
+
+  .archive-view > .mon-card {
+    flex: 0 0 auto;
+  }
+
+  .archive-view__layout {
+    display: grid;
+    grid-template-columns: minmax(360px, 400px) minmax(0, 1fr);
+    flex: 1 1 0;
+    min-height: 0;
+    gap: 0.25rem;
+  }
+
+  .archive-view__charts {
+    grid-column: 2;
+    grid-row: 1;
+    grid-template-rows: minmax(0, 2fr) minmax(0, 1fr);
+    min-height: 0;
+    gap: 0.25rem;
+  }
+
+  .archive-view__charts > .mon-card {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .archive-view__charts > .mon-card:only-child {
+    grid-row: 1 / -1;
+  }
+
+  .archive-view__plot {
+    flex: 1 1 0;
+    min-height: 0;
+  }
+
+  .archive-view__side {
+    position: static;
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
   }
 }

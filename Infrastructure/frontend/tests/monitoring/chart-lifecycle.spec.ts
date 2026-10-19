@@ -6,7 +6,7 @@ import { fixtureUrl } from './fixtureUrl'
 
 const EVIDENCE_DIR = path.resolve(
   process.cwd(),
-  '../../.omo/evidence/grafana-chart-lifecycle-parity/T6'
+  '../../.omo/evidence/chart-lifecycle-parity/T6'
 )
 const CHART_TITLES = ['Flower climate conditions', 'Flower atmosphere & equipment'] as const
 const RANGE_DURATION_MS = 3_600_000

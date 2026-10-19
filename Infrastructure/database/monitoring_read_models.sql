@@ -415,11 +415,19 @@ DO $column_compatibility$
 DECLARE
     metric_name TEXT;
     suffix_name TEXT;
+    pid_type TEXT;
+    duty_type TEXT;
     effective_names TEXT[] := ARRAY['bucket', 'location', 'cluster', 'device_name', 'mode'];
     effective_types TEXT[] := ARRAY[
         'timestamp with time zone', 'text', 'text', 'text', 'text'
     ];
 BEGIN
+    SELECT max(data_type::TEXT) FILTER (WHERE column_name='pid_output'),
+           max(data_type::TEXT) FILTER (WHERE column_name='duty_cycle_percent')
+    INTO pid_type, duty_type
+    FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='automation_state';
+
     PERFORM monitoring_assert_relation_columns(
         'monitoring_measurement_1min',
         ARRAY[
@@ -462,7 +470,11 @@ BEGIN
                 effective_types,
                 CASE suffix_name
                     WHEN 'count' THEN 'bigint'
-                    WHEN 'last' THEN 'double precision'
+                    WHEN 'last' THEN (
+                        SELECT c.data_type FROM information_schema.columns c
+                        WHERE c.table_schema='public' AND c.table_name='effective_setpoints'
+                          AND c.column_name=metric_name
+                    )
                     ELSE 'numeric'
                 END
             );
@@ -490,8 +502,8 @@ BEGIN
         ARRAY[
             'timestamp with time zone', 'text', 'text', 'text', 'bigint',
             'integer', 'integer', 'integer', 'text', 'bigint',
-            'double precision', 'double precision', 'double precision', 'bigint',
-            'double precision', 'double precision', 'double precision', 'text',
+            pid_type, pid_type, pid_type, 'bigint',
+            duty_type, duty_type, duty_type, 'text',
             'timestamp with time zone'
         ]
     );
@@ -508,8 +520,8 @@ BEGIN
         ARRAY[
             'timestamp with time zone', 'text', 'text', 'text', 'bigint',
             'integer', 'integer', 'integer', 'text', 'bigint',
-            'double precision', 'double precision', 'double precision', 'bigint',
-            'double precision', 'double precision', 'double precision', 'text',
+            pid_type, pid_type, pid_type, 'bigint',
+            duty_type, duty_type, duty_type, 'text',
             'timestamp with time zone'
         ]
     );

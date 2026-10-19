@@ -76,8 +76,9 @@ the implementation's schema and writer/HTTP smoke run only in the guarded
   owner authorization, a protected backup and targeted disposable native proof
   of idempotency, raw/index preservation, parity, writer compatibility and recovery.
 - Raw history, existing indexes and pre-existing aggregates remain intact.
-  Calendar closure/compaction, age compression, ZIP/Nextcloud export and the
-  planned `sj_cea` rename are not part of this release.
+  Calendar closure/compaction, grow-aware retention, and ZIP/Nextcloud export
+  are separate owner-authorized lifecycle work. Checked-in database defaults
+  target `sj_cea`; no production database rename is performed by this service.
 
 ## Configuration
 

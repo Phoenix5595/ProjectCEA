@@ -32,7 +32,7 @@ UPDATE mode_parameters SET cluster = 'main' WHERE location = 'Flower Room' AND c
 -- DELETE FROM notes WHERE location = 'Flower Room' AND cluster = 'front';
 -- UPDATE notes SET cluster = 'main' WHERE location = 'Flower Room' AND cluster = 'back';
 
--- Time-series / history (optional but keeps Grafana/API consistent)
+-- Time-series / history (optional; keeps monitoring/API data consistent)
 UPDATE effective_setpoints SET cluster = 'main' WHERE location = 'Flower Room' AND cluster = 'back';
 DELETE FROM effective_setpoints WHERE location = 'Flower Room' AND cluster = 'front';
 

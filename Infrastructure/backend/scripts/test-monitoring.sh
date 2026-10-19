@@ -49,10 +49,6 @@ run_integration_tests() {
     monitoring_runner_fail "database harness is missing: $HARNESS_PATH"
     return 69
   }
-  [[ "${MONITORING_DOCKER_UNAVAILABLE:-0}" != '1' ]] || {
-    monitoring_runner_fail 'integration harness is unavailable (MONITORING_DOCKER_UNAVAILABLE=1)'
-    return 69
-  }
 
   # shellcheck source=../../database/tests/test-monitoring-read-models.sh
   source "$HARNESS_PATH"

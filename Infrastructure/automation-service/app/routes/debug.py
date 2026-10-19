@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,6 +9,7 @@ from app.config import ConfigLoader
 from app.control.control_engine import ControlEngine
 from app.control.scheduler import LOCAL_TZ, Scheduler
 from app.database import DatabaseManager
+from shared.history_availability import require_local_history
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
@@ -162,7 +163,7 @@ async def get_light_schedule_health(
     db: DatabaseManager = Depends(get_database),
     config: ConfigLoader = Depends(get_config),
 ):
-    """Per-light schedule resolution and last Grafana DB sample age (effective_setpoints)."""
+    """Per-light schedule resolution and last DB sample age (effective_setpoints)."""
     try:
         devices = await config.get_devices()
         cluster_devices = devices.get(location, {}).get(cluster, {})
@@ -257,7 +258,10 @@ async def get_mode_history(
         if not pool:
             raise HTTPException(status_code=500, detail="Database pool not initialized")
 
-        async with pool.acquire() as conn:
+        async with (
+            pool.acquire() as conn,
+            conn.transaction(isolation="repeatable_read", readonly=True),
+        ):
             rows = await conn.fetch(
                 """
                 SELECT * FROM mode_transition_history
@@ -269,8 +273,21 @@ async def get_mode_history(
                 cluster,
                 limit,
             )
+            oldest = min(
+                (row["triggered_at"] for row in rows if row["triggered_at"] is not None),
+                default=datetime.min.replace(tzinfo=UTC),
+            )
+            await require_local_history(
+                conn,
+                room=location,
+                start=oldest,
+                end=datetime.now(UTC) + timedelta(microseconds=1),
+                source_tables=("mode_transition_history",),
+            )
 
         return [dict(row) for row in rows]
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error in get_mode_history: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e

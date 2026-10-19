@@ -12,7 +12,7 @@ weather:
 # If not provided, password must be set in this config file
 database:
   host: "localhost"
-  database: "cea_sensors"
+  database: "sj_cea"
   user: "cea_user"
   # password: "your_password_here"  # Use POSTGRES_PASSWORD env var instead
   port: 5432

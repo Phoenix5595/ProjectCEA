@@ -1,103 +1,90 @@
 import type { DayButtonProps } from '@daypicker/react'
-import { format } from 'date-fns'
+import { format, subDays, addDays } from 'date-fns'
 import { fr } from 'date-fns/locale'
-import { useRef, useEffect } from 'react'
-
-import { MARKER_LIMITS, noteMarkerLabel, truncateMarkerLabel } from '../../utils/calendarDayMarkers'
+import { useEffect, useRef } from 'react'
+import type { CalendarEventDto } from '../../types/calendar'
+import { EVENT_TYPE_COLORS } from '../../types/calendar'
+import { calendarEventOccursOnDay, isGrowPlanPhase } from '../../utils/calendarDayMarkers'
 
 import { useCalendarMarkers } from './CalendarMarkersContext'
 
+interface CalendarDayButtonProps extends DayButtonProps {
+  maxVisibleEvents?: 1 | 3
+  showRoomLabels?: boolean
+}
+
+const ROOM_PREFIX: Record<string, string> = { 'Flower Room': 'F', 'Veg Room': 'V', Lab: 'L' }
+const SYNC_LABEL: Record<string, string> = {
+  pending_push: 'Saved locally; awaiting sync', pending_delete: 'Delete awaiting sync',
+  synced: 'Synced', error: 'Sync error', conflict: 'Sync conflict',
+}
+
+function dayPhasePosition(ev: CalendarEventDto, day: Date): string {
+  const coversBefore = calendarEventOccursOnDay(ev, subDays(day, 1))
+  const coversAfter = calendarEventOccursOnDay(ev, addDays(day, 1))
+  if (!coversBefore && !coversAfter) return 'single'
+  if (!coversBefore) return 'start'
+  if (!coversAfter) return 'end'
+  return 'middle'
+}
+
 export function CalendarDayButton({
-  day,
-  modifiers,
-  className = '',
-  children,
-  ...buttonProps
-}: DayButtonProps) {
+  day, modifiers, className = '', children, maxVisibleEvents = 3,
+  showRoomLabels = false, ...buttonProps
+}: CalendarDayButtonProps) {
   const ref = useRef<HTMLButtonElement>(null)
   const markers = useCalendarMarkers(day.date)
-
   useEffect(() => {
-    if (modifiers.focused) {
-      ref.current?.focus()
-    }
+    if (modifiers.focused) ref.current?.focus()
   }, [modifiers.focused])
 
-  const tasks = markers.tasks.slice(0, MARKER_LIMITS.tasks)
-  const notes = markers.notes.slice(0, MARKER_LIMITS.notes)
-  const bars = markers.scheduleBars.slice(0, MARKER_LIMITS.scheduleBars)
-  const extraTasks = markers.tasks.length - tasks.length
-  const extraNotes = markers.notes.length - notes.length
-  const extraBars = markers.scheduleBars.length - bars.length
-  const hasMarkers = tasks.length + notes.length + bars.length > 0
-  const markerCounts = [
-    markers.tasks.length
-      ? `${markers.tasks.length} task${markers.tasks.length === 1 ? '' : 's'}`
-      : null,
-    markers.notes.length
-      ? `${markers.notes.length} note${markers.notes.length === 1 ? '' : 's'}`
-      : null,
-    markers.scheduleBars.length
-      ? `${markers.scheduleBars.length} phase${markers.scheduleBars.length === 1 ? '' : 's'}`
-      : null,
-  ].filter((count): count is string => count !== null)
+  const visible = markers.events.slice(0, maxVisibleEvents)
+  const hiddenCount = markers.events.length - visible.length
   const dateName = buttonProps['aria-label'] ?? format(day.date, 'PPP', { locale: fr })
-  const accessibleLabel = [dateName, ...markerCounts].join(', ')
+  const accessibleLabel = [dateName, ...markers.events.map(ev => {
+    const dates = ev.end && ev.end !== ev.start ? `${ev.start} through ${ev.end}` : ev.start
+    const note = ev.notes?.trim() ? `Notes: ${ev.notes.trim()}` : ''
+    const sync = ev.sync_status ? `${SYNC_LABEL[ev.sync_status] ?? ev.sync_status}${ev.sync_error_code ? ` (${ev.sync_error_code})` : ''}` : ''
+    return [showRoomLabels ? `${ROOM_PREFIX[ev.location] ?? ''} ${ev.location}` : ev.location, ev.title, dates, note, sync].filter(Boolean).join(', ')
+  }), hiddenCount > 0 ? `${hiddenCount} more events` : ''].filter(Boolean).join('. ')
 
   return (
     <button
-      ref={ref}
-      type="button"
-      {...buttonProps}
-      className={[
-        'grow-cal-day-btn',
-        className,
+      ref={ref} type="button" {...buttonProps}
+      className={['grow-cal-day-btn', className,
         modifiers.today ? 'grow-cal-day-btn--today' : '',
         modifiers.selected ? 'grow-cal-day-btn--selected' : '',
         modifiers.outside ? 'grow-cal-day-btn--outside' : '',
-        hasMarkers ? 'grow-cal-day-btn--marked' : '',
-      ]
-        .filter(Boolean)
-        .join(' ')}
+        markers.events.length ? 'grow-cal-day-btn--marked' : '',
+      ].filter(Boolean).join(' ')}
       aria-label={accessibleLabel}
+      title={markers.events.map(ev => `${ev.title} · ${showRoomLabels ? `${ROOM_PREFIX[ev.location] ?? ''} ` : ''}${ev.location} · ${ev.start}${ev.end && ev.end !== ev.start ? ` through ${ev.end}` : ''}${ev.notes?.trim() ? ` · Notes: ${ev.notes.trim()}` : ''}${ev.sync_status ? ` · ${SYNC_LABEL[ev.sync_status] ?? ev.sync_status}${ev.sync_error_code ? ` (${ev.sync_error_code})` : ''}` : ''}`).join('\n')}
     >
-      <span className="grow-cal-day-num">{children}</span>
-
-      {(tasks.length > 0 || notes.length > 0 || bars.length > 0) && (
-        <span className="grow-cal-day-markers">
-          {tasks.map(ev => (
-            <span key={ev.id} className="grow-cal-marker grow-cal-marker--task" title={ev.title}>
-              <span className="grow-cal-marker-dot grow-cal-marker-dot--task" aria-hidden />
-              <span className="grow-cal-marker-text">{truncateMarkerLabel(ev.title)}</span>
-            </span>
-          ))}
-          {extraTasks > 0 && <span className="grow-cal-more">+{extraTasks} tasks</span>}
-
-          {notes.map(ev => {
-            const label = noteMarkerLabel(ev)
+      <span className="grow-cal-day-num">
+        <span>{children}</span>
+        {hiddenCount > 0 && <span className="grow-cal-more" aria-hidden="true">+{hiddenCount}</span>}
+      </span>
+      {visible.length > 0 && (
+        <span className="grow-cal-day-markers" aria-hidden="true">
+          {visible.map(ev => {
+            const prefix = ROOM_PREFIX[ev.location]
+            const status = ev.sync_status ? SYNC_LABEL[ev.sync_status] ?? ev.sync_status : ''
+            const phase = isGrowPlanPhase(ev)
+            const position = dayPhasePosition(ev, day.date)
+            const weekEdge = day.date.getDay() === 0 ? ' grow-cal-phase--week-start' : day.date.getDay() === 6 ? ' grow-cal-phase--week-end' : ''
             return (
-              <span
-                key={`note-${ev.id}`}
-                className="grow-cal-marker grow-cal-marker--note"
-                title={ev.notes?.trim() || ev.title}
+              <span key={ev.id}
+                className={`grow-cal-event-chip ${phase ? `grow-cal-event-chip--phase grow-cal-phase--${position}${weekEdge}` : ''} ${status ? `grow-cal-event-chip--${ev.sync_status}` : ''}`}
+                title={`${ev.title} · ${ev.location} · ${ev.start}${ev.end && ev.end !== ev.start ? ` through ${ev.end}` : ''}${ev.notes?.trim() ? ` · Notes: ${ev.notes.trim()}` : ''}${status ? ` · ${status}${ev.sync_error_code ? ` (${ev.sync_error_code})` : ''}` : ''}`}
               >
-                <span className="grow-cal-marker-dot grow-cal-marker-dot--note" aria-hidden />
-                <span className="grow-cal-marker-text">{label}</span>
+                <span className={`grow-cal-event-accent ${EVENT_TYPE_COLORS[ev.eventType] ?? 'bg-slate-500'}`} />
+                {showRoomLabels && <span className="grow-cal-room-prefix">{prefix ?? ev.location}</span>}
+                <span className="grow-cal-event-title">{ev.title}</span>
+                {ev.notes?.trim() && <span className="grow-cal-event-indicator" title="Has notes" aria-label="Has notes">✎</span>}
+                {status && <span className="grow-cal-event-sync" title={status}>{ev.sync_status === 'conflict' ? '!' : ev.sync_status === 'error' ? '×' : ev.sync_status === 'synced' ? '✓' : '…'}</span>}
               </span>
             )
           })}
-          {extraNotes > 0 && <span className="grow-cal-more">+{extraNotes} notes</span>}
-
-          {bars.map(bar => (
-            <span
-              key={`${bar.eventId}-${bar.location}`}
-              className={`grow-cal-phase ${bar.colorClass}`}
-              title={`${bar.location}: ${bar.title}`}
-            >
-              <span className="grow-cal-phase-text">{truncateMarkerLabel(bar.title)}</span>
-            </span>
-          ))}
-          {extraBars > 0 && <span className="grow-cal-more">+{extraBars} phases</span>}
         </span>
       )}
     </button>

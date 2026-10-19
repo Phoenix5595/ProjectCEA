@@ -17,7 +17,7 @@ Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=PYTHONPATH=/opt/projectcea/current/Infrastructure:/opt/projectcea/current/Infrastructure/automation-service
 Environment=REDIS_URL=redis://localhost:6379
 Environment=POSTGRES_HOST=localhost
-Environment=POSTGRES_DB=cea_sensors
+Environment=POSTGRES_DB=sj_cea
 Environment=POSTGRES_USER=cea_user
 # POSTGRES_PASSWORD is loaded from /opt/projectcea/shared/env/postgres.env
 # (owner root, mode 0640). Populated by Infrastructure/setup_timescaledb.sh

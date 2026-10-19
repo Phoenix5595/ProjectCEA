@@ -12,6 +12,7 @@ export function useCalendarMarkers(day: Date): DayMarkers {
   const key = format(toZonedTime(day, CALENDAR_TZ), 'yyyy-MM-dd')
   return (
     map.get(key) ?? {
+      events: [],
       tasks: [],
       notes: [],
       scheduleBars: [],

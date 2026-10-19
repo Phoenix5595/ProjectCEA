@@ -7,7 +7,7 @@
  * drop a chart-family color, envelope, target, or state token.
  *
  * The token set is additive-only: it never removes or renames an existing
- * theme variable, and it never touches product pages or Grafana code.
+ * theme variable, and it never touches product pages or chart code.
  */
 
 /** The six themes that must each carry the full monitoring token set. */

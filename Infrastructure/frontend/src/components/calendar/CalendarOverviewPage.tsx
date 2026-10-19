@@ -46,7 +46,7 @@ export default function CalendarOverviewPage({
         modeSchedule.active.submode_name !== modeSchedule.expected.submode_name))
 
   return (
-    <div className="p-4 flex flex-col gap-4 min-h-screen bg-surface-base">
+    <div className="p-4 flex flex-col gap-4 bg-surface-base">
       {mismatch && (
         <div
           role="alert"

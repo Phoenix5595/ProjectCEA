@@ -38,7 +38,7 @@ export function familyColor(family: ChartFamily): string {
 
 /** The drawn color for a series (projected uses the projected token). */
 export function seriesColor(series: AlignedSeries): string {
-  // Manifest-declared color wins (per-series Grafana parity), then family token.
+  // Manifest-declared color wins (per-series parity), then family token.
   if (series.presentation?.color) return series.presentation.color
   if (series.source === 'climate' || series.source === 'light') {
     return series.origin === 'projected'

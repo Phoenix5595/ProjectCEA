@@ -7,7 +7,7 @@
  */
 import axios, { AxiosInstance } from 'axios'
 
-import { AUTOMATION_API_URL, BACKEND_API_URL, CEA_API_KEY, WEATHER_API_URL } from '../config/env'
+import { ARCHIVE_API_URL, AUTOMATION_API_URL, BACKEND_API_URL, CEA_API_KEY, WEATHER_API_URL } from '../config/env'
 import { timelineMethods } from '../features/climate-timeline/api/timeline'
 import type { TimelineApi } from '../features/climate-timeline/api/timeline'
 import type { components } from '../generated/api'
@@ -21,6 +21,12 @@ import type {
   FlowerCalendarModeTransitionSetting,
   FlowerGrowPlanRequest,
   ModeScheduleResponse,
+  GrowLifecycle,
+  GrowClosePreview,
+  CalendarMirrorPreview,
+  CalendarReconnectResult,
+  CalendarTestResult,
+  CalendarConnection,
 } from '../types/calendar'
 import type { LightStatus, LightTargetSetResponse } from '../types/light'
 import type {
@@ -109,6 +115,7 @@ class ApiClient implements ApiClientCore {
   backendClient: AxiosInstance
   automationClient: AxiosInstance
   weatherClient: AxiosInstance
+  archiveClient: AxiosInstance
 
   constructor() {
     const baseHeaders: Record<string, string> = {
@@ -134,6 +141,12 @@ class ApiClient implements ApiClientCore {
       baseURL: WEATHER_API_URL,
       headers: { ...baseHeaders },
       timeout: 10000,
+    })
+
+    this.archiveClient = axios.create({
+      baseURL: ARCHIVE_API_URL,
+      headers: { ...baseHeaders },
+      timeout: 30000,
     })
 
     this.automationClient.interceptors.response.use(
@@ -435,7 +448,7 @@ class ApiClient implements ApiClientCore {
     return response.data
   }
 
-  async getCalendarSyncConnection(): Promise<JsonObject | null> {
+  async getCalendarSyncConnection(): Promise<CalendarConnection | null> {
     const response = await this.automationClient.get('/api/calendar/sync/connections')
     return response.data
   }
@@ -446,7 +459,7 @@ class ApiClient implements ApiClientCore {
     app_password: string
     target_calendar_url: string
     display_name?: string
-  }): Promise<JsonObject> {
+  }): Promise<CalendarConnection> {
     const response = await this.automationClient.post('/api/calendar/sync/connections', body)
     return response.data
   }
@@ -455,8 +468,67 @@ class ApiClient implements ApiClientCore {
     caldav_base_url: string
     username: string
     app_password: string
-  }): Promise<Array<{ name: string; url: string }>> {
+  }): Promise<CalendarTestResult> {
     const response = await this.automationClient.post('/api/calendar/sync/connections/test', body)
+    return response.data
+  }
+
+
+  async getGrowLifecycle(growPlanId: string): Promise<GrowLifecycle> {
+    const response = await this.automationClient.get(
+      `/api/calendar/grow-plans/${encodeURIComponent(growPlanId)}/lifecycle`
+    )
+    return response.data
+  }
+
+  async previewGrowClose(growPlanId: string): Promise<GrowClosePreview> {
+    const response = await this.automationClient.get(
+      `/api/calendar/grow-plans/${encodeURIComponent(growPlanId)}/close-preview`
+    )
+    return response.data
+  }
+
+  async closeGrow(growPlanId: string, expectedRevision: number): Promise<GrowLifecycle> {
+    const response = await this.automationClient.post(
+      `/api/calendar/grow-plans/${encodeURIComponent(growPlanId)}/close`,
+      { expected_revision: expectedRevision }
+    )
+    return response.data
+  }
+
+  async reopenGrow(growPlanId: string, expectedRevision: number): Promise<GrowLifecycle> {
+    const response = await this.automationClient.post(
+      `/api/calendar/grow-plans/${encodeURIComponent(growPlanId)}/reopen`,
+      { expected_revision: expectedRevision }
+    )
+    return response.data
+  }
+
+  async previewCalendarReconnect(connectionId: number): Promise<CalendarMirrorPreview> {
+    const response = await this.automationClient.get(
+      `/api/calendar/sync/connections/${connectionId}/mirror-preview`
+    )
+    return response.data
+  }
+
+  async reconnectCalendar(connectionId: number, expectedGeneration: number): Promise<CalendarReconnectResult> {
+    const response = await this.automationClient.post(
+      `/api/calendar/sync/connections/${connectionId}/reconnect`,
+      { expected_generation: expectedGeneration, backup_confirmed: true }
+    )
+    return response.data
+  }
+
+  async createArchiveScopeCorrection(body: {
+    dataset_id: string | null
+    expected_revision: number | null
+    source_table: 'measurement' | 'actuator_events'
+    source_identity: Record<string, number>
+    start: string
+    end: string
+    room: string
+  }): Promise<JsonObject> {
+    const response = await this.archiveClient.post('/api/archives/scope-corrections', body)
     return response.data
   }
 

@@ -7,6 +7,7 @@ import Layout from './components/Layout'
 import { ThemeSwitcher } from './components/ThemeSwitcher'
 import { ControlActionsProvider } from './contexts/ControlActionsContext'
 import { ThemeProvider } from './contexts/ThemeContext'
+import { readArchiveNavigationState } from './features/grow-archives/selection'
 import { parseUrlRange, withSerializedRange } from './features/monitoring/components'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
@@ -27,6 +28,10 @@ const CalendarSettings = lazy(() => import('./pages/CalendarSettings'))
 /** Historical entry points start in a fixed overview, never a live reader. */
 function HistoricalEntry({ children }: { children: ReactNode }) {
   const location = useLocation()
+  // A restored archive hand-off is governed by its in-memory load pin, not by
+  // the ordinary Historical range redirect. The room page shows the log if
+  // the pin was lost, without querying the old range from native history.
+  if (readArchiveNavigationState(location.state) !== null) return children
   const params = new URLSearchParams(location.search)
   const parsed = parseUrlRange(params, null)
   if (parsed.kind === 'fixed') {

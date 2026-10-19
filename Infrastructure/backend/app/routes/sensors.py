@@ -249,7 +249,7 @@ async def get_all_live_sensor_data():
 
     This endpoint returns all sensor values from Redis state keys,
     providing real-time data without querying the database.
-    Useful for Grafana HTTP API datasource.
+    Useful for the native monitoring HTTP API.
 
     Returns:
         List of sensor data with name, value, timestamp, and unit

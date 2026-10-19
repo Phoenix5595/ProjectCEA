@@ -4,7 +4,7 @@
  * Builds the production `dist` with the default Vite config, then serves it
  * through the monitoring preview config (`vite.monitoring.config.ts`) on
  * exactly `http://127.0.0.1:${MONITORING_FIXTURE_PORT}`. The preview middleware serves deterministic
- * REST / WebSocket / Grafana-placeholder / SPA-fallback fixtures and injects a
+ * REST / WebSocket / SPA-fallback fixtures and injects a
  * restrictive CSP, so a correctly-built page never touches a production
  * service.
  *

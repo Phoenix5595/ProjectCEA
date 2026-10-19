@@ -5,7 +5,7 @@
 -- room -> rack -> device -> sensor -> measurement
 --
 -- Created: 2024
--- Database: cea_sensors
+-- Database source target: sj_cea (not a statement of current deployment state)
 
 -- ============================================
 -- Enable TimescaleDB Extension
@@ -173,19 +173,14 @@ CREATE INDEX IF NOT EXISTS idx_room_name
     ON room (name);
 
 -- ============================================
--- Compression Policy
+
+-- ============================================
+-- Grow-aware source compression boundary
 -- ============================================
 
--- Enable compression on chunks older than 90 days
-ALTER TABLE measurement SET (
-    timescaledb.compress,
-    timescaledb.compress_segmentby = 'sensor_id'
-);
-
--- Add compression policy: compress chunks older than 90 days
-SELECT add_compression_policy('measurement', 
-    INTERVAL '90 days',
-    if_not_exists => TRUE);
+-- Source hypertables are deliberately left uncompressed by this bootstrap.
+-- Compression is attached only to validated grow/Veg cold scopes after the
+-- owner-authorized lifecycle is enabled; do not add age-only source policies.
 
 -- ============================================
 -- Optional Tables
@@ -312,7 +307,7 @@ SELECT add_continuous_aggregate_policy('measurement_daily',
 -- Helper Views for Common Queries
 -- ============================================
 
--- View: Measurement with full metadata (for Grafana queries)
+-- View: Measurement with full metadata
 -- Join path: measurement -> sensor -> device -> (rack -> room OR direct room lookup for devices without racks)
 -- Handles both devices with racks and devices without racks (e.g., weather stations)
 -- Definition reconciled with live DB in Alembic revision 005 (Phase 5a).
@@ -355,7 +350,7 @@ COMMENT ON TABLE actuator_events IS 'Device control events (hypertable)';
 
 COMMENT ON VIEW measurement_hourly IS 'Hourly aggregates: min, max, avg per sensor per hour';
 COMMENT ON VIEW measurement_daily IS 'Daily aggregates: min, max, avg per sensor per day';
-COMMENT ON VIEW measurement_with_metadata IS 'Measurement data with full metadata joins for Grafana queries';
+COMMENT ON VIEW measurement_with_metadata IS 'Measurement data with full metadata joins';
 
 -- ============================================
 -- Initial Data (Optional)

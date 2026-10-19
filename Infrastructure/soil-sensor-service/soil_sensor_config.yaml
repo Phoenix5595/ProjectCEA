@@ -13,6 +13,6 @@ polling:
   discovery_interval_seconds: 30  # Scan for new sensors every 30 seconds
 
 # Sensor assignment authority lives in the `sensor_registry` table
-# (cea_sensors database). Newly detected probes are discovered on the bus,
+# (sj_cea database). Newly detected probes are discovered on the bus,
 # upserted unassigned, and commissioned through Sensor Settings; this file
 # deliberately holds no sensor list and never chooses a bed.

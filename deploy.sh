@@ -264,7 +264,7 @@ if [[ "$DEPLOY_SKIP_STAGING" != "1" ]]; then
   sudo chown -R root:root "$TARGET"
 
   echo "[2/7] Building Python venvs..."
-  for svc in backend automation-service can-processor-service soil-sensor-service onewire-worker-service weather-service monitoring-service; do
+  for svc in backend automation-service can-processor-service soil-sensor-service onewire-worker-service weather-service monitoring-service grow-archive-service; do
     SVC_DIR="$TARGET/Infrastructure/$svc"
     if [[ -f "$SVC_DIR/requirements.txt" ]]; then
       echo "  - $svc"
@@ -310,6 +310,7 @@ fi
 for required_file in \
   Infrastructure/services.yaml \
   Infrastructure/can-processor-service/setup_can.sh \
+  Infrastructure/grow-archive-service/requirements.txt \
   Infrastructure/frontend/package.json \
   Infrastructure/frontend/dist/index.html; do
   if [[ ! -s "$TARGET/$required_file" ]]; then
@@ -351,13 +352,6 @@ if [[ "$HEALTH_RC" -ne 0 ]]; then
   exit 1
 fi
 
-if [[ "${DEPLOY_ISKRA:-0}" == "1" ]]; then
-  echo "[7b/7] Syncing and verifying iskraprojectcea stack..."
-  log_event "iskra_sync_start" ""
-  "$SOURCE/Infrastructure/scripts/sync_to_iskra.sh"
-  "$SOURCE/Infrastructure/scripts/verify_iskra.sh"
-  log_event "iskra_sync_ok" ""
-fi
 
 MANIFEST_PATH="$CURRENT_SYMLINK/deploy_manifest.json"
 SERVICES_JSON="$(python3 "$SERVICE_LIST" --list-deploy-managed-units | python3 -c 'import json, sys; print(json.dumps([unit.removesuffix(".service") for unit in map(str.strip, sys.stdin) if unit]))')"

@@ -17,7 +17,7 @@ class SetpointRepository(BaseRepository):
         super().__init__(pool)
         self._redis_client = redis_client
         self._batch_buffer: list[dict[str, Any]] = []
-        # Reduced from 10s to 5s for faster Grafana updates (trade-off: more DB writes)
+        # Reduced from 10s to 5s for faster dashboard updates (trade-off: more DB writes)
         self._batch_interval = 5.0
         self._last_batch_flush = time.time()
 

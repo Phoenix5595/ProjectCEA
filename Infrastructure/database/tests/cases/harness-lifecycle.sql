@@ -4,7 +4,8 @@ DO $case$
 DECLARE
     extension_version TEXT;
 BEGIN
-    IF current_database() IN ('cea_sensors', 'cea_sensors_test')
+    IF lower(current_database()) LIKE '%cea_sensors%'
+       OR lower(current_database()) LIKE '%sj_cea%'
        OR current_database() !~ '^monitoring_test_[a-z0-9_]+$' THEN
         RAISE EXCEPTION 'unsafe database identity: %', current_database();
     END IF;

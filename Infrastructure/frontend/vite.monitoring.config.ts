@@ -2,7 +2,7 @@
  * Monitoring preview config (test-only).
  *
  * Serves the production `dist` build plus deterministic REST / WebSocket /
- * Grafana-placeholder / SPA-fallback fixtures on
+ * SPA-fallback fixtures on
  * `127.0.0.1` at the selected test-only port. It injects a restrictive CSP and writes a request
  * log so exact-origin enforcement stays executable without Playwright route
  * interception (the same fixture endpoints are available to `/visual-qa`).
@@ -22,7 +22,6 @@ import {
   controlProjectionFixture,
   controlRangeFixture,
   controlTailFixture,
-  grafanaPlaceholder,
   parseRange,
   sensorLiveFixture,
   sensorRangeFixture,
@@ -44,6 +43,9 @@ import {
 } from './src/features/event-log/config/fixtures.ts'
 import { FIXTURE_PORT, FIXTURE_WS_ORIGIN } from './src/features/monitoring/config/originGuard.ts'
 import { historyOverviewFixtureReply } from './tests/monitoring/historyOverviewFixtures.ts'
+import { calendarLifecycleFixtureReply } from './tests/monitoring/calendarLifecycleFixtures.ts'
+import { archiveFixtureReply } from './src/features/grow-archives/fixtures.ts'
+import { buildCalendarVisualFixture } from './src/components/calendar/calendarVisualFixture.ts'
 import {
   DASHBOARD_DEVICES,
   DASHBOARD_LIGHT_INTENSITIES,
@@ -73,7 +75,7 @@ interface FixtureRoute {
 }
 
 function roomFrom(url: string, index: number): string {
-  return decodeURIComponent((url ?? '').split('/').filter(Boolean)[index] ?? '')
+  return decodeURIComponent((url ?? '').split('?')[0].split('/').filter(Boolean)[index] ?? '')
 }
 
 function scenarioFrom(url: string): string | null {
@@ -1252,10 +1254,6 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
     handler: req => relayTimelinePidFixture(req),
   },
   {
-    re: /^\/grafana\//,
-    handler: () => grafanaPlaceholder(),
-  },
-  {
     re: /^\/api\/events\/history$/,
     handler: (_req, scenario) => eventHistoryFixture(scenario),
   },
@@ -1447,14 +1445,30 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
     },
   },
   {
+    re: /^\/api\/calendar\/flower-mode-transitions$/,
+    handler: () => ({ enabled: true }),
+  },
+  {
     re: /^\/api\/calendar\/events$/,
-    handler: req => {
+    handler: (req, scenario) => {
       const method = req.method ?? 'GET'
       const today = new Date()
       const plus = (n: number): string => {
         const d = new Date(today)
         d.setDate(d.getDate() + n)
         return d.toISOString().slice(0, 10)
+      }
+      if (method === 'GET' && scenario === 'calendar-visibility') {
+        const room = new URLSearchParams((req.url ?? '').split('?')[1] ?? '').get('location')
+        return {
+          items: buildCalendarVisualFixture(today)
+            .filter(event => !room || event.location === room)
+            .map((event, index) => ({
+              ...event, numericId: event.source === 'manual' ? index + 100 : undefined,
+              growPlanId: event.growPlanId ? CALENDAR_FIXTURE_GROW_PLAN_ID : undefined,
+            })),
+          next_cursor: null,
+        }
       }
       if (method === 'POST') {
         const body = (
@@ -1668,9 +1682,11 @@ function monitoringPreviewPlugin(): Plugin {
               /^\/api\/room-modes\//.test(pathname) ||
               /^\/api\/lights\//.test(pathname) ||
               /^\/api\/pid\/(?:parameters|mode)\//.test(pathname) ||
-              /^\/api\/calendar\/events/.test(pathname))) ||
+              /^\/api\/calendar\/(?:events|sync\/|grow-plans\/)/.test(pathname) ||
+              /^\/api\/archives\//.test(pathname))) ||
           (req.method === 'PUT' && /^\/api\/lights\//.test(pathname)) ||
-          (req.method === 'PATCH' && /^\/api\/calendar\/events/.test(pathname))
+          (req.method === 'PATCH' && /^\/api\/calendar\/events/.test(pathname)) ||
+          (req.method === 'DELETE' && /^\/api\/archives\//.test(pathname))
         const isSensorBulkRead = req.method === 'POST' && pathname === '/api/sensor-data'
         const requestBody = isFixtureMutation || isSensorBulkRead ? await readRequestBody(req) : undefined
         const scenario = scenarioFrom(req.url ?? '') ?? scenarioFrom(req.headers.referer ?? '')
@@ -1679,6 +1695,34 @@ function monitoringPreviewPlugin(): Plugin {
           new URLSearchParams((req.headers.referer ?? '').split('?')[1] ?? '').get('fixtureSession') ??
           MISSING_FIXTURE_SESSION
         const counterKey = (name: string): string => `${name}:${fixtureSession}:${pathname}`
+        const calendarReply = calendarLifecycleFixtureReply(
+          { url: req.url ?? '/', method: req.method, body: requestBody },
+          scenario, fixtureSession, `http://127.0.0.1:${FIXTURE_PORT}`
+        )
+        if (calendarReply !== null) {
+          res.statusCode = calendarReply.status
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify(calendarReply.body))
+          return
+        }
+        if (pathname === '/api/archives' || pathname.startsWith('/api/archives/')) {
+          const archiveReply = archiveFixtureReply(
+            { url: req.url ?? '/', method: req.method, body: requestBody },
+            scenario,
+            `http://127.0.0.1:${FIXTURE_PORT}`,
+            fixtureSession
+          )
+          if (archiveReply !== null) {
+            res.statusCode = archiveReply.status
+            res.setHeader('Content-Type', 'application/json')
+            res.end(archiveReply.status === 204 ? undefined : JSON.stringify(archiveReply.body))
+            return
+          }
+          res.statusCode = 405
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ detail: 'Archive fixture operation denied by default' }))
+          return
+        }
 
         if (scenario === 'backend-down' && isSensorPath(pathname)) {
           const key = `backend-down:${fixtureSession}`

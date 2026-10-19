@@ -30,9 +30,6 @@ export default defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true
       }
-      // Phase 5c: Grafana embeds go directly to VITE_GRAFANA_BASE_URL
-      // (http://iskraprojectcea:3001) from the SPA; no dev-server proxy
-      // needed. The Pi-local Grafana on :3000 was decommissioned 2026-04-19.
       // Phase 7.4: /api, /ws, /automation dev proxies now target Caddy
       // (:8080) rather than the individual service ports so dev traffic
       // goes through the same ingress as prod.

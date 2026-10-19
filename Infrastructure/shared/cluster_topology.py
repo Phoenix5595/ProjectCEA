@@ -49,7 +49,7 @@ least nine places (``backend/app/database.py``,
 ``backend/app/stream_processor.py``, ``backend/app/background_tasks.py``,
 ``automation-service/app/cluster_config.py``,
 ``automation-service/app/routes/devices.py``,
-``frontend/src/config/zones.ts``, plus several Grafana SQL panels).
+``frontend/src/config/zones.ts``).
 That duplication produced two recurring bugs:
 
 1. Endpoints silently returning empty payloads when the caller passed

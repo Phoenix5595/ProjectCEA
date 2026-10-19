@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import type { ControlMonitoringResponse, LightTimelineSeries } from '../../api'
+import type { ControlMonitoringResponse, LightTimelineSeries, SensorSeries } from '../../api'
 import { flowerManifest } from '../../config'
 import { isSeriesHidden, toggleSeries } from '../seriesVisibility'
 import type { TimeseriesPanelSpec } from '../../config'
@@ -87,8 +87,13 @@ function stateFor(
   }
 }
 
-function panelFeed() {
-  return createMonitoringPanelChartFeed({ alignment: createPanelAlignment(), seriesSpecs: [] })
+function panelFeed(panel?: TimeseriesPanelSpec) {
+  return createMonitoringPanelChartFeed({
+    alignment: createPanelAlignment(),
+    seriesSpecs: [],
+    panel,
+    now: () => new Date('2026-08-02T12:00:00.000Z'),
+  })
 }
 
 function sourceFor(initial: StoreState): {
@@ -415,6 +420,47 @@ describe('MonitoringChartFeed', () => {
     expect(isSeriesHidden(lightKey)).toBe(true)
     if (!previouslyHidden) toggleSeries(lightKey)
     disconnect()
+  })
+  it('publishes actual filtered series shape after empty-bulb alignment', () => {
+    const panel = flowerManifest.panels.find(
+      (candidate): candidate is TimeseriesPanelSpec =>
+        candidate.kind === 'timeseries' && candidate.id === 'flower-climate'
+    )
+    if (panel === undefined) throw new Error('Flower climate panel is required')
+    const range = { kind: 'fixed', start: new Date(0), end: new Date(3_600_000) } as const
+    const fulfilled = { range, start: range.start, end: range.end, revision: 1 }
+    const initial = stateFor(range, fulfilled, 0)
+    const sourceSeries: SensorSeries[] = [
+      { sensor: 'dry_bulb_f', node: 'front', unit_family: 'celsius', unit: '°C', points: [] },
+      {
+        sensor: 'dry_bulb_b',
+        node: 'back',
+        unit_family: 'celsius',
+        unit: '°C',
+        points: [{ timestamp: new Date(1_000), average: 0, minimum: 0, maximum: 0, sample_count: 1 }],
+      },
+      {
+        sensor: 'rh_f',
+        node: 'front',
+        unit_family: 'percent',
+        unit: '%',
+        points: [{ timestamp: new Date(1_000), average: 62, minimum: 61, maximum: 63, sample_count: 1 }],
+      },
+    ]
+    const snapshot: StoreState = {
+      ...initial,
+      data: { ...initial.data, series: sourceSeries },
+    }
+    const source = sourceFor(snapshot)
+    const feed = panelFeed(panel)
+    feed.connect(source.source, snapshot)
+    const structural = feed.getStructuralSnapshot()
+    expect(structural.series).toEqual(feed.getData().series)
+    expect(structural.series.map(series => series.key)).toEqual(feed.getData().series.map(series => series.key))
+    expect(structural.series.some(series => series.key.includes('dry_bulb_f'))).toBe(false)
+    expect(structural.series.some(series => series.key.includes('dry_bulb_b'))).toBe(true)
+    expect(structural.series.some(series => series.key.includes('rh_f'))).toBe(true)
+    expect(structural.seriesCount).toBe(feed.getData().series.length)
   })
 
 })

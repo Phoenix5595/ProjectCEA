@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 import json
 from typing import TYPE_CHECKING, Any
+
+from fastapi import HTTPException
 
 from app.redis.schema import (
     pid_all_parameters_key,
@@ -9,6 +12,7 @@ from app.redis.schema import (
     pid_key_with_location,
 )
 from app.state import StateManager, get_state_manager  # type: ignore
+from shared.history_availability import require_local_history
 
 from .base import BaseRepository, logger
 
@@ -177,7 +181,29 @@ class PIDRepository(BaseRepository):
     ) -> list[dict[str, Any]]:
         """Get PID parameter history."""
         try:
-            async with self.pool.acquire() as conn:
+            async with (
+                self.pool.acquire() as conn,
+                conn.transaction(isolation="repeatable_read", readonly=True),
+            ):
+                times = await conn.fetch(
+                    "SELECT timestamp FROM pid_parameter_history "
+                    "WHERE location=$1 AND cluster=$2 AND device_type=$3 "
+                    "ORDER BY timestamp DESC LIMIT $4",
+                    location,
+                    cluster,
+                    device_type,
+                    limit,
+                )
+                oldest = min(
+                    (row["timestamp"] for row in times), default=datetime.min.replace(tzinfo=UTC)
+                )
+                await require_local_history(
+                    conn,
+                    room=location,
+                    start=oldest,
+                    end=datetime.now(UTC) + timedelta(microseconds=1),
+                    source_tables=("pid_parameter_history",),
+                )
                 rows = await conn.fetch(
                     """SELECT location, cluster, device_type, kp, ki, kd, binary_hysteresis,
                                source, updated_by, changed_at
@@ -190,9 +216,11 @@ class PIDRepository(BaseRepository):
                     limit,
                 )
                 return [dict(row) for row in rows]
-        except Exception as e:
-            logger.error(f"Failed to get PID history: {e}")
-            return []
+        except HTTPException:
+            raise
+        except Exception as error:
+            logger.error(f"Failed to get PID history: {error}")
+            raise HTTPException(status_code=503, detail={"code": "history_unavailable"}) from error
 
     async def get_all_pid_parameters(self) -> list[dict[str, Any]]:
         """Get all PID parameters with cache-aside support."""

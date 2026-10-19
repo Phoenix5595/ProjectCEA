@@ -13,13 +13,27 @@ React 18 + TypeScript + Vite + Tailwind. The SPA is served as static `dist/` by 
 - `/devices` — device registry and relay/DFR management
 - `/settings/calendar` — grow-calendar configuration
 
-Native monitoring dashboards live at `/flower/monitoring` and `/vegetation/monitoring` and are owned by `src/features/monitoring/`.
+Native monitoring dashboards live at `/flower/monitoring` and `/vegetation/monitoring` (Historical variants at `/flower/historical`, `/vegetation/historical`) and are owned by `src/features/monitoring/`; history reads go through `monitoring-service` (`:8005` via Caddy).
+
+## Grow archive Historical loads
+
+Historical grow/Veg loads are ZIP-only; there is no local-database load mode.
+The Load action requires a verified export. A closed grow without one shows a
+disabled Load button with the `Export first` hint.
 
 ## API / Generated Contract Boundaries
 
 - `src/config/env.ts` is the single source of truth for API base URLs. Default routing goes through Caddy `:8080`; per-service `VITE_*_URL` overrides are emergency escape hatches only.
 - `src/services/api.ts` builds the three axios clients (backend, automation, weather) and attaches domain method modules (`services/api/{devices,sensors,schedules,pid}.ts`).
+- Monitoring history/overview/control reads use the dedicated `src/features/monitoring/api/` client (`MONITORING_API_URL` from `src/config/env.ts`, default Caddy `:8080` → `monitoring-service :8005`); Zod runtime parsing applies to every response.
 - `src/generated/api.ts` is the OpenAPI-generated TypeScript contract. Regenerate it with `npm run api:generate`.
+
+Nextcloud Calendar credentials are available under **Devices → System Settings
+→ Nextcloud Calendar** (`/devices?tab=settings&settings_tab=calendar`), with the
+existing `/settings/calendar` surface retained. Test fresh URL/username/app
+password, save encrypted credentials, then explicitly reconnect/mirror after
+the backup prerequisite. The password field is masked and cleared on save;
+connection failures do not undo durable local Calendar events.
 - `src/config/clusterTopology.ts` mirrors `Infrastructure/shared/cluster_topology.py`: device cluster is always `main`; Flower Room has sensor sub-clusters `front` and `back`; unsplit rooms reuse `main` as a sensor URL sentinel.
 - Operational event SSE uses `fetch` with `Accept: text/event-stream` and `X-API-Key`. Native `EventSource` and query-token keys are not used.
 
@@ -42,6 +56,12 @@ Native monitoring dashboards live at `/flower/monitoring` and `/vegetation/monit
 - Steps hold their value until the next transition: an OFF interval stays at 0%, then jumps to the next intensity. Interpolate only explicitly declared linear segments; preserve null gaps and half-open coverage boundaries.
 - Pure-step light trajectories are classified as `step`; use native stepped paths when explicit trajectory topology is unavailable. Keep genuine linear ramps in the canonical trajectory.
 - Equipment-chart regression coverage lives in `tests/monitoring/equipment.spec.ts`; exercise Flower and Veg at 1920x1080 and 1280x1440 using the guarded loopback fixture only.
+
+The main `flower-climate` / `veg-climate` panels omit dry/wet-bulb series only
+when the selected history contains no finite recorded samples. Zero degrees
+is valid; retained sensor names fence live tails until history rebuilds.
+This graph-only filtering does not change API payloads, statistics tables,
+ingestion, control, or archive records.
 
 ## Local Commands
 
@@ -72,7 +92,7 @@ npx vitest run src/features/event-log/__tests__
 | Frontend contracts | `REQUIREMENTS.md` |
 | Monitoring design & QA | `src/features/monitoring/AGENTS.md` |
 | Operational event runbook | `Infrastructure/automation-service/app/events/AGENTS.md` |
-| Iskra / Grafana stack | `Infrastructure/iskra_stack/AGENTS.md` |
+| Monitoring service | `Infrastructure/monitoring-service/AGENTS.md` |
 
 ## Anti-Patterns
 
@@ -94,7 +114,10 @@ npx vitest run src/features/event-log/__tests__
 - Keep chart source/status details in the header's non-scrolling popover, not added rows that enlarge the chart. Save feedback uses a marker inside the existing Save button; full warnings remain available in that popover.
 - Activation-button text stays compact so the unchanged ribbon fits both desktop viewports. Preserve the full save-before-activate and confirmation wording in its accessible name, tooltip, and source-details popover; do not shorten the actual workflow.
 - Flower submode choices come only from the catalogue: Stretch, Bulk and Ripen. Never synthesize a “Base” choice from a NULL submode ID. Selecting Flower retains the inspected, running or configured catalogue submode, then falls back to the first catalogue option; it never selects a new NULL profile. Keep existing NULL records readable without inventing a submode label or modifying stored data.
+- Calendar event names stay inside the existing allocation: full-room days show up to three 12px title chips beside the date; the Dashboard shows one chip per day. A `+N` marker and paginated day detail expose the remainder without nested scrolling. Accessible day names retain every event, room, date range, note and sync state.
+- Closing inline Calendar detail with Escape restores focus to its day, including after the final pagination button disables and focus falls to the document body. Do not intercept Escape from another focused widget or the Dashboard inspector.
+- Calendar desktop QA compares the same fixture date at both required viewports. Verify the actual `data-theme` palette, not a guessed local-storage key; explicit light-token overrides are QA only, not evidence of a shipped light palette.
 
 ---
 
-*Last updated: 2026-10-06*
+*Last updated: 2026-10-18*

@@ -208,11 +208,19 @@ export function sensorRangeFixture(
       const values =
         _scenario === 'extreme-y' && s.sensor === 'dry_bulb_f'
           ? [24.5, 9, 36, 24.8]
-          : fixtureValues(s.values, _scenario)
+          : _scenario === 'empty-bulb' && /^(?:dry_bulb|wet_bulb)_f$/.test(s.sensor)
+            ? []
+            : _scenario === 'empty-bulb' && s.sensor === 'dry_bulb_b'
+              ? [0, ...s.values.slice(1)]
+              : fixtureValues(s.values, _scenario)
       return sensorSeries(s.sensor, s.node, s.unitFamily, s.unit, start, end, values)
     }),
     statistics: sensors.map(s => statisticsFor(s.sensor, s.node, mean(s.values))),
   }
+}
+/** Guarded-preview payload with empty front bulb traces and populated back temperature/RH. */
+export function emptyBulbSensorRangeFixture(room: string, start: string, end: string): unknown {
+  return sensorRangeFixture(room, start, end, 'empty-bulb')
 }
 
 /** Current Redis values for one node as a `LiveSensorValue[]`. */
@@ -277,14 +285,6 @@ export {
   controlRangeFixture,
   controlTailFixture,
 } from './fixtures.control.ts'
-
-/** Grafana placeholder body for the fixture origin's `/grafana/*` paths. */
-export function grafanaPlaceholder(): Record<string, unknown> {
-  return {
-    service: 'grafana-placeholder',
-    message: 'Grafana is not reachable from the fixture build; native monitoring is used.',
-  }
-}
 
 /** Deterministic WebSocket fixture message. */
 export function wsFixtureMessage(): Record<string, unknown> {

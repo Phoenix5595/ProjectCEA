@@ -3,8 +3,7 @@
  *
  * Mounts `FlowerMonitoring` under jsdom with a faked `MonitoringStore` binding
  * (no network) and a mocked uPlot so no real canvas is created. Asserts the
- * toolbar, both chart regions, and the canonical tables render, and that no
- * iframe or Grafana URL appears anywhere in the page.
+ * toolbar, chart regions, and canonical tables render without an iframe.
  */
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { forwardRef } from 'react'
@@ -282,7 +281,7 @@ function renderRouted(initialEntry: string) {
 }
 
 describe('FlowerMonitoring page', () => {
-  it('renders toolbar, chart regions, and tables without any iframe or Grafana URL', () => {
+  it('renders toolbar, chart regions, and tables without an iframe', () => {
     const { container } = renderPage()
 
     expect(screen.getByText('LIVE')).toBeTruthy()
@@ -296,9 +295,6 @@ describe('FlowerMonitoring page', () => {
     expect(screen.getByRole('table', { name: 'Statistics - All Available Sensors' })).toBeTruthy()
 
     expect(container.querySelector('iframe')).toBeNull()
-    expect(container.innerHTML).not.toMatch(/grafana/i)
-    expect(container.innerHTML).not.toMatch(/iskraprojectcea/i)
-    expect(container.innerHTML).not.toMatch(/:3001/)
   })
 
   it('renders live values in the Back Cluster table', () => {

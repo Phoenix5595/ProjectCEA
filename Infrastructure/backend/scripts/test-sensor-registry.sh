@@ -10,8 +10,10 @@ readonly SENSOR_REGISTRY_INFRA_DIR="$(cd -- "$SENSOR_REGISTRY_BACKEND_DIR/.." &&
 readonly SENSOR_REGISTRY_DB_TESTS="$SENSOR_REGISTRY_INFRA_DIR/database/tests"
 readonly SENSOR_REGISTRY_MIGRATION_SQL="$SENSOR_REGISTRY_INFRA_DIR/database/migrate_sensor_registry.sql"
 
-if [[ "${PGDATABASE:-}" == 'cea_sensors' ]]; then
-  echo 'sensor registry backend harness: refusing production database name: cea_sensors' >&2
+original_name="${PGDATABASE:-}"
+lowered_name="${original_name,,}"
+if [[ "$lowered_name" == *cea_sensors* || "$lowered_name" == *sj_cea* ]]; then
+  echo 'sensor registry backend harness: refusing protected database name' >&2
   exit 1
 fi
 

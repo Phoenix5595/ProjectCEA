@@ -12,7 +12,7 @@ import DfrBoardsPanel from './devices/DfrBoardsPanel'
 import RelayChannelMatrix from './devices/RelayChannelMatrix'
 import { buildRelayChannelViewModels } from './devices/relayViewModel'
 import SensorSettingsPanel from './devices/SensorSettingsPanel'
-import SystemSettingsPanel from './devices/SystemSettingsPanel'
+import SystemSettingsTabs from './devices/SystemSettingsTabs'
 
 type DeviceTab = 'devices' | 'sensors' | 'settings'
 
@@ -180,7 +180,7 @@ export default function DeviceManager() {
         />
       )}
 
-      {activeTab === 'settings' && <SystemSettingsPanel />}
+      {activeTab === 'settings' && <SystemSettingsTabs />}
 
       {activeTab === 'devices' && (
         <>

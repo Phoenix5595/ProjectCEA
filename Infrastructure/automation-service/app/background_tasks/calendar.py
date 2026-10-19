@@ -32,18 +32,31 @@ class CalendarMixin:
             logger.warning("Calendar mode scheduler tick failed: %s", e)
 
     async def _calendar_sync_loop(self) -> None:
-        import time
-
         worker = CalendarSyncWorker(self.database)
-        while self._running:
-            try:
-                now = time.monotonic()
-                if now - self._last_calendar_sync_tick >= self._calendar_sync_interval:
-                    self._last_calendar_sync_tick = now
-                    await worker.run_sync()
-                await asyncio.sleep(30)
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.warning("Calendar sync loop error: %s", e)
-                await asyncio.sleep(60)
+        active: dict[int, asyncio.Task] = {}
+        loop = asyncio.get_running_loop()
+        try:
+            while self._running:
+                started = loop.time()
+                try:
+                    for event_id, task in tuple(active.items()):
+                        if task.done():
+                            del active[event_id]
+                            task.result()
+                    due = await self.database.calendar_repo.events_pending_sync()
+                    for row in due:
+                        if len(active) >= 4:
+                            break
+                        if row["id"] not in active:
+                            active[row["id"]] = asyncio.create_task(
+                                worker.sync_events((row["id"],), deadline_seconds=5.0)
+                            )
+                except asyncio.CancelledError:
+                    break
+                except Exception:
+                    logger.warning("calendar_background_unavailable")
+                await asyncio.sleep(max(0.0, 1.0 - (loop.time() - started)))
+        finally:
+            for task in active.values():
+                task.cancel()
+            await asyncio.gather(*active.values(), return_exceptions=True)

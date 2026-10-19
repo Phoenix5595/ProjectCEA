@@ -2,7 +2,8 @@
 
 DO $guard$
 BEGIN
-    IF current_database() = 'cea_sensors'
+    IF lower(current_database()) LIKE '%cea_sensors%'
+       OR lower(current_database()) LIKE '%sj_cea%'
        OR current_database() !~ '^monitoring_test_[a-z0-9_]+$'
        OR current_setting('app.operational_retention_disposable', TRUE) IS DISTINCT FROM '1' THEN
         RAISE EXCEPTION 'operational retention policy requires an explicitly marked disposable database';

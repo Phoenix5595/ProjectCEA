@@ -8,6 +8,7 @@ import type { TimeseriesPanelSpec } from '../config'
 import { alignSeriesBase, applyLiveTail } from './alignSeries'
 import { controlFamily, familyForUnit } from './alignSeries.builder'
 import { metricFromName } from './alignSeries.control'
+import { windowBounds } from './alignSeries.grid'
 import type { AlignInput, AlignedData } from './alignSeries.types'
 
 export interface PanelAlignmentInput extends AlignInput {
@@ -49,6 +50,7 @@ export interface PanelAlignment {
 class CachedPanelAlignment implements PanelAlignment {
   private baseKey: BaseKey | null = null
   private base: ReturnType<typeof alignSeriesBase> | null = null
+  private retainedSensorNames = new Set<string>()
   private tailKey: TailKey | null = null
   private tailResult: AlignedData | null = null
   private liveSnapshots: LiveSnapshot[] = []
@@ -63,7 +65,18 @@ class CachedPanelAlignment implements PanelAlignment {
     const key = baseKeyFor(input)
     if (!sameBaseKey(this.baseKey, key)) {
       if (!sameLiveSnapshotContext(this.baseKey, key)) this.liveSnapshots = []
-      this.base = alignSeriesBase(filterPanelInput(input))
+      const filtered = filterPanelInput(input)
+      const previousSensorNames = this.retainedSensorNames
+      this.retainedSensorNames = new Set(filtered.series.map(series => series.sensor))
+      if ([...previousSensorNames].some(sensor => !this.retainedSensorNames.has(sensor))) {
+        this.liveSnapshots = this.liveSnapshots
+          .map(snapshot => ({
+            ...snapshot,
+            values: snapshot.values.filter(value => this.retainedSensorNames.has(value.sensor)),
+          }))
+          .filter(snapshot => snapshot.values.length > 0)
+      }
+      this.base = alignSeriesBase(filtered)
       this.baseKey = key
       this.tailKey = null
       this.baseAlignments++
@@ -74,7 +87,7 @@ class CachedPanelAlignment implements PanelAlignment {
 
     const base = this.base
     if (base === null) return alignSeriesBase(filterPanelInput(input)).data
-    this.liveSnapshots = recordLiveSnapshot(this.liveSnapshots, input)
+    this.liveSnapshots = recordLiveSnapshot(this.liveSnapshots, input, this.retainedSensorNames)
     this.tailResult = replayLiveSnapshots(base, this.liveSnapshots)
     this.tailKey = tailKey
     if (input.live.length > 0) this.liveTailUpdates++
@@ -128,9 +141,14 @@ function sameLiveSnapshotContext(previous: BaseKey | null, next: BaseKey): boole
   )
 }
 
-function recordLiveSnapshot(snapshots: LiveSnapshot[], input: PanelAlignmentInput): LiveSnapshot[] {
+function recordLiveSnapshot(
+  snapshots: LiveSnapshot[],
+  input: PanelAlignmentInput,
+  retainedSensorNames: ReadonlySet<string>
+): LiveSnapshot[] {
   const now = input.now.getTime()
   const values = input.live.filter(value =>
+    retainedSensorNames.has(value.sensor) &&
     input.series.some(
       series =>
         series.sensor === value.sensor &&
@@ -167,10 +185,23 @@ function replayLiveSnapshots(
 
 function filterPanelInput(input: PanelAlignmentInput): Omit<AlignInput, 'live'> {
   const { panel } = input
+  const bounds = windowBounds(input.range, input.now)
+  const climatePanel = panel.id === 'flower-climate' || panel.id === 'veg-climate'
+  const series = input.series.filter(candidate => {
+    if (!accepts(panel, 'sensor', familyForUnit(candidate.unit_family))) return false
+    if (!climatePanel || !/^(?:dry_bulb|wet_bulb)(?:_[fbv])?$/.test(candidate.sensor)) return true
+    return candidate.points.some(
+      point =>
+        point.timestamp.getTime() >= bounds.start &&
+        point.timestamp.getTime() <= bounds.end &&
+        point.sample_count > 0 &&
+        Number.isFinite(point.average) &&
+        Number.isFinite(point.minimum) &&
+        Number.isFinite(point.maximum)
+    )
+  })
   return {
-    series: input.series.filter(series =>
-      accepts(panel, 'sensor', familyForUnit(series.unit_family))
-    ),
+    series,
     controlHistory: filterControlResponse(input.controlHistory, panel),
     projectionHistory: filterControlResponse(input.projectionHistory, panel),
     photoperiod: input.photoperiod,

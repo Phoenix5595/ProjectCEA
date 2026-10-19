@@ -29,11 +29,17 @@ class _Connection:
     async def __aexit__(self, *_args: Any) -> None:
         return None
 
+    def transaction(self, **_kwargs: Any) -> AbstractAsyncContextManager[_Connection]:
+        return self
+
     async def execute(self, query: str, *params: Any) -> None:
         self.executions.append((query, params))
 
     async def fetch(self, query: str, *_params: Any) -> list[Any]:
-        self.queries.append(query)
+        if "control_history" in query:
+            self.queries.append(query)
+        if "to_regclass" in query:
+            return [{"relation": None}]
         return []
 
 

@@ -67,11 +67,51 @@ export interface HistoricalCurrentRunControl {
  * with the fixed history presets and switches the toolbar to the historical
  * range contract.
  */
+export type HistoricalViewMode = 'range' | 'archives'
+
 export interface HistoricalToolbarControl {
   /** Route the five-day minimum handoff to the sector's regular Monitoring page. */
   readonly onMonitoringRoute: (start: Date, end: Date) => void
   /** Calendar current-run state behind the trailing preset action. */
   readonly currentRun: HistoricalCurrentRunControl
+  /** Local Historical surface selection; it is deliberately not serialized in the URL. */
+  readonly view?: HistoricalViewMode
+  readonly onViewChange?: (view: HistoricalViewMode) => void
+}
+
+export interface HistoricalViewSwitchProps {
+  readonly view: HistoricalViewMode
+  readonly onChange: (view: HistoricalViewMode) => void
+  /** Render as the compact mode-only toolbar used while viewing the archive log. */
+  readonly standalone?: boolean
+}
+
+export function HistoricalViewSwitch({
+  view,
+  onChange,
+  standalone = false,
+}: HistoricalViewSwitchProps) {
+  const controls = (
+    <div className="mon-toolbar__presets" role="group" aria-label="Historical view">
+      <button
+        type="button"
+        className="mon-toolbar__preset"
+        aria-pressed={view === 'range'}
+        onClick={() => onChange('range')}
+      >
+        Range
+      </button>
+      <button
+        type="button"
+        className="mon-toolbar__preset"
+        aria-pressed={view === 'archives'}
+        onClick={() => onChange('archives')}
+      >
+        Archives
+      </button>
+    </div>
+  )
+  return standalone ? <div className="mon-toolbar">{controls}</div> : controls
 }
 
 export interface TimeRangeToolbarProps {
@@ -360,6 +400,12 @@ export function TimeRangeToolbar({
             </>
           )}
         </div>
+        {historical?.onViewChange !== undefined && (
+          <HistoricalViewSwitch
+            view={historical.view ?? 'range'}
+            onChange={historical.onViewChange}
+          />
+        )}
         <AbsoluteRangeForm
           startInput={startInput}
           endInput={endInput}

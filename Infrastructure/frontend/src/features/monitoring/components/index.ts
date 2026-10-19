@@ -5,10 +5,12 @@
  * their pure helper modules so downstream consumers (Todo 26/27 room pages)
  * import from one module.
  */
-export { TimeRangeToolbar } from './TimeRangeToolbar'
+export { HistoricalViewSwitch, TimeRangeToolbar } from './TimeRangeToolbar'
 export type {
   HistoricalCurrentRunControl,
   HistoricalToolbarControl,
+  HistoricalViewMode,
+  HistoricalViewSwitchProps,
   TimeRangeToolbarProps,
 } from './TimeRangeToolbar'
 export { AbsoluteRangeForm } from './TimeRangeToolbar.inputs'

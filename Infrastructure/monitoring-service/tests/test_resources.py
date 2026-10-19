@@ -169,7 +169,7 @@ async def test_database_connect_configures_bounded_pool_and_statement_timeout(
 
     monkeypatch.setattr("monitoring_service.database.asyncpg.create_pool", create_pool)
     settings = DatabaseResourceSettings(
-        postgres_dsn="postgresql://monitor:secret@localhost/cea_sensors",
+        postgres_dsn="postgresql://monitor:secret@localhost/sj_cea",
         pool_size=8,
         acquire_timeout_seconds=10,
         statement_timeout_ms=750,

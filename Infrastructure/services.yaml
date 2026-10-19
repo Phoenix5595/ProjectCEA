@@ -12,6 +12,8 @@
 #       blast-radius sensitive, since it drives lights)
 #   5 = monitoring-service (read-only monitoring API on 8005; starts after
 #       publishers but never owns control or hardware)
+#   6 = grow-archive-service (archive storage/lifecycle API on 8006; starts
+#       after monitoring; no hardware access and no Redis-write authority)
 #
 # Fields:
 #   name         : human / friendly name (also used in log lines)
@@ -83,6 +85,13 @@ services:
     start_order: 5
     health_url: http://127.0.0.1:8005/health
     hardware_facing: false  # read-only TimescaleDB and Redis monitoring API
+
+  - name: grow-archive-service
+    unit: grow-archive-service.service
+    repo_unit: Infrastructure/grow-archive-service.service
+    start_order: 6
+    health_url: http://127.0.0.1:8006/health
+    hardware_facing: false  # archive storage/lifecycle API; no hardware, no Redis writes
 
   - name: redis-aof-check
     unit: redis-aof-check.service

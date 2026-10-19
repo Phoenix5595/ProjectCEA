@@ -1,6 +1,6 @@
 # Infrastructure Requirements
 
-Stable cross-service contracts for ProjectCEA. For current architecture, see `ARCHITECTURE.md`. For service-specific behavior, see the `REQUIREMENTS.md` under each service directory.
+Stable cross-service contracts for ProjectCEA. For current architecture, see `ARCHITECTURE.md`. For service-specific behavior, see the `REQUIREMENTS.md` under each service directory. In-house monitoring is the native React dashboards plus the read-only `monitoring-service` (`:8005`); there is no external dashboard product.
 
 ## Service Enumeration Authority
 
@@ -21,7 +21,7 @@ Stable cross-service contracts for ProjectCEA. For current architecture, see `AR
 
 ## Time Synchronization
 
-`systemd-timesyncd` must be active and `NTPSynchronized=yes` at deploy preflight (`Infrastructure/scripts/verify_time.sh`). Drift must stay under 100 ms. CAGG bucket boundaries, schedule start/stop, replication timestamps, and Redis TTL all depend on this.
+`systemd-timesyncd` must be active and `NTPSynchronized=yes` at deploy preflight (`Infrastructure/scripts/verify_time.sh`). Drift must stay under 100 ms. CAGG bucket boundaries, schedule start/stop, and Redis TTL all depend on this.
 
 ## Deployment Safety
 
@@ -35,6 +35,8 @@ Stable cross-service contracts for ProjectCEA. For current architecture, see `AR
 Caddy listens only on `:8080` (`auto_https off`). Repo-canonical config is `Infrastructure/caddy/Caddyfile`. Specific routing (first match wins):
 
 - `/api/sensors`, `/api/sensors/*`, `/api/sensor-data`, `/api/sensor-data/*` → `127.0.0.1:8000`
+- `/api/sensors/monitoring/*` and `/api/monitoring/control/*` (documented GET reads) → `127.0.0.1:8005`
+- `/api/archives`, `/api/archives/*` → `127.0.0.1:8006`
 - `/ws/*` → `127.0.0.1:8000`
 - `/weather`, `/weather/*` → `127.0.0.1:8003`
 - `/svc/soil/*` (path-stripped) → `127.0.0.1:8002`
@@ -42,17 +44,8 @@ Caddy listens only on `:8080` (`auto_https off`). Repo-canonical config is `Infr
 - `/ws` exactly → `127.0.0.1:8001`
 - catch-all → `127.0.0.1:8001` (automation API + SPA static)
 
-Direct ports 8000–8004 may still be reachable locally until a later hardening phase; clients should use `:8080`.
-
-## Iskra Stack Ownership
-
-Production Grafana runs in container `projectcea_grafana` on `iskraprojectcea:3001`. It reads the local streaming standby `projectcea_database` (TimescaleDB replica) for time-series and Redis (via `redis_sync`) for current-value panels.
-
-- Provisioning and dashboards are mounted read-only from `Infrastructure/iskra_stack/provisioning/` and `Infrastructure/iskra_stack/dashboards/`.
-- Sync from Pi to Iskra uses `Infrastructure/scripts/sync_to_iskra.sh`.
-- Preflight health check uses `Infrastructure/scripts/verify_iskra.sh`.
-- Replica recovery and any destructive re-base are operator-only actions. They are not performed by agents or automated verification.
+Direct ports 8000–8006 may still be reachable locally until a later hardening phase; clients should use `:8080`.
 
 ## Validation Surface
 
-Local verification gates live in `ARCHITECTURE.md`. Runtime validation uses service `/health` and `/ready` endpoints, logs, and Grafana. The repo retains focused local tests; production validation is not the only surface.
+Local verification gates live in `ARCHITECTURE.md`. Runtime validation uses service `/health` and `/ready` endpoints, logs, and the read-only monitoring APIs (`monitoring-service :8005`). The repo retains focused local tests; production validation is not the only surface.

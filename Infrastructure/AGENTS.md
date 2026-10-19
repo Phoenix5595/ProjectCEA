@@ -10,6 +10,7 @@
 | weather-service | 8003 | weather-service.service | YUL weather data |
 | onewire-worker | 8004 | onewire-worker.service | 1-Wire temperatures |
 | monitoring-service | 8005 | monitoring-service.service | Read-only monitoring API |
+| grow-archive-service | 8006 | grow-archive-service.service | Grow archive storage/lifecycle API |
 
 Source: [`services.yaml`](services.yaml).
 
@@ -21,6 +22,8 @@ Sensors → can-processor / soil-sensor / onewire / weather
         → TimescaleDB `measurement`
         → backend / automation / monitoring-service
 ```
+
+Grow/Veg source-row archives are owned by `grow-archive-service` (`:8006`): it reads source history directly, publishes verified ZIPs, and only deletes rows through enabled, ZIP-verified lifecycle work. It does not own a separate database cold store or Redis writes.
 
 Config changes flow from automation-service to backend to frontend via Redis Streams (`cea:events:config`) and WebSocket. Source: `automation-service/app/events/__init__.py`.
 
@@ -70,8 +73,9 @@ Source: [`services.yaml`](services.yaml) `start_order`.
 | CAN processor | [`can-processor-service/AGENTS.md`](can-processor-service/AGENTS.md) |
 | Database | [`database/AGENTS.md`](database/AGENTS.md) |
 | Frontend | [`frontend/AGENTS.md`](frontend/AGENTS.md) |
+| Monitoring service | [`monitoring-service/AGENTS.md`](monitoring-service/AGENTS.md) |
+| Grow archive service | [`grow-archive-service/AGENTS.md`](grow-archive-service/AGENTS.md) |
 | Shared code | [`shared/AGENTS.md`](shared/AGENTS.md) |
-| Iskra replica stack | [`iskra_stack/AGENTS.md`](iskra_stack/AGENTS.md) |
 
 ## Anti-Patterns
 
@@ -81,4 +85,4 @@ Source: [`services.yaml`](services.yaml) `start_order`.
 
 ---
 
-*Last updated: 2026-08-10*
+*Last updated: 2026-10-18*

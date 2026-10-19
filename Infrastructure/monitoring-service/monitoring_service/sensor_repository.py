@@ -40,6 +40,7 @@ from monitoring_service.sensor_sql import (
     TIERED_STATEMENTS as _TIERED_STATEMENTS,
 )
 from shared.cluster_topology import sensor_name_like_pattern
+from shared.history_availability import local_history_scope
 
 _LIVE_MAX_AGE: Final[timedelta] = timedelta(
     seconds=float(os.getenv("MONITORING_LIVE_STALENESS_SECONDS", "900"))
@@ -89,7 +90,9 @@ class SensorMonitoringRepository:
         metadata = resolve_room_metadata(room)
         tier = resolve_tier(monitoring_range.duration, max_points)
         node_mapping = node_mapping_args(room, metadata.nodes)
-        async with request_observation(tier=tier.value):
+        async with request_observation(tier=tier.value), local_history_scope(
+            room, monitoring_range.start, monitoring_range.end, ("measurement",)
+        ):
             complete_bucket_upper_bound = (
                 None
                 if tier is Tier.RAW
@@ -179,7 +182,9 @@ class SensorMonitoringRepository:
         )
         stddev_quality = StddevQuality.EXACT
         tier = "5min" if statement == _STATISTICS_CAGG_SQL else "raw"
-        async with request_observation(tier=tier):
+        async with request_observation(tier=tier), local_history_scope(
+            room, monitoring_range.start, monitoring_range.end, ("measurement",)
+        ):
             rows = await self._database.fetch(
                 statement,
                 room,

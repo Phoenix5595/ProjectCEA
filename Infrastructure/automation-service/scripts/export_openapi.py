@@ -1,4 +1,4 @@
-"""Export the automation FastAPI OpenAPI schema without starting service lifespan."""
+"""Export the shared frontend Automation/Archive schema without service lifespan."""
 
 from __future__ import annotations
 
@@ -16,7 +16,14 @@ def main() -> int:
     infrastructure_root = service_root.parent
     sys.path.insert(0, str(service_root))
     sys.path.insert(0, str(infrastructure_root))
+    sys.path.insert(0, str(infrastructure_root / "grow-archive-service"))
+    sys.path.insert(0, str(infrastructure_root / "monitoring-service"))
+    from grow_archive_service.archive_routes import router as archive_router
+
     from app.main import app
+
+    # Schema composition only: the running Archive service still owns port 8006.
+    app.include_router(archive_router)
 
     output_path = Path(sys.argv[1])
     output_path.parent.mkdir(parents=True, exist_ok=True)

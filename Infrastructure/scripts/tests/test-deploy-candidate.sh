@@ -54,10 +54,12 @@ pass() {
 mkdir -p "$BIN_DIRECTORY" "$RELEASES" "$STATE_DIR"
 
 for rel in "$REL_A" "$REL_B" "$REL_C" "$REL_D"; do
-  mkdir -p "$rel/Infrastructure/frontend/dist" "$rel/Infrastructure/can-processor-service"
+  mkdir -p "$rel/Infrastructure/frontend/dist" "$rel/Infrastructure/can-processor-service" \
+    "$rel/Infrastructure/grow-archive-service"
   printf '{"name":"cea-frontend","version":"fixture"}\n' > "$rel/Infrastructure/frontend/package.json"
   printf '<!doctype html><title>Fixture</title>\n' > "$rel/Infrastructure/frontend/dist/index.html"
   printf '#!/bin/bash\nexit 0\n' > "$rel/Infrastructure/can-processor-service/setup_can.sh"
+  printf '# Required staged-release fixture file.\n' > "$rel/Infrastructure/grow-archive-service/requirements.txt"
   cp "$SCRIPT_DIRECTORY/../../services.yaml" "$rel/Infrastructure/services.yaml"
 done
 
@@ -106,6 +108,8 @@ cp -a "$source_path/frontend/." "$destination_path/frontend/"
 mkdir -p "$destination_path/can-processor-service"
 cp "$source_path/can-processor-service/setup_can.sh" "$destination_path/can-processor-service/"
 cp "$source_path/services.yaml" "$destination_path/services.yaml"
+mkdir -p "$destination_path/grow-archive-service"
+cp "$source_path/grow-archive-service/requirements.txt" "$destination_path/grow-archive-service/requirements.txt"
 RSYNC
 
 cat > "$BIN_DIRECTORY/npm" <<'NPM'

@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Sensor registry migration harness.
 #
-# Proves on a disposable PostgreSQL database (never `cea_sensors`):
+# Proves on a disposable PostgreSQL database (never `cea_sensors` or `sj_cea`, including aliases):
 #   * migration idempotence (applied twice with ON_ERROR_STOP)
 #   * unique (bus, hardware_address) and unique device_id
 #   * CAN room-position uniqueness (partial unique index)
@@ -27,8 +27,10 @@ fail() {
 }
 
 reject_production_database() {
-  if [[ "${PGDATABASE:-}" == 'cea_sensors' ]]; then
-    fail 'refusing production database name: cea_sensors'
+  local original_name="${PGDATABASE:-}"
+  local lowered_name="${original_name,,}"
+  if [[ "$lowered_name" == *cea_sensors* || "$lowered_name" == *sj_cea* ]]; then
+    fail 'refusing protected database name'
     return 1
   fi
 }

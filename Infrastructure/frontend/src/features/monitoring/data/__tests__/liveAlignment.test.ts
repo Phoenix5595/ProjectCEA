@@ -156,4 +156,22 @@ describe('live alignment', () => {
     // Then: the explicit control null remains a gap.
     expect(target?.y[result.nowIndex]).toBeNull()
   })
+  it('does not let live-only bulb values recreate an empty climate series', () => {
+    const panel = { ...CLIMATE_PANEL, id: 'flower-climate' }
+    const emptyBulb: SensorSeries = {
+      sensor: 'dry_bulb_f',
+      node: 'front',
+      unit_family: 'celsius',
+      unit: '°C',
+      points: [],
+    }
+    const result = createPanelAlignment().align({
+      ...input({
+        series: [emptyBulb],
+        live: [{ sensor: 'dry_bulb_f', value: 0, timestamp: NOW }],
+      }),
+      panel,
+    })
+    expect(result.series.some(series => series.key.includes('dry_bulb_f'))).toBe(false)
+  })
 })

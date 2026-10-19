@@ -2,7 +2,8 @@
 
 DO $guard$
 BEGIN
-    IF current_database() IN ('cea_sensors', 'cea_sensors_test')
+    IF lower(current_database()) LIKE '%cea_sensors%'
+       OR lower(current_database()) LIKE '%sj_cea%'
        OR current_database() !~ '^monitoring_test_[a-z0-9_]+$' THEN
         RAISE EXCEPTION 'monitoring fixtures require the monitoring_test_ database namespace';
     END IF;
@@ -183,7 +184,7 @@ CREATE TABLE light_programs (
 );
 
 INSERT INTO monitoring_fixture_metadata (fixture_name, fixture_version)
-VALUES ('grafana-replacement-veg-flower', 1);
+VALUES ('native-monitoring', 1);
 
 INSERT INTO room (room_id, name)
 VALUES

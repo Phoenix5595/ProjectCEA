@@ -418,10 +418,20 @@ async def test_calendar_sync_event_redacts_credentials_and_urls(
     database = SimpleNamespace(calendar_repo=_CalendarRepository(None))
     monkeypatch.setattr(calendar, "encrypt_secret", lambda secret: f"encrypted:{secret}")
     body = SyncConnectionCreate(
-        caldav_base_url="https://calendar-user:calendar-password@caldav.example.test/dav",
+        caldav_base_url="https://calendar.example.test/dav",
         username="calendar-user",
         app_password="calendar-password",
-        target_calendar_url="https://calendar-user:calendar-password@calendar.example.test/team",
+        target_calendar_url="https://calendar.example.test/team",
+    )
+    async def discover(_base_url: str, _username: str, _password: str) -> SimpleNamespace:
+        return SimpleNamespace(
+            calendars=[{"url": "https://calendar.example.test/team/", "name": "Growing"}],
+            files_root_url=None,
+            instance_id="test-instance",
+        )
+
+    monkeypatch.setattr(
+        calendar, "CalendarSyncWorker", lambda _database: SimpleNamespace(discover=discover)
     )
 
     # When: the connection is persisted.
@@ -502,7 +512,11 @@ async def test_grow_plan_deletion_emits_only_for_deleted_rows(
     # Given: a grow-plan repository with a known deletion count.
     sink = _RecordingSink()
     grow_plan_id = UUID("d32b865d-c0bb-4d3a-bd45-1d310090db44")
-    repository = SimpleNamespace(delete_grow_plan=lambda _grow_plan_id: _async_value(deleted_count))
+    repository = SimpleNamespace(
+        delete_grow_plan=lambda _grow_plan_id: _async_value(
+            [_calendar_event(f"deleted-{index}") for index in range(deleted_count)]
+        )
+    )
     database = SimpleNamespace(calendar_repo=repository)
 
     # When: the deletion route returns its persisted-row result.

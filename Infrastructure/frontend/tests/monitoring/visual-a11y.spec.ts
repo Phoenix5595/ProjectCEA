@@ -34,7 +34,6 @@ function trackViolations(page: import('@playwright/test').Page): string[] {
   const violations: string[] = []
   page.on('request', req => {
     const url = req.url()
-    if (url.includes('/grafana/')) violations.push(`grafana: ${url}`)
     const violation = describeViolation(url)
     if (violation !== null) violations.push(`${violation}: ${url}`)
   })

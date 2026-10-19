@@ -3,18 +3,17 @@ import { fr } from '@daypicker/react/locale'
 import { format } from 'date-fns'
 import { fr as dateFnsFr } from 'date-fns/locale'
 import { toZonedTime } from 'date-fns-tz'
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { CalendarEventDto } from '../../types/calendar'
-import { ROOM_CALENDAR_COLORS } from '../../types/calendar'
-import { buildCalendarDayMarkers, calendarEventOccursOnDay } from '../../utils/calendarDayMarkers'
+import { EVENT_TYPE_COLORS } from '../../types/calendar'
+import { buildCalendarDayMarkers, calendarEventOccursOnDay, calendarDayKey } from '../../utils/calendarDayMarkers'
 import { CALENDAR_TZ } from '../../utils/flowerGrowPlan'
 
 import { CalendarDayButton } from './CalendarDayButton'
 import CalendarDayDetail from './CalendarDayDetail'
 import { CalendarMarkersContext } from './CalendarMarkersContext'
 
-import '@daypicker/react/style.css'
 
 export interface GrowCalendarProps {
   variant: 'compact' | 'full'
@@ -53,6 +52,7 @@ export default function GrowCalendar({
 }: GrowCalendarProps) {
   const [month, setMonth] = useState(() => toZonedTime(new Date(), CALENDAR_TZ))
   const [selected, setSelected] = useState<Date | undefined>()
+  const calendarRef = useRef<HTMLDivElement>(null)
 
   const filtered = useMemo(() => {
     if (viewMode === 'room' && location) {
@@ -62,6 +62,7 @@ export default function GrowCalendar({
   }, [events, viewMode, location])
 
   const dayMarkers = useMemo(() => buildCalendarDayMarkers(filtered), [filtered])
+  const legendTypes = useMemo(() => [...new Set(filtered.map(event => event.eventType))].sort(), [filtered])
 
   const dayEvents = selected ? filtered.filter(e => calendarEventOccursOnDay(e, selected)) : []
 
@@ -70,9 +71,45 @@ export default function GrowCalendar({
     onDaySelect?.(date, date ? filtered.filter(e => calendarEventOccursOnDay(e, date)) : [])
   }
 
+  const closeDayDetail = useCallback(() => {
+    const key = selected ? calendarDayKey(selected) : null
+    setSelected(undefined)
+    onDaySelect?.(undefined, [])
+    if (key !== null) {
+      requestAnimationFrame(() => {
+        calendarRef.current?.querySelector<HTMLButtonElement>(
+          `[data-day="${key}"] .grow-cal-day-btn`
+        )?.focus()
+      })
+    }
+  }, [onDaySelect, selected])
+
+  useEffect(() => {
+    if (!selected || !showInlineDayDetail) return
+    const onEscape = (event: KeyboardEvent) => {
+      const active = document.activeElement
+      if (event.key === 'Escape' && !event.defaultPrevented &&
+          (active === document.body || calendarRef.current?.contains(active))) {
+        event.preventDefault()
+        event.stopPropagation()
+        closeDayDetail()
+      }
+    }
+    document.addEventListener('keydown', onEscape)
+    return () => document.removeEventListener('keydown', onEscape)
+  }, [closeDayDetail, selected, showInlineDayDetail])
+
   const compact = variant === 'compact'
   const scaled = compact && fillWidth
   const dashboard = density === 'dashboard'
+  const DayButton = useMemo(() => {
+    const maxVisibleEvents = compact ? 1 : 3
+    const showRoomLabels = viewMode === 'unified'
+    return function StableCalendarDayButton(props: React.ComponentProps<typeof CalendarDayButton>) {
+      return <CalendarDayButton {...props} maxVisibleEvents={maxVisibleEvents} showRoomLabels={showRoomLabels} />
+    }
+  }, [compact, viewMode])
+
 
   const weekdayFormat = compact ? 'EEE' : 'cccc'
 
@@ -85,6 +122,7 @@ export default function GrowCalendar({
 
   return (
     <div
+      ref={calendarRef}
       className={`grow-calendar flex flex-col gap-0 ${
         dashboard
           ? 'grow-calendar--dashboard flex-1 min-h-0'
@@ -120,27 +158,13 @@ export default function GrowCalendar({
       </div>
 
       <div className="grow-cal-legend" role="list" aria-label="Calendar legend">
-        <span className="grow-cal-legend-item" role="listitem">
-          <span className="grow-cal-marker-dot grow-cal-marker-dot--task" aria-hidden />
-          Task
-        </span>
-        <span className="grow-cal-legend-item" role="listitem">
-          <span className="grow-cal-marker-dot grow-cal-marker-dot--note" aria-hidden />
-          Note
-        </span>
-        <span className="grow-cal-legend-item" role="listitem">
-          <span className="grow-cal-phase bg-amber-500 grow-cal-legend-phase">
-            <span className="grow-cal-phase-text">Phase</span>
+        {legendTypes.map(eventType => (
+          <span key={eventType} className="grow-cal-legend-item" role="listitem">
+            <span className={`inline-block size-2 rounded-sm ${EVENT_TYPE_COLORS[eventType] ?? 'bg-slate-500'}`} aria-hidden="true" />
+            {eventType.replaceAll('_', ' ')}
           </span>
-        </span>
-        {viewMode === 'unified' &&
-          Object.entries(ROOM_CALENDAR_COLORS).map(([room, cls]) => (
-            <span key={room} className="grow-cal-legend-item" role="listitem">
-              <span className={`grow-cal-phase ${cls} grow-cal-legend-phase`}>
-                <span className="grow-cal-phase-text">{room.replace(' Room', '')}</span>
-              </span>
-            </span>
-          ))}
+        ))}
+        {viewMode === 'unified' && <span className="grow-cal-legend-item" role="listitem">F / V / L · Flower Room / Veg Room / Lab</span>}
       </div>
 
       {loading ? (
@@ -163,7 +187,7 @@ export default function GrowCalendar({
                 setMonth(m)
                 onMonthChange?.(m)
               }}
-              components={{ DayButton: CalendarDayButton }}
+              components={{ DayButton }}
               className={`${scaled ? 'text-sm' : compact ? 'text-xs' : 'text-sm'} w-full grow-calendar-picker`}
               fixedWeeks={dashboard}
             />
@@ -173,9 +197,10 @@ export default function GrowCalendar({
 
       {selected && showInlineDayDetail && (
         <CalendarDayDetail
+          key={calendarDayKey(selected)}
           date={selected}
           events={dayEvents}
-          onClose={() => handleSelect(undefined)}
+          onClose={closeDayDetail}
         />
       )}
     </div>

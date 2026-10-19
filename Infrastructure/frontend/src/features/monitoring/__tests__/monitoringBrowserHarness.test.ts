@@ -12,7 +12,6 @@ import { describe, it, expect } from 'vitest'
 import {
   FIXTURE_ORIGIN,
   FORBIDDEN_PORTS,
-  FORBIDDEN_HOSTS,
   describeViolation,
   isAllowedOrigin,
 } from '../config/originGuard'
@@ -36,16 +35,11 @@ describe('monitoring browser harness', () => {
     for (const port of FORBIDDEN_PORTS) {
       expect(describeViolation(`http://127.0.0.1:${port}/`)).toBe(`forbidden-port-${port}`)
     }
-    // Every production host is forbidden.
-    for (const host of FORBIDDEN_HOSTS) {
-      expect(describeViolation(`http://${host}:3001/`)).toBe(`forbidden-host-${host}`)
-    }
   })
 
   it('rejects any request outside exact fixture origin', () => {
     expect(describeViolation('http://127.0.0.1:8080/')).toBe('forbidden-port-8080')
     expect(describeViolation('http://127.0.0.1:8000/')).toBe('forbidden-port-8000')
-    expect(describeViolation('http://iskraprojectcea:3001/')).toBe('forbidden-host-iskraprojectcea')
     expect(describeViolation('https://example.com/')).toBe('external-origin-https://example.com')
     expect(describeViolation('not a url')).toBe('malformed-url')
     expect(isAllowedOrigin(`${FIXTURE_ORIGIN}/`)).toBe(true)
