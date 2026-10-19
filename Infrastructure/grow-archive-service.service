@@ -33,9 +33,11 @@ Environment=ARCHIVE_LIFECYCLE_ENABLED=false
 EnvironmentFile=-/opt/projectcea/shared/env/postgres.env
 # Shared API key (CEA_API_KEY).
 EnvironmentFile=-/opt/projectcea/shared/env/api_key.env
+# CALENDAR_SYNC_ENCRYPTION_KEY (Fernet); must be the same file automation-service
+# reads, because both decrypt the saved Nextcloud credentials.
+EnvironmentFile=-/opt/projectcea/shared/env/calendar_sync.env
 # Grow-archive settings (archive root, local cache limits, worker
-# concurrency, Nextcloud/CalDAV encryption key). Materialised during
-# authorized service setup; absent here on purpose.
+# concurrency). Materialised during authorized service setup; absent here on purpose.
 EnvironmentFile=-/opt/projectcea/shared/env/grow-archive.env
 ExecStart=/opt/projectcea/current/Infrastructure/grow-archive-service/.venv/bin/python -m uvicorn grow_archive_service.main:app --host 127.0.0.1 --port 8006
 Restart=on-failure

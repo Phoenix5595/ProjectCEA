@@ -83,7 +83,10 @@ settings leaves the connection disabled until the explicit backup-confirmed
 `Culture` (`TARGET_CALENDAR_NAME` in `app/routes/calendar.py`, case-insensitive)
 and a writable Files root are discovered separately; no calendar is created or
 cleared, and only events carrying the Pi's own UID/`X-CEA-EVENT-ID` are deleted.
-Secrets stay Fernet-encrypted with `CALENDAR_SYNC_ENCRYPTION_KEY`, and missing
+Secrets stay Fernet-encrypted with `CALENDAR_SYNC_ENCRYPTION_KEY`, loaded by both
+automation-service and grow-archive-service from
+`/opt/projectcea/shared/env/calendar_sync.env` (mode 0600; losing or rotating the key
+makes saved credentials undecryptable, so re-save the connection afterwards). Missing
 or wrong keys expose unavailable status without discarding local data.
 
 Proof: `bash Infrastructure/database/tests/test-grow-data-lifecycle.sh --case calendar-sync`.
