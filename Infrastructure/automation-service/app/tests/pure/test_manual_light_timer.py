@@ -147,6 +147,7 @@ async def _tick(rig):
         None,
         "Constant",
         is_sun=False,
+        log_context={},
     )
 
 

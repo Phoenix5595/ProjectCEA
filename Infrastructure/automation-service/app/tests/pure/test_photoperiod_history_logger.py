@@ -105,14 +105,10 @@ def recorder_state(
         location=location,
         cluster=cluster,
         phase=phase,
-        phase_observed_at=(
-            None if phase is None else T0 + timedelta(seconds=phase_at or 0.0)
-        ),
+        phase_observed_at=(None if phase is None else T0 + timedelta(seconds=phase_at or 0.0)),
         coverage_state=coverage_state,  # type: ignore[arg-type]
         coverage_observed_at=(
-            None
-            if coverage_state is None
-            else T0 + timedelta(seconds=coverage_at or 0.0)
+            None if coverage_state is None else T0 + timedelta(seconds=coverage_at or 0.0)
         ),
         runtime_snapshot_version=RuntimeSnapshotVersion(version),
     )
@@ -432,8 +428,7 @@ async def test_capacity_rejection_queues_gap_boundaries_atomically() -> None:
     gap_positions = [
         index
         for index, row in enumerate(flat)
-        if isinstance(row, PhotoperiodCoverageObservation)
-        and row.reason == "recording_gap"
+        if isinstance(row, PhotoperiodCoverageObservation) and row.reason == "recording_gap"
     ]
     assert len(gap_positions) == 1
     gap_index = gap_positions[0]
@@ -487,9 +482,7 @@ class _WaitingStore(FakeStore):
         fail_state_read: bool = False,
         fail_append: bool = False,
     ) -> None:
-        super().__init__(
-            records=records, fail_state_read=fail_state_read, fail_append=fail_append
-        )
+        super().__init__(records=records, fail_state_read=fail_state_read, fail_append=fail_append)
         self.release = asyncio.Event()
         self.append_started = asyncio.Event()
         self.append_calls: list[tuple[PhotoperiodHistoryRow, ...]] = []
@@ -555,11 +548,7 @@ async def test_flush_never_splits_a_boundary_packet_across_batches() -> None:
     assert len(store.append_calls[1]) == 63
     assert all(row.location == ROOM for row in store.append_calls[1])
     for batch in store.append_calls:
-        pair_positions = [
-            index
-            for index, row in enumerate(batch)
-            if row.location == other_room
-        ]
+        pair_positions = [index for index, row in enumerate(batch) if row.location == other_room]
         assert len(pair_positions) in (0, 2)
         if len(pair_positions) == 2:
             assert pair_positions[1] == pair_positions[0] + 1
@@ -626,8 +615,7 @@ async def test_preseed_rejection_keeps_gap_alive_until_a_recovery_packet_fits() 
     gap_positions = [
         index
         for index, row in enumerate(flat)
-        if isinstance(row, PhotoperiodCoverageObservation)
-        and row.reason == "recording_gap"
+        if isinstance(row, PhotoperiodCoverageObservation) and row.reason == "recording_gap"
     ]
     assert len(gap_positions) == 1
     gap_index = gap_positions[0]
@@ -636,9 +624,7 @@ async def test_preseed_rejection_keeps_gap_alive_until_a_recovery_packet_fits() 
         observation(recovery_offset, phase=Phase.MOON),
         coverage_row(recovery_offset, "available", "recovered"),
     ]
-    rejected_times = {
-        T0 + timedelta(seconds=number) for number in (offset, offset + 1)
-    }
+    rejected_times = {T0 + timedelta(seconds=number) for number in (offset, offset + 1)}
     assert not any(
         isinstance(row, PhotoperiodObservation) and row.observed_at in rejected_times
         for row in flat
@@ -803,6 +789,8 @@ def _engine_with(
     engine._profiling_enabled = False
     engine._ramps_restored = True
     engine._automation_context = {}
+    engine._automation_log_context = {}
+    engine._last_logged = {}
     engine._photoperiod_phases = {}
     engine._current_climate_mode = {}
     engine._current_period_name = {}
@@ -863,23 +851,15 @@ async def test_engine_offers_resolved_phase_for_veg_and_flower_rooms() -> None:
     await engine._run_control_loop_with_snapshot(snapshot)
     await sink.flush_once()
 
-    phase_rows = [
-        row
-        for row in store.flat_rows()[4:]
-        if isinstance(row, PhotoperiodObservation)
-    ]
+    phase_rows = [row for row in store.flat_rows()[4:] if isinstance(row, PhotoperiodObservation)]
     assert [(row.location, row.phase) for row in phase_rows] == [
         (FLOWER, Phase.MOON),
         (ROOM, Phase.MOON),
     ]
     coverage_rows = [
-        row
-        for row in store.flat_rows()
-        if isinstance(row, PhotoperiodCoverageObservation)
+        row for row in store.flat_rows() if isinstance(row, PhotoperiodCoverageObservation)
     ]
-    assert [
-        (row.location, row.state, row.reason) for row in coverage_rows
-    ] == [
+    assert [(row.location, row.state, row.reason) for row in coverage_rows] == [
         (FLOWER, "available", "initial"),
         (ROOM, "available", "initial"),
     ]
@@ -991,9 +971,7 @@ async def test_engine_removal_marks_missing_room_unavailable() -> None:
     await sink.flush_once()
 
     closed = [
-        row
-        for row in store.flat_rows()[4:]
-        if isinstance(row, PhotoperiodCoverageObservation)
+        row for row in store.flat_rows()[4:] if isinstance(row, PhotoperiodCoverageObservation)
     ]
     assert [(row.location, row.reason) for row in closed] == [(ROOM, "control_failure")]
     await sink.stop()

@@ -34,6 +34,11 @@ The control loop runs every 1 s. VPD is the master climate controller; PID is us
 
 `GET /api/devices/control-snapshot` joins the registry snapshot, relay observation, assigned-device command state, and DFR commanded/acknowledged intensity into one read model.
 
+## Automation-state history
+
+The history writer records PID gains only for the standard PID controller used by a device. There is currently no producer for `active_rule_ids`, `active_schedule_ids`, or `schedule_*`; those fields remain empty or `NULL` and do not indicate active rules or schedules.
+
+
 ## Operational event log
 
 The service owns the typed operational-event contract, all semantic producers, and the authenticated replay API.

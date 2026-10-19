@@ -116,11 +116,7 @@ class FakeSetpointCalculator:
     async def calculate_setpoints(self, *args: object) -> dict[str, float]:
         setpoint_data = args[5]
         assert isinstance(setpoint_data, Mapping)
-        return {
-            "effective_heating_setpoint": float(
-                setpoint_data.get("tick_test_effective", 24.0)
-            )
-        }
+        return {"effective_heating_setpoint": float(setpoint_data.get("tick_test_effective", 24.0))}
 
     def add_current_vpd(
         self,
@@ -188,6 +184,8 @@ def _engine(
     engine._effective_setpoints = {}
     engine._tick_effective_setpoints = {}
     engine._automation_context = {("Veg Room", "Main", "Heater"): {"pid_output": 0.25}}
+    engine._automation_log_context = {}
+    engine._last_logged = {}
     engine._photoperiod_phases = {}
     engine._pending_db_writes = []
     engine._last_light_effective_log = {}
@@ -213,9 +211,7 @@ def _engine(
     return engine, processor
 
 
-def _run_tick(
-    engine: ControlEngine, snapshot: RuntimeDeviceSnapshot | None = None
-) -> None:
+def _run_tick(engine: ControlEngine, snapshot: RuntimeDeviceSnapshot | None = None) -> None:
     anyio.run(engine._run_control_loop_with_snapshot, snapshot or _snapshot())
 
 
@@ -436,9 +432,7 @@ def test_control_tick_keeps_captured_profile_when_registry_changes_during_sensor
                 active_profile=active_profile,
             )
             assert active_profile is not None
-            result["setpoint_data"] = {
-                "tick_test_effective": float(active_profile["mode_id"])
-            }
+            result["setpoint_data"] = {"tick_test_effective": float(active_profile["mode_id"])}
             return result
 
     resolver = ModeAwareResolver()

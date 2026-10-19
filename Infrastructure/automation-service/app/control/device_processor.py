@@ -8,6 +8,7 @@ import time as _time
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from app.control.decision_event_policy import DecisionObservation
 from app.control.device_command_service import DeviceCommandService
 from app.control.device_control_context import build_initial_control_context
 from app.control.device_controller import DeviceController
@@ -106,6 +107,8 @@ class DeviceProcessor:
         current_mode: str | None,
         is_sun: bool = False,
         previous_climate_mode: str | None = None,
+        *,
+        log_context: dict[tuple[str, str, str], dict[str, Any]],
     ) -> None:
         """Process all devices for a location/cluster.
 
@@ -119,6 +122,7 @@ class DeviceProcessor:
             current_mode: Current climate mode
             is_sun: True if current time is inside room sun window (lights on); False = moon (lights off).
             previous_climate_mode: Previous climate mode for this location/cluster (for PID integrator reset).
+            log_context: Per-device history-only automation-state logging context.
         """
         batch_executor = HardwareBatchExecutor()
 
@@ -170,9 +174,9 @@ class DeviceProcessor:
                 current_vpd = context.get("current_vpd")
                 # Type guard: ensure values are valid numbers
                 vpd_setpoint: float | None = None
-                if isinstance(vpd_setpoint_raw, (int, float)):
+                if isinstance(vpd_setpoint_raw, int | float):
                     vpd_setpoint = float(vpd_setpoint_raw)
-                if vpd_setpoint is not None and isinstance(current_vpd, (int, float)):
+                if vpd_setpoint is not None and isinstance(current_vpd, int | float):
                     # Build EnvironmentState from sensor values
                     air_temp = sensor_values.get("dry_bulb") or sensor_values.get("air_temp") or 0.0
                     humidity = sensor_values.get("humidity") or sensor_values.get("rh") or 50.0
@@ -193,12 +197,12 @@ class DeviceProcessor:
                     cooling_setpoint_raw = context.get("effective_cooling_setpoint")
                     heating_setpoint = (
                         float(heating_setpoint_raw)
-                        if isinstance(heating_setpoint_raw, (int, float))
+                        if isinstance(heating_setpoint_raw, int | float)
                         else 20.0
                     )
                     cooling_setpoint = (
                         float(cooling_setpoint_raw)
-                        if isinstance(cooling_setpoint_raw, (int, float))
+                        if isinstance(cooling_setpoint_raw, int | float)
                         else 30.0
                     )
                     temp_constraints = TempConstraints(
@@ -255,6 +259,35 @@ class DeviceProcessor:
                 context,
                 batch_executor=batch_executor,
             )
+
+            observation = context.get("pid_decision_observation")
+            pid_kp = pid_ki = pid_kd = None
+            if isinstance(observation, DecisionObservation):
+                duty_cycle_percent = observation.output_percent
+                control_reason = observation.reason_code
+                if observation.controller == "pid" and self.pid_controller_manager is not None:
+                    # The standard PID path has already loaded and cached this controller.
+                    pid_controller = await self.pid_controller_manager.get_pid_controller(
+                        location, cluster, device_name, device_info.get("device_type", "")
+                    )
+                    if pid_controller is not None:
+                        pid_kp = pid_controller.kp
+                        pid_ki = pid_controller.ki
+                        pid_kd = pid_controller.kd
+            else:
+                duty_cycle_percent = None
+                control_reason = (
+                    "light.decision" if context.get("light_decision") is not None else "none"
+                )
+
+            log_context[(location, cluster, device_name)] = {
+                "pid_output": context.get("pid_output"),
+                "duty_cycle_percent": duty_cycle_percent,
+                "control_reason": control_reason,
+                "pid_kp": pid_kp,
+                "pid_ki": pid_ki,
+                "pid_kd": pid_kd,
+            }
 
         if batch_executor and batch_executor.pending_count > 0:
             result = await batch_executor.execute()
@@ -386,10 +419,10 @@ class DeviceProcessor:
                 scheduled_percent = float(intensity_details["effective_intensity"])
                 nominal_raw = intensity_details.get("nominal_intensity")
                 nominal_percent = (
-                    float(nominal_raw) if isinstance(nominal_raw, (int, float)) else None
+                    float(nominal_raw) if isinstance(nominal_raw, int | float) else None
                 )
                 ramp_raw = intensity_details.get("ramp_progress")
-                ramp_progress = float(ramp_raw) if isinstance(ramp_raw, (int, float)) else None
+                ramp_progress = float(ramp_raw) if isinstance(ramp_raw, int | float) else None
             else:
                 key = (location, cluster, device_name)
                 now_ts = current_time.timestamp()

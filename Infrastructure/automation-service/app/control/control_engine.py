@@ -159,8 +159,10 @@ class ControlEngine:
         # See _restore_ramps_on_startup() called from run()
         self._ramps_restored = False
 
-        # Track automation context for logging
+        # This context is published live; history logging uses its separate context below.
         self._automation_context: dict[tuple[str, str, str], dict[str, Any]] = {}
+        self._automation_log_context: dict[tuple[str, str, str], dict[str, Any]] = {}
+        self._last_logged: dict[tuple[str, str, str], tuple[tuple[Any, ...], int]] = {}
         self._photoperiod_phases: dict[tuple[str, str], PhotoperiodPhase] = {}
 
         # Track current climate mode per location/cluster
@@ -622,6 +624,7 @@ class ControlEngine:
                     current_mode,
                     is_sun=is_sun,
                     previous_climate_mode=previous_mode,
+                    log_context=self._automation_log_context,
                 )
 
                 await log_light_effective_intensities_for_cluster(
@@ -814,24 +817,45 @@ class ControlEngine:
     # _log_light_intensities logic moved inline to run_control_loop
 
     async def _log_automation_state(self, snapshot: RuntimeDeviceSnapshot) -> None:
-        """Log automation state for all devices using batch INSERT."""
-        devices = snapshot.hierarchy
-
-        current_time = datetime.now()
+        """Log automation state only when its decision changes or a heartbeat is due."""
+        current_time = datetime.now(UTC)
+        heartbeat_slot = math.floor(current_time.timestamp() / 30)
         records: list[dict[str, Any]] = []
+        last_logged_updates: dict[tuple[str, str, str], tuple[tuple[Any, ...], int]] = {}
 
-        for location, clusters in devices.items():
+        for location, clusters in snapshot.hierarchy.items():
             for cluster, cluster_devices in clusters.items():
                 for device_name in cluster_devices:
                     key = (location, cluster, device_name)
-                    context = self._automation_context.get(key, {})
-
+                    context = self._automation_log_context.get(key, {})
                     current_state = (
                         self.relay_manager.get_device_state(location, cluster, device_name) or 0
                     )
                     current_mode = (
                         self.relay_manager.get_device_mode(location, cluster, device_name) or "auto"
                     )
+                    active_rule_ids = context.get("active_rule_ids") or []
+                    active_schedule_ids = context.get("active_schedule_ids") or []
+                    control_reason = context.get("control_reason", "none")
+
+                    decision_fields = (
+                        current_state,
+                        current_mode,
+                        context.get("pid_output"),
+                        context.get("duty_cycle_percent"),
+                        tuple(active_rule_ids),
+                        tuple(active_schedule_ids),
+                        control_reason,
+                        context.get("schedule_ramp_up_duration"),
+                        context.get("schedule_ramp_down_duration"),
+                        context.get("schedule_photoperiod_hours"),
+                        context.get("pid_kp"),
+                        context.get("pid_ki"),
+                        context.get("pid_kd"),
+                    )
+                    logged_value = (decision_fields, heartbeat_slot)
+                    if self._last_logged.get(key) == logged_value:
+                        continue
 
                     records.append(
                         {
@@ -843,9 +867,9 @@ class ControlEngine:
                             "device_mode": current_mode,
                             "pid_output": context.get("pid_output"),
                             "duty_cycle_percent": context.get("duty_cycle_percent"),
-                            "active_rule_ids": context.get("active_rule_ids", []),
-                            "active_schedule_ids": context.get("active_schedule_ids", []),
-                            "control_reason": context.get("control_reason", "unknown"),
+                            "active_rule_ids": active_rule_ids,
+                            "active_schedule_ids": active_schedule_ids,
+                            "control_reason": control_reason,
                             "schedule_ramp_up_duration": context.get("schedule_ramp_up_duration"),
                             "schedule_ramp_down_duration": context.get(
                                 "schedule_ramp_down_duration"
@@ -856,9 +880,10 @@ class ControlEngine:
                             "pid_kd": context.get("pid_kd"),
                         }
                     )
+                    last_logged_updates[key] = logged_value
 
-        if records:
-            await self.database.control_action_repo.log_automation_state_batch(records)
+        if records and await self.database.control_action_repo.log_automation_state_batch(records):
+            self._last_logged.update(last_logged_updates)
 
     async def restore_ramp_state_from_database(self) -> None:
         """Handle ramp state on service startup.
