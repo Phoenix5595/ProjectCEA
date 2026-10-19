@@ -623,7 +623,11 @@ RUFF_PATHS=(
   Infrastructure/shared
   Infrastructure/scripts
 )
-if ! (cd "$TARGET" && ruff check "${RUFF_PATHS[@]}" && ruff format --check "${RUFF_PATHS[@]}"); then
+# The staged release is root-owned and has no git metadata: skip the cache, and
+# exclude the Python patterns .gitignore lists (ruff honours .gitignore only inside
+# a git checkout), so the lint scope equals the checkout's.
+RUFF_OPTS=(--no-cache --config 'extend-exclude = ["test_*.py", "*_test.py", "debug_*.py", "*_debug.py"]')
+if ! (cd "$TARGET" && ruff check "${RUFF_OPTS[@]}" "${RUFF_PATHS[@]}" && ruff format --check "${RUFF_OPTS[@]}" "${RUFF_PATHS[@]}"); then
   log_event "deploy_blocked" "lint_failed"
   echo "deploy_blocked:lint_failed" >&2
   exit 1
