@@ -249,13 +249,15 @@ class SensorRepository(BaseRepository):
             ORDER BY m.time ASC, s.name ASC
         """
 
-        async with self._acquire() as conn:
-            async with conn.transaction(isolation="repeatable_read", readonly=True):
-                await require_local_history(
-                    conn, room=location, start=start_time, end=end_time,
-                    source_tables=("measurement",),
-                )
-                rows = await conn.fetch(sql, location, start_time, end_time, patterns)
+        async with (
+            self._acquire() as conn,
+            conn.transaction(isolation="repeatable_read", readonly=True),
+        ):
+            await require_local_history(
+                conn, room=location, start=start_time, end=end_time,
+                source_tables=("measurement",),
+            )
+            rows = await conn.fetch(sql, location, start_time, end_time, patterns)
 
         logger.debug(f"DB: Found {len(rows)} rows in database")
 

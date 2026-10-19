@@ -5,13 +5,12 @@ from __future__ import annotations
 import calendar
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from typing import Final
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
 CALENDAR_TZ: Final = ZoneInfo("America/Toronto")
-UTC: Final = timezone.utc
 _MISSING: Final = object()
 
 
@@ -87,7 +86,7 @@ def toronto_midnight(day: date) -> datetime:
 
 
 def _value(record: Mapping[str, object], key: str) -> object:
-    return record[key] if key in record else _MISSING
+    return record.get(key, _MISSING)
 
 
 

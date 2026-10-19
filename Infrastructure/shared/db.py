@@ -26,8 +26,8 @@ more.
 from __future__ import annotations
 
 import asyncio
-import os
 from collections.abc import Mapping
+import os
 from typing import Any
 
 import asyncpg
