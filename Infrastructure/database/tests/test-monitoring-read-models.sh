@@ -240,6 +240,41 @@ cleanup_monitoring_test_db() {
         cleanup_status=1
         continue
       fi
+      if ! monitoring_postgres_psql --dbname="$cleanup_database" \
+        --command='SELECT alter_job(job_id, scheduled => false) FROM timescaledb_information.jobs WHERE scheduled' \
+        >/dev/null 2>&1; then
+        printf 'failed to unschedule TimescaleDB jobs in: %s\n' "$cleanup_database" >&2
+        cleanup_status=1
+        continue
+      fi
+
+      local active_workers=1
+      local worker_wait=0
+      local worker_check_failed=0
+      while ((active_workers > 0 && worker_wait < 60)); do
+        active_workers="$(monitoring_postgres_psql --dbname="$cleanup_database" \
+          --tuples-only --no-align \
+          --command="SELECT count(*) FROM pg_stat_activity AS activity WHERE activity.datname = current_database() AND activity.backend_type <> 'client backend' AND EXISTS (SELECT 1 FROM timescaledb_information.jobs AS job WHERE activity.application_name LIKE '%[' || job.job_id::text || ']' OR activity.backend_type LIKE '%[' || job.job_id::text || ']')")" || {
+          printf 'could not check TimescaleDB workers for: %s\n' "$cleanup_database" >&2
+          cleanup_status=1
+          worker_check_failed=1
+          break
+        }
+        if ((active_workers > 0)); then
+          sleep 1
+          ((worker_wait += 1))
+        fi
+      done
+      if ((worker_check_failed)); then
+        printf 'refusing to drop database with unknown TimescaleDB worker status: %s\n' "$cleanup_database" >&2
+        cleanup_status=1
+        continue
+      fi
+      if ((active_workers > 0)); then
+        printf 'TimescaleDB workers remain active in: %s\n' "$cleanup_database" >&2
+        cleanup_status=1
+        continue
+      fi
       if monitoring_postgres_psql --dbname="$POSTGRES_ADMIN_DATABASE" \
         --command="DROP DATABASE IF EXISTS \"$cleanup_database\" WITH (FORCE)" >/dev/null 2>&1; then
         printf 'cleaned owned monitoring database name: %s\n' "$cleanup_database"
