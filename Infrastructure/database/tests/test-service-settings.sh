@@ -10,6 +10,8 @@ readonly HARNESS_LOCK='/tmp/grow-lifecycle-harness.lock'
 readonly DB_NAME="monitoring_test_service_settings_$$"
 TMP_ROOT=''
 DB_CREATED=0
+source "$REPO_ROOT/Infrastructure/database/tests/test-monitoring-read-models.sh"
+
 
 fail() {
   printf 'service settings database proof: %s\n' "$1" >&2
@@ -35,7 +37,7 @@ postgres_env() {
     "PATH=$PATH" \
     HOME=/var/lib/postgresql \
     PGHOST=/var/run/postgresql \
-    PGPORT=5432 \
+    PGPORT="$CEA_TEST_PGPORT" \
     PGUSER=postgres \
     "$@"
 }
@@ -47,7 +49,7 @@ psql_as_postgres() {
 run_migrator() {
   postgres_env \
     POSTGRES_HOST=/var/run/postgresql \
-    POSTGRES_PORT=5432 \
+    POSTGRES_PORT="$CEA_TEST_PGPORT" \
     POSTGRES_DB="$DB_NAME" \
     POSTGRES_USER=postgres \
     POSTGRES_PASSWORD= \
@@ -60,7 +62,10 @@ cleanup() {
   set +e
   if (( DB_CREATED )); then
     if [[ "$DB_NAME" =~ ^monitoring_test_service_settings_[0-9]+$ ]]; then
-      if ! psql_as_postgres --dbname=postgres \
+      if ! assert_monitoring_test_target "$DB_NAME"; then
+        fail "refusing to clean disposable database without test-cluster confirmation"
+        status=1
+      elif ! psql_as_postgres --dbname=postgres \
         --command="DROP DATABASE IF EXISTS \"$DB_NAME\"" >/dev/null; then
         fail "could not drop disposable database: $DB_NAME"
         status=1
@@ -84,6 +89,10 @@ cleanup() {
   exit 1
 }
 reject_inherited_database_environment
+[[ "$CEA_TEST_PGPORT" == "5433" ]] || {
+  fail "test harness requires CEA_TEST_PGPORT=5433, not $CEA_TEST_PGPORT"
+  exit 1
+}
 for required_command in flock sudo psql python3 mktemp cp; do
   command -v "$required_command" >/dev/null 2>&1 || {
     fail "required command not found: $required_command"
@@ -123,6 +132,7 @@ sudo chown postgres:postgres "$TMP_ROOT/cache"
 cp "$MIGRATION" "$TMP_ROOT/release/Infrastructure/database/migrations/"
 trap cleanup EXIT
 
+assert_monitoring_test_target "$DB_NAME"
 if [[ "$(psql_as_postgres --dbname=postgres --tuples-only --no-align \
   --command="SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'")" != '' ]]; then
   fail "disposable database already exists: $DB_NAME"
@@ -173,7 +183,7 @@ SQL
 printf 'loading and round-tripping seeded settings through ServiceSettings\n'
 postgres_env \
   POSTGRES_HOST=/var/run/postgresql \
-  POSTGRES_PORT=5432 \
+  POSTGRES_PORT="$CEA_TEST_PGPORT" \
   POSTGRES_DB="$DB_NAME" \
   POSTGRES_USER=postgres \
   SETTINGS_CACHE_PATH="$TMP_ROOT/cache/automation.json" \
