@@ -8,6 +8,59 @@ readonly READ_MODELS_SQL="$SCRIPT_DIRECTORY/../monitoring_read_models.sql"
 readonly ACTIVATE_POLICIES_SQL="$SCRIPT_DIRECTORY/../monitoring_read_models_activate_policies.sql"
 readonly POSTGRES_ADMIN_HOST='/var/run/postgresql'
 readonly POSTGRES_ADMIN_DATABASE='postgres'
+CEA_TEST_PGPORT="${CEA_TEST_PGPORT:-5433}"
+CEA_TEST_PGHOST="${CEA_TEST_PGHOST:-127.0.0.1}"
+
+monitoring_postgres_psql() {
+  sudo -u postgres psql -p "$CEA_TEST_PGPORT" -X --no-psqlrc \
+    --set=ON_ERROR_STOP=1 --host="$POSTGRES_ADMIN_HOST" "$@"
+}
+
+assert_monitoring_test_target() {
+  local database_name="${1:-}"
+  local target_identity data_directory actual_port
+  local -a target_settings
+
+  [[ "$database_name" =~ ^monitoring_test_[a-z0-9_]+$ ]] || {
+    fail "refusing database outside monitoring_test_ namespace: $database_name"
+    return 1
+  }
+  [[ "$CEA_TEST_PGPORT" =~ ^[0-9]+$ ]] || {
+    fail "CEA_TEST_PGPORT is not a valid port: $CEA_TEST_PGPORT"
+    return 1
+  }
+  if ((10#$CEA_TEST_PGPORT < 1 || 10#$CEA_TEST_PGPORT > 65535)); then
+    fail "CEA_TEST_PGPORT is outside the valid range: $CEA_TEST_PGPORT"
+    return 1
+  fi
+  case "${CEA_TEST_PGHOST,,}" in
+    127.0.0.1 | localhost) ;;
+    *)
+      fail "CEA_TEST_PGHOST must be a loopback TCP host: $CEA_TEST_PGHOST"
+      return 1
+      ;;
+  esac
+  target_identity="$(monitoring_postgres_psql --dbname="$POSTGRES_ADMIN_DATABASE" \
+    --tuples-only --no-align --command='SHOW data_directory; SHOW port')" || {
+    fail "could not inspect PostgreSQL test target on port $CEA_TEST_PGPORT"
+    return 1
+  }
+  mapfile -t target_settings <<< "$target_identity"
+  [[ "${#target_settings[@]}" -eq 2 ]] || {
+    fail "PostgreSQL returned incomplete target settings on port $CEA_TEST_PGPORT"
+    return 1
+  }
+  data_directory="${target_settings[0]}"
+  actual_port="${target_settings[1]}"
+  [[ "$data_directory" == */15/test ]] || {
+    fail "refusing PostgreSQL data directory outside cluster 15/test: $data_directory"
+    return 1
+  }
+  [[ "$actual_port" != '5432' && "$actual_port" == "$CEA_TEST_PGPORT" ]] || {
+    fail "refusing PostgreSQL port $actual_port (requested $CEA_TEST_PGPORT; production is 5432)"
+    return 1
+  }
+}
 
 fail() {
   printf 'monitoring test harness: %s\n' "$1" >&2
@@ -51,6 +104,11 @@ assert_safe_database_url() {
   database_name="${BASH_REMATCH[3]}"
   lower_host="${host,,}"
   lower_database_name="${database_name,,}"
+  if [[ "$host" != "$CEA_TEST_PGHOST" ]]; then
+    fail "database URL host does not match CEA_TEST_PGHOST: $host"
+    return 1
+  fi
+
 
   case "$lower_host" in
     127.0.0.1 | localhost | ::1) ;;
@@ -79,6 +137,10 @@ assert_safe_database_url() {
 
   if ((10#$port < 1 || 10#$port > 65535)); then
     fail "invalid PostgreSQL port: $port"
+    return 1
+  fi
+  if [[ "$port" != "$CEA_TEST_PGPORT" ]]; then
+    fail "database URL port does not match CEA_TEST_PGPORT: $port"
     return 1
   fi
 }
@@ -174,9 +236,11 @@ cleanup_monitoring_test_db() {
         cleanup_status=1
         continue
       fi
-      if sudo -u postgres psql -X --set=ON_ERROR_STOP=1 \
-        --host="$POSTGRES_ADMIN_HOST" \
-        --dbname="$POSTGRES_ADMIN_DATABASE" \
+      if ! assert_monitoring_test_target "$cleanup_database"; then
+        cleanup_status=1
+        continue
+      fi
+      if monitoring_postgres_psql --dbname="$POSTGRES_ADMIN_DATABASE" \
         --command="DROP DATABASE IF EXISTS \"$cleanup_database\" WITH (FORCE)" >/dev/null 2>&1; then
         printf 'cleaned owned monitoring database name: %s\n' "$cleanup_database"
       else
@@ -187,9 +251,9 @@ cleanup_monitoring_test_db() {
   fi
 
   if ((MONITORING_ROLE_CREATED)); then
-    if sudo -u postgres psql -X --set=ON_ERROR_STOP=1 \
-      --host="$POSTGRES_ADMIN_HOST" \
-      --dbname="$POSTGRES_ADMIN_DATABASE" \
+    if ! assert_monitoring_test_target "$MONITORING_DATABASE_NAME"; then
+      cleanup_status=1
+    elif monitoring_postgres_psql --dbname="$POSTGRES_ADMIN_DATABASE" \
       --command="DROP ROLE \"$MONITORING_ROLE_NAME\"" >/dev/null 2>&1; then
       printf 'dropped monitoring role: %s\n' "$MONITORING_ROLE_NAME"
     else
@@ -231,7 +295,6 @@ with_monitoring_test_db() (
   MONITORING_ROLE_CREATED=0
   local database_password
   database_password="$(openssl rand -hex 24)"
-  local database_port
   local database_url
   local timescaledb_version
 
@@ -239,39 +302,27 @@ with_monitoring_test_db() (
   trap 'exit 130' INT
   trap 'exit 143' TERM HUP
 
-  database_port="$(sudo -u postgres psql -X --tuples-only --no-align \
-    --host="$POSTGRES_ADMIN_HOST" \
-    --dbname="$POSTGRES_ADMIN_DATABASE" \
-    --command='SHOW port')"
-  [[ "$database_port" =~ ^[0-9]+$ ]] || {
-    fail "local PostgreSQL reported an invalid port: $database_port"
-    exit 1
-  }
+  assert_monitoring_test_target "$MONITORING_DATABASE_NAME"
+  export CEA_TEST_PGPORT CEA_TEST_PGHOST
+  export PGPORT="$CEA_TEST_PGPORT" PGHOST="$CEA_TEST_PGHOST"
 
-  sudo -u postgres psql -X --set=ON_ERROR_STOP=1 \
-    --host="$POSTGRES_ADMIN_HOST" \
-    --dbname="$POSTGRES_ADMIN_DATABASE" \
+  monitoring_postgres_psql --dbname="$POSTGRES_ADMIN_DATABASE" \
     --command="CREATE ROLE \"$MONITORING_ROLE_NAME\" LOGIN PASSWORD '$database_password'" >/dev/null
   MONITORING_ROLE_CREATED=1
   printf 'created monitoring role: %s\n' "$MONITORING_ROLE_NAME"
 
-  sudo -u postgres psql -X --set=ON_ERROR_STOP=1 \
-    --host="$POSTGRES_ADMIN_HOST" \
-    --dbname="$POSTGRES_ADMIN_DATABASE" \
+  monitoring_postgres_psql --dbname="$POSTGRES_ADMIN_DATABASE" \
     --command="CREATE DATABASE \"$MONITORING_DATABASE_NAME\" OWNER \"$MONITORING_ROLE_NAME\" TEMPLATE template0" >/dev/null
   MONITORING_DATABASE_CREATED=1
   MONITORING_DATABASE_CREATED_NAMES=("$MONITORING_DATABASE_NAME")
   printf 'created monitoring database: %s\n' "$MONITORING_DATABASE_NAME"
 
-  database_url="postgresql://$MONITORING_ROLE_NAME:$database_password@127.0.0.1:$database_port/$MONITORING_DATABASE_NAME"
+  database_url="postgresql://$MONITORING_ROLE_NAME:$database_password@$CEA_TEST_PGHOST:$CEA_TEST_PGPORT/$MONITORING_DATABASE_NAME"
   assert_safe_database_url "$database_url"
 
-  sudo -u postgres psql -X --set=ON_ERROR_STOP=1 \
-    --host="$POSTGRES_ADMIN_HOST" \
-    --dbname="$MONITORING_DATABASE_NAME" \
+  monitoring_postgres_psql --dbname="$MONITORING_DATABASE_NAME" \
     --command='CREATE EXTENSION IF NOT EXISTS timescaledb' >/dev/null
-  timescaledb_version="$(sudo -u postgres psql -X --tuples-only --no-align \
-    --host="$POSTGRES_ADMIN_HOST" \
+  timescaledb_version="$(monitoring_postgres_psql --tuples-only --no-align \
     --dbname="$MONITORING_DATABASE_NAME" \
     --command="SELECT extversion FROM pg_extension WHERE extname = 'timescaledb'")"
   [[ -n "$timescaledb_version" ]] || {

@@ -19,7 +19,7 @@ rename_set_owned_database_connections() {
     grow_fail 'invalid disposable database connection setting'
     return 1
   }
-  sudo -u postgres psql -X --set=ON_ERROR_STOP=1 \
+  sudo -u postgres psql -p "$CEA_TEST_PGPORT" -X --set=ON_ERROR_STOP=1 \
     --host="$POSTGRES_ADMIN_HOST" --dbname="$POSTGRES_ADMIN_DATABASE" \
     --command="ALTER DATABASE \"${database_name}\" WITH ALLOW_CONNECTIONS ${allow_connections}" \
     >/dev/null
@@ -30,12 +30,12 @@ rename_quiesce_owned_database() {
   local session_count attempt=0
 
   rename_set_owned_database_connections "$database_name" false || return 1
-  sudo -u postgres psql -X --set=ON_ERROR_STOP=1 \
+  sudo -u postgres psql -p "$CEA_TEST_PGPORT" -X --set=ON_ERROR_STOP=1 \
     --host="$POSTGRES_ADMIN_HOST" --dbname="$POSTGRES_ADMIN_DATABASE" \
     --command="SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${database_name}' AND pid <> pg_backend_pid()" \
     >/dev/null || return 1
   while ((attempt < 50)); do
-    session_count="$(sudo -u postgres psql -X --tuples-only --no-align \
+    session_count="$(sudo -u postgres psql -p "$CEA_TEST_PGPORT" -X --tuples-only --no-align \
       --host="$POSTGRES_ADMIN_HOST" --dbname="$POSTGRES_ADMIN_DATABASE" \
       --command="SELECT count(*) FROM pg_stat_activity WHERE datname = '${database_name}'")" || return 1
     [[ "$session_count" == '0' ]] && return 0
@@ -65,12 +65,16 @@ run_owned_database_rename_proof() {
     grow_fail 'rename proof URL is not the exact marked disposable database URL'
     return 1
   }
-  [[ "$database_url" =~ ^postgresql://[a-z0-9_]+:[a-f0-9]+@127\.0\.0\.1:([0-9]+)/([a-z0-9_]+)$ ]] || {
+  [[ "$database_url" =~ ^postgresql://[a-z0-9_]+:[a-f0-9]+@([^:/?#]+):([0-9]+)/([a-z0-9_]+)$ ]] || {
     grow_fail 'rename proof URL does not match the owned loopback harness form'
     return 1
   }
-  port="${BASH_REMATCH[1]}"
-  original_name="${BASH_REMATCH[2]}"
+  [[ "${BASH_REMATCH[1]}" == "$CEA_TEST_PGHOST" && "${BASH_REMATCH[2]}" == "$CEA_TEST_PGPORT" ]] || {
+    grow_fail 'rename proof URL does not match the configured test PostgreSQL target'
+    return 1
+  }
+  port="${BASH_REMATCH[2]}"
+  original_name="${BASH_REMATCH[3]}"
   [[ "$original_name" == "$MONITORING_DATABASE_NAME" ]] || {
     grow_fail 'rename proof database is not the name owned by the harness'
     return 1
@@ -124,7 +128,7 @@ run_owned_database_rename_proof() {
       grow_fail 'generated rename target contains a protected database alias'
       return 1
     fi
-    target_exists="$(sudo -u postgres psql -X --tuples-only --no-align \
+    target_exists="$(sudo -u postgres psql -p "$CEA_TEST_PGPORT" -X --tuples-only --no-align \
       --host="$POSTGRES_ADMIN_HOST" --dbname="$POSTGRES_ADMIN_DATABASE" \
       --command="SELECT count(*) FROM pg_database WHERE datname = '${database_name}'")" || return 1
     [[ "$target_exists" == '0' ]] || {
@@ -195,7 +199,7 @@ run_owned_database_rename_proof() {
 
   # CREATEDB is granted only to the generated disposable role, then the proof
   # rechecks that it remains a non-superuser database owner.
-  sudo -u postgres psql -X --set=ON_ERROR_STOP=1 \
+  sudo -u postgres psql -p "$CEA_TEST_PGPORT" -X --set=ON_ERROR_STOP=1 \
     --host="$POSTGRES_ADMIN_HOST" --dbname="$POSTGRES_ADMIN_DATABASE" \
     --command="ALTER ROLE \"${role_name}\" CREATEDB" >/dev/null || return 1
   owner_state="$("$GROW_LIFECYCLE_PYTHON" "$GROW_RENAME_CASE_PY" \

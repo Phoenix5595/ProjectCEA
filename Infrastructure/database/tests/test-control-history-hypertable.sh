@@ -11,6 +11,8 @@ FRESH_DATABASE_NAME="monitoring_test_control_history_fresh_$$"
 DATABASES_CREATED=()
 TMP_ROOT=''
 MIGRATION_RELEASE_ROOT=''
+source "$HARNESS_DIRECTORY/test-monitoring-read-models.sh"
+
 
 fail() {
   printf 'control history hypertable proof: %s\n' "$1" >&2
@@ -36,13 +38,13 @@ postgres_env() {
     "PATH=$PATH" \
     HOME=/var/lib/postgresql \
     PGHOST=/var/run/postgresql \
-    PGPORT=5432 \
+    PGPORT="$CEA_TEST_PGPORT" \
     PGUSER=postgres \
     "$@"
 }
 
 psql_as_postgres() {
-  postgres_env psql -X --no-psqlrc --set=ON_ERROR_STOP=1 "$@"
+  postgres_env psql -p "$CEA_TEST_PGPORT" -X --no-psqlrc --set=ON_ERROR_STOP=1 "$@"
 }
 
 run_migrator() {
@@ -50,7 +52,7 @@ run_migrator() {
   shift
   postgres_env \
     POSTGRES_HOST=/var/run/postgresql \
-    POSTGRES_PORT=5432 \
+    POSTGRES_PORT="$CEA_TEST_PGPORT" \
     POSTGRES_DB="$database_name" \
     POSTGRES_USER=postgres \
     POSTGRES_PASSWORD= \
@@ -92,6 +94,7 @@ create_disposable_database() {
     fail "refusing protected database name: $database_name"
     return 1
   }
+  assert_monitoring_test_target "$database_name"
   if [[ -n "$(psql_as_postgres --dbname=postgres --tuples-only --no-align \
       --command="SELECT 1 FROM pg_database WHERE datname = '$database_name'")" ]]; then
     fail "disposable database already exists: $database_name"
@@ -113,7 +116,8 @@ cleanup() {
   local database_name
   for database_name in "${DATABASES_CREATED[@]}"; do
     if [[ "$database_name" =~ ^monitoring_test_[a-z0-9_]+$ ]] && \
-       [[ "${database_name,,}" != *cea_sensors* && "${database_name,,}" != *sj_cea* ]]; then
+       [[ "${database_name,,}" != *cea_sensors* && "${database_name,,}" != *sj_cea* ]] && \
+       assert_monitoring_test_target "$database_name"; then
       if psql_as_postgres --dbname=postgres \
           --command="DROP DATABASE IF EXISTS \"$database_name\" WITH (FORCE)" >/dev/null; then
         printf 'dropped disposable database: %s\n' "$database_name"

@@ -11,6 +11,8 @@ DATABASE_NAME="monitoring_test_time_rename_$$"
 DATABASES_CREATED=()
 TMP_ROOT=''
 MIGRATION_RELEASE_ROOT=''
+source "$HARNESS_DIRECTORY/test-monitoring-read-models.sh"
+
 
 fail() {
   printf 'time column rename proof: %s\n' "$1" >&2
@@ -36,13 +38,13 @@ postgres_env() {
     "PATH=$PATH" \
     HOME=/var/lib/postgresql \
     PGHOST=/var/run/postgresql \
-    PGPORT=5432 \
+    PGPORT="$CEA_TEST_PGPORT" \
     PGUSER=postgres \
     "$@"
 }
 
 psql_as_postgres() {
-  postgres_env psql -X --no-psqlrc --set=ON_ERROR_STOP=1 "$@"
+  postgres_env psql -p "$CEA_TEST_PGPORT" -X --no-psqlrc --set=ON_ERROR_STOP=1 "$@"
 }
 
 query_db() {
@@ -55,7 +57,7 @@ run_migrator() {
   shift
   postgres_env \
     POSTGRES_HOST=/var/run/postgresql \
-    POSTGRES_PORT=5432 \
+    POSTGRES_PORT="$CEA_TEST_PGPORT" \
     POSTGRES_DB="$database_name" \
     POSTGRES_USER=postgres \
     POSTGRES_PASSWORD= \
@@ -88,6 +90,7 @@ create_disposable_database() {
     fail "refusing protected database name: $database_name"
     return 1
   }
+  assert_monitoring_test_target "$database_name"
   if [[ "$(psql_as_postgres --dbname=postgres --tuples-only --no-align \
       --command="SELECT count(*) FROM pg_database WHERE datname = '$database_name'")" != '0' ]]; then
     fail "disposable database already exists: $database_name"
@@ -141,6 +144,97 @@ seed_previous_migration_ledger() {
   done
 }
 
+prove_quiesce_timeout_diagnostic() {
+  local fake_job_id fake_job_running fake_worker_pid quiesce_output expected active_workers
+
+  psql_as_postgres --dbname=postgres \
+    --command="ALTER DATABASE \"$DATABASE_NAME\" SET app.time_rename_test_quiesce_timeout TO '1 second'" \
+    >/dev/null
+  psql_as_postgres --dbname="$DATABASE_NAME" <<'SQL' >/dev/null
+CREATE OR REPLACE PROCEDURE public.monitoring_backfill_aggregates(
+    job_id INTEGER, config JSONB)
+LANGUAGE plpgsql
+AS $test_sleep$
+BEGIN
+    PERFORM pg_sleep(20);
+END
+$test_sleep$;
+SELECT add_job(
+    'public.monitoring_backfill_aggregates(integer,jsonb)'::REGPROCEDURE::REGPROC,
+    schedule_interval => INTERVAL '1 day',
+    config => '{}'::JSONB,
+    scheduled => TRUE,
+    job_name => 'phase4_quiesce_diagnostic');
+SQL
+  fake_job_id="$(query_db "$DATABASE_NAME" \
+    "SELECT job_id FROM timescaledb_information.jobs WHERE proc_schema='public' AND proc_name='monitoring_backfill_aggregates'")"
+  [[ "$fake_job_id" =~ ^[0-9]+$ ]] || {
+    fail "quiescence diagnostic worker was not registered: $fake_job_id"
+    return 1
+  }
+  psql_as_postgres --dbname="$DATABASE_NAME" \
+    --command="SELECT alter_job($fake_job_id, scheduled => TRUE, next_start => clock_timestamp())" \
+    >/dev/null
+
+  fake_worker_pid=''
+  for ((attempt = 1; attempt <= 40; attempt++)); do
+    fake_worker_pid="$(query_db "$DATABASE_NAME" \
+      "SELECT COALESCE((SELECT pid::TEXT FROM pg_stat_activity WHERE datname=current_database() AND backend_type <> 'client backend' AND application_name LIKE '%[$fake_job_id]%' ORDER BY pid LIMIT 1), '')")"
+    [[ "$fake_worker_pid" =~ ^[0-9]+$ ]] && break
+    sleep 0.25
+  done
+  [[ "$fake_worker_pid" =~ ^[0-9]+$ ]] || {
+    active_workers="$(query_db "$DATABASE_NAME" \
+      "SELECT COALESCE(string_agg(format('pid=%s type=%s app=%s query=%s', pid, backend_type, application_name, query), E'\\n' ORDER BY pid), '<none>') FROM pg_stat_activity WHERE datname=current_database()")"
+    fail "test-only Timescale worker did not expose a PID for job $fake_job_id: $active_workers"
+    return 1
+  }
+
+  if quiesce_output="$(run_migrator "$DATABASE_NAME" apply --skip-alembic --allow-downtime 2>&1)"; then
+    fail 'quiescence wait did not time out while the test worker was sleeping'
+    return 1
+  fi
+  for expected in \
+    'migration_jobs_still_running' \
+    "job_id=$fake_job_id" \
+    'proc_name=public.monitoring_backfill_aggregates' \
+    'hypertable/view=<none>' \
+    "worker_pid=$fake_worker_pid" \
+    'worker_app=phase4_quiesce_diagnostic' \
+    'DETAIL:' \
+    'HINT:' \
+    'Jobs are unscheduled and snapshotted; let these workers finish (do not kill them), then re-run the migration.'; do
+    if [[ "$quiesce_output" != *"$expected"* ]]; then
+      fail "quiescence timeout error omitted '$expected': $quiesce_output"
+      return 1
+    fi
+  done
+  printf 'quiescence timeout error detail:\n%s\n' "$quiesce_output" >&2
+  [[ "$quiesce_output" == *'runtime='* ]] || {
+    fail "quiescence timeout error omitted worker runtime: $quiesce_output"
+    return 1
+  }
+  assert_equal "$(query_db "$DATABASE_NAME" \
+    "SELECT scheduled FROM timescaledb_information.jobs WHERE job_id=$fake_job_id")" \
+    'f' 'quiesce timeout leaves the worker job unscheduled'
+  assert_equal "$(query_db "$DATABASE_NAME" \
+    "SELECT scheduled FROM public.monitoring_job_snapshot_0007 WHERE job_id=$fake_job_id")" \
+    't' 'quiesce timeout retains the worker job original schedule'
+
+  fake_job_running=true
+  for ((attempt = 1; attempt <= 40; attempt++)); do
+    fake_job_running="$(query_db "$DATABASE_NAME" \
+      "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND backend_type <> 'client backend' AND application_name LIKE '%[$fake_job_id]%')")"
+    [[ "$fake_job_running" == 'f' ]] && break
+    sleep 0.5
+  done
+  assert_equal "$fake_job_running" 'f' 'test-only worker finishes without being killed'
+  psql_as_postgres --dbname=postgres \
+    --command="ALTER DATABASE \"$DATABASE_NAME\" RESET app.time_rename_test_quiesce_timeout" \
+    >/dev/null
+  printf 'quiescence timeout detail names the live worker; retry is safe after it finishes\n'
+}
+
 assert_event_time_cutover() {
   assert_equal "$(query_db "$DATABASE_NAME" \
     "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name = ANY (ARRAY['automation_state','effective_setpoints','control_history','pid_parameter_history','relay_observation','monitoring_room_photoperiod','monitoring_photoperiod_coverage','mode_transition_history']) AND column_name IN ('timestamp','observed_at','triggered_at')")" \
@@ -185,17 +279,32 @@ assert_event_time_cutover() {
     "SELECT count(*) FROM pg_constraint WHERE conname LIKE '%_time_bounds' AND NOT convalidated AND connamespace = 'public'::regnamespace")" \
     '5' 'five compression-enabled hypertable time bounds remain NOT VALID'
   assert_equal "$(query_db "$DATABASE_NAME" \
-    "SELECT count(*) FROM public.monitoring_job_snapshot_0007")" \
+    "SELECT count(*) FROM public.monitoring_job_snapshot_0007 WHERE proc_schema='public' AND proc_name IN ('monitoring_refresh_overview_incremental','monitoring_rebuild_relay_overview')")" \
     '4' 'all overview jobs are snapshotted'
   assert_equal "$(query_db "$DATABASE_NAME" \
     "SELECT count(*) FROM timescaledb_information.jobs WHERE proc_schema='public' AND proc_name IN ('monitoring_refresh_overview_incremental','monitoring_rebuild_relay_overview') AND NOT scheduled")" \
     '4' 'overview jobs are disabled'
   assert_equal "$(query_db "$DATABASE_NAME" \
-    "SELECT count(*) FROM public.monitoring_refresh_policy_snapshot_0007")" \
+    "WITH target_jobs AS (SELECT job_id FROM public.monitoring_job_snapshot_0007 UNION SELECT job_id FROM public.monitoring_refresh_policy_snapshot_0007), active_workers AS (SELECT count(*) AS count FROM pg_stat_activity AS activity JOIN target_jobs AS target ON activity.application_name LIKE '%[' || target.job_id::TEXT || ']%' WHERE activity.datname = current_database() AND activity.backend_type <> 'client backend') SELECT active_workers.count = 0 FROM active_workers")" \
+    't' 'no snapshotted Timescale worker is in flight at the DDL boundary'
+  assert_equal "$(query_db "$DATABASE_NAME" \
+    "SELECT count(*) FROM public.monitoring_refresh_policy_snapshot_0007 WHERE view_name IN ('monitoring_measurement_5min','monitoring_measurement_1hour','monitoring_measurement_1day','monitoring_effective_setpoints_1min','monitoring_effective_setpoints_5min','monitoring_automation_state_1min','monitoring_automation_state_5min','monitoring_light_intensity_1hour','monitoring_light_intensity_1day','monitoring_requested_pid_1hour','monitoring_requested_pid_1day')")" \
     '11' 'all rebuilt continuous-aggregate policies are snapshotted'
+  assert_equal "$(query_db "$DATABASE_NAME" \
+    "SELECT to_regclass('public.monitoring_cagg_materialization_coverage') IS NULL")" \
+    't' 'production-only dependent view is removed from the new release'
+  assert_equal "$(query_db "$DATABASE_NAME" \
+    "SELECT count(*) FROM public.monitoring_dependent_view_snapshot_0007")" \
+    '1' 'dependent view definition is snapshotted'
+  assert_equal "$(query_db "$DATABASE_NAME" \
+    "SELECT snapshot.view_definition = expected.view_definition FROM public.monitoring_dependent_view_snapshot_0007 AS snapshot CROSS JOIN public.time_rename_expected_dependent_view AS expected WHERE snapshot.view_schema='public' AND snapshot.view_name='monitoring_cagg_materialization_coverage'")" \
+    't' 'dependent view snapshot matches pg_get_viewdef before apply'
   assert_equal "$(query_db "$DATABASE_NAME" \
     "SELECT count(*) FROM _timescaledb_catalog.continuous_agg cagg JOIN timescaledb_information.jobs job ON (job.config->>'mat_hypertable_id')::integer=cagg.mat_hypertable_id WHERE cagg.user_view_schema='public' AND cagg.user_view_name = ANY (ARRAY['monitoring_measurement_5min','monitoring_measurement_1hour','monitoring_measurement_1day','monitoring_effective_setpoints_1min','monitoring_effective_setpoints_5min','monitoring_automation_state_1min','monitoring_automation_state_5min','monitoring_light_intensity_1hour','monitoring_light_intensity_1day','monitoring_requested_pid_1hour','monitoring_requested_pid_1day']) AND job.proc_name='policy_refresh_continuous_aggregate' AND NOT job.scheduled")" \
     '11' 'all rebuilt aggregate refresh policies start paused'
+  assert_equal "$(query_db "$DATABASE_NAME" \
+    "SELECT count(*) FROM timescaledb_information.jobs AS job WHERE job.scheduled AND job.proc_name IN ('policy_compression','policy_columnstore','policy_retention') AND ((job.hypertable_schema='public' AND job.hypertable_name = ANY (ARRAY['automation_state','effective_setpoints','control_history','pid_parameter_history','relay_observation','monitoring_room_photoperiod','monitoring_photoperiod_coverage','mode_transition_history'])) OR EXISTS (SELECT 1 FROM _timescaledb_catalog.continuous_agg AS cagg WHERE cagg.user_view_schema='public' AND cagg.user_view_name = ANY (ARRAY['monitoring_measurement_1min','monitoring_measurement_5min','monitoring_measurement_1hour','monitoring_measurement_1day','monitoring_effective_setpoints_1min','monitoring_effective_setpoints_5min','monitoring_automation_state_1min','monitoring_automation_state_5min','monitoring_light_intensity_1hour','monitoring_light_intensity_1day','monitoring_requested_pid_1hour','monitoring_requested_pid_1day','monitoring_relay_duration_1day']) AND cagg.mat_hypertable_id = COALESCE(NULLIF(job.config->>'mat_hypertable_id','')::INTEGER,NULLIF(job.config->>'hypertable_id','')::INTEGER)))")" \
+    '0' 'source and CAGG compression/retention policies stay paused until backfill completes'
 }
 
 assert_time_bounds_writes() {
@@ -479,6 +588,51 @@ FROM timescaledb_information.jobs
 WHERE proc_schema = 'public'
   AND proc_name IN ('monitoring_refresh_overview_incremental',
                     'monitoring_rebuild_relay_overview');
+DO $wait_measurement_ancestor_policies$
+DECLARE
+    jobs_running BOOLEAN;
+    wait_deadline TIMESTAMPTZ := clock_timestamp() + INTERVAL '10 minutes';
+BEGIN
+    LOOP
+        WITH target_jobs AS (
+            SELECT job.job_id
+            FROM timescaledb_information.jobs AS job
+            JOIN _timescaledb_catalog.continuous_agg AS cagg
+              ON (job.config ->> 'mat_hypertable_id')::INTEGER = cagg.mat_hypertable_id
+            WHERE cagg.user_view_schema = 'public'
+              AND cagg.user_view_name = ANY (ARRAY[
+                  'monitoring_measurement_1min', 'monitoring_measurement_5min',
+                  'monitoring_measurement_1hour', 'monitoring_measurement_1day'
+              ])
+              AND job.proc_name = 'policy_refresh_continuous_aggregate'
+            UNION
+            SELECT job_id
+            FROM timescaledb_information.jobs
+            WHERE proc_schema = 'public'
+              AND proc_name IN ('monitoring_refresh_overview_incremental',
+                                'monitoring_rebuild_relay_overview')
+        )
+        SELECT EXISTS (
+            SELECT 1
+            FROM target_jobs AS target
+            WHERE EXISTS (
+                SELECT 1 FROM pg_stat_activity AS activity
+                WHERE activity.datname = current_database()
+                  AND activity.backend_type <> 'client backend'
+                  AND activity.application_name LIKE
+                      '%[' || target.job_id::TEXT || ']%'
+            )
+        )
+        INTO jobs_running;
+        EXIT WHEN NOT jobs_running;
+        IF clock_timestamp() >= wait_deadline THEN
+            RAISE EXCEPTION 'measurement_ancestor_test_jobs_still_running';
+        END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END
+$wait_measurement_ancestor_policies$;
+
 
 INSERT INTO public.measurement (time, sensor_id, value)
 SELECT test_time, 1, 100.0
@@ -580,6 +734,94 @@ SELECT alter_job(job.job_id, scheduled => job.scheduled)
 FROM pg_temp.measurement_ancestor_prior_minute_policy AS job;
 SQL
   printf 'verified overview guard blocks old measurement invalidation until the 1min ancestor is refreshed\n'
+}
+
+quiesce_phase4_jobs_for_down_proof() {
+  psql_as_postgres --dbname="$DATABASE_NAME" <<'SQL' >/dev/null
+CREATE TEMP TABLE test_phase4_target_jobs ON COMMIT PRESERVE ROWS AS
+WITH cagg_targets AS (
+    SELECT user_view_schema, user_view_name, mat_hypertable_id
+    FROM _timescaledb_catalog.continuous_agg
+    WHERE user_view_schema = 'public'
+      AND user_view_name = ANY (ARRAY[
+          'monitoring_measurement_1min', 'monitoring_measurement_5min',
+          'monitoring_measurement_1hour', 'monitoring_measurement_1day',
+          'monitoring_effective_setpoints_1min', 'monitoring_effective_setpoints_5min',
+          'monitoring_automation_state_1min', 'monitoring_automation_state_5min',
+          'monitoring_light_intensity_1hour', 'monitoring_light_intensity_1day',
+          'monitoring_requested_pid_1hour', 'monitoring_requested_pid_1day',
+          'monitoring_relay_duration_1day'
+      ])
+),
+current_targets AS (
+    SELECT job.job_id
+    FROM timescaledb_information.jobs AS job
+    LEFT JOIN cagg_targets AS cagg
+      ON cagg.mat_hypertable_id = CASE
+          WHEN job.proc_name IN (
+              'policy_refresh_continuous_aggregate',
+              'policy_compression', 'policy_columnstore', 'policy_retention')
+          THEN COALESCE(
+              NULLIF(job.config ->> 'mat_hypertable_id', '')::INTEGER,
+              NULLIF(job.config ->> 'hypertable_id', '')::INTEGER)
+          ELSE NULL
+      END
+    WHERE (job.proc_schema = 'public'
+           AND job.proc_name IN (
+               'monitoring_refresh_overview_incremental',
+               'monitoring_rebuild_relay_overview',
+               'monitoring_backfill_aggregates'))
+       OR (job.proc_name IN (
+               'policy_refresh_continuous_aggregate',
+               'policy_compression', 'policy_columnstore', 'policy_retention')
+           AND (
+               (job.hypertable_schema = 'public'
+                AND job.hypertable_name = ANY (ARRAY[
+                    'automation_state', 'effective_setpoints', 'control_history',
+                    'pid_parameter_history', 'relay_observation',
+                    'monitoring_room_photoperiod', 'monitoring_photoperiod_coverage',
+                    'mode_transition_history'
+                ]))
+               OR cagg.user_view_name IS NOT NULL
+           ))
+)
+SELECT job_id FROM public.monitoring_job_snapshot_0007
+UNION
+SELECT job_id FROM public.monitoring_refresh_policy_snapshot_0007
+UNION
+SELECT job_id FROM current_targets;
+
+SELECT alter_job(job.job_id, scheduled => FALSE)
+FROM timescaledb_information.jobs AS job
+JOIN pg_temp.test_phase4_target_jobs AS target USING (job_id);
+DO $wait_for_test_phase4_jobs$
+DECLARE
+    jobs_running BOOLEAN;
+    wait_deadline TIMESTAMPTZ := clock_timestamp() + INTERVAL '10 minutes';
+BEGIN
+    LOOP
+        SELECT EXISTS (
+            SELECT 1
+            FROM pg_temp.test_phase4_target_jobs AS target
+            WHERE EXISTS (
+                SELECT 1 FROM pg_stat_activity AS activity
+                WHERE activity.datname = current_database()
+                  AND activity.backend_type <> 'client backend'
+                  AND activity.application_name LIKE
+                      '%[' || target.job_id::TEXT || ']%'
+            )
+        )
+        INTO jobs_running;
+        EXIT WHEN NOT jobs_running;
+        IF clock_timestamp() >= wait_deadline THEN
+            RAISE EXCEPTION 'test_phase4_jobs_still_running';
+        END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END
+$wait_for_test_phase4_jobs$;
+SQL
+  printf 'quiesced all target Timescale jobs before the down proof\n'
 }
 
 assert_original_state_restored() {
@@ -698,8 +940,19 @@ BEGIN
     IF to_regclass('public.monitoring_job_snapshot_0007') IS NOT NULL
        OR to_regclass('public.monitoring_refresh_policy_snapshot_0007') IS NOT NULL
        OR to_regclass('public.monitoring_index_snapshot_0007') IS NOT NULL
-       OR to_regprocedure('public.monitoring_backfill_aggregates(integer,jsonb)') IS NOT NULL THEN
+       OR to_regclass('public.monitoring_dependent_view_snapshot_0007') IS NOT NULL
+       OR to_regprocedure('public.monitoring_backfill_aggregates(integer,jsonb)') IS NOT NULL
+       OR to_regprocedure('public.monitoring_restore_quiesced_jobs_0007()') IS NOT NULL THEN
         RAISE EXCEPTION 'rollback left Phase 4 snapshot/backfill objects';
+    END IF;
+    IF to_regclass('public.monitoring_cagg_materialization_coverage') IS NULL THEN
+        RAISE EXCEPTION 'rollback did not restore production-only dependent view';
+    END IF;
+    IF (SELECT view_definition
+        FROM public.time_rename_expected_dependent_view)
+       IS DISTINCT FROM
+       pg_get_viewdef('public.monitoring_cagg_materialization_coverage'::REGCLASS, TRUE) THEN
+        RAISE EXCEPTION 'rollback dependent-view definition differs from pre-0007 pg_get_viewdef';
     END IF;
     IF position('monitoring_measurement_1min' IN
                 pg_get_viewdef('public.monitoring_measurement_5min'::REGCLASS, TRUE)) > 0
@@ -763,6 +1016,48 @@ $restore_assertions$;
 SQL
 }
 
+quiesce_database_jobs() {
+  local database_name="$1"
+  if [[ "$(query_db "$database_name" \
+      "SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname='timescaledb')")" != 't' ]]; then
+    return 0
+  fi
+
+  psql_as_postgres --dbname="$database_name" <<'SQL' >/dev/null
+BEGIN;
+CREATE TEMP TABLE test_timescale_job_ids ON COMMIT PRESERVE ROWS AS
+SELECT job_id FROM timescaledb_information.jobs;
+SELECT alter_job(job_id, scheduled => FALSE)
+FROM test_timescale_job_ids;
+COMMIT;
+DO $wait_for_test_jobs$
+DECLARE
+    jobs_running BOOLEAN;
+    wait_deadline TIMESTAMPTZ := clock_timestamp() + INTERVAL '10 minutes';
+BEGIN
+    LOOP
+        SELECT EXISTS (
+            SELECT 1
+            FROM test_timescale_job_ids AS target
+            WHERE EXISTS (
+                SELECT 1 FROM pg_stat_activity AS activity
+                WHERE activity.datname = current_database()
+                  AND activity.backend_type <> 'client backend'
+                  AND activity.application_name LIKE
+                      '%[' || target.job_id::TEXT || ']%'
+            )
+        ) INTO jobs_running;
+        EXIT WHEN NOT jobs_running;
+        IF clock_timestamp() >= wait_deadline THEN
+            RAISE EXCEPTION 'test_timescale_jobs_still_running';
+        END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END
+$wait_for_test_jobs$;
+SQL
+}
+
 cleanup() {
   local status=$?
   trap - EXIT INT TERM HUP
@@ -770,8 +1065,12 @@ cleanup() {
   local database_name
   for database_name in "${DATABASES_CREATED[@]}"; do
     if [[ "$database_name" =~ ^monitoring_test_[a-z0-9_]+$ ]] && \
-       [[ "${database_name,,}" != *cea_sensors* && "${database_name,,}" != *sj_cea* ]]; then
-      if psql_as_postgres --dbname=postgres \
+       [[ "${database_name,,}" != *cea_sensors* && "${database_name,,}" != *sj_cea* ]] && \
+       assert_monitoring_test_target "$database_name"; then
+      if ! quiesce_database_jobs "$database_name"; then
+        fail "refusing to drop database with a TimescaleDB job still in flight: $database_name"
+        status=1
+      elif psql_as_postgres --dbname=postgres \
           --command="DROP DATABASE IF EXISTS \"$database_name\" WITH (FORCE)" >/dev/null; then
         printf 'dropped disposable database: %s\n' "$database_name"
       else
@@ -1176,9 +1475,45 @@ for view_name in \
     "pre-migration aggregate $view_name contains data"
 done
 
+printf 'creating the production-only dependent-view fixture\n'
+psql_as_postgres --dbname="$DATABASE_NAME" <<'SQL' >/dev/null
+CREATE VIEW public.monitoring_cagg_materialization_coverage AS
+SELECT 'monitoring_measurement_1min'::TEXT AS cagg_name,
+       max(monitoring_measurement_1min.last_observed_at) AS materialization_coverage
+FROM monitoring_measurement_1min
+UNION ALL
+SELECT 'monitoring_measurement_5min'::TEXT AS cagg_name,
+       max(monitoring_measurement_5min.last_observed_at) AS materialization_coverage
+FROM monitoring_measurement_5min
+UNION ALL
+SELECT 'monitoring_effective_setpoints_1min'::TEXT AS cagg_name,
+       max(monitoring_effective_setpoints_1min.last_observed_at) AS materialization_coverage
+FROM monitoring_effective_setpoints_1min
+UNION ALL
+SELECT 'monitoring_effective_setpoints_5min'::TEXT AS cagg_name,
+       max(monitoring_effective_setpoints_5min.last_observed_at) AS materialization_coverage
+FROM monitoring_effective_setpoints_5min
+UNION ALL
+SELECT 'monitoring_automation_state_1min'::TEXT AS cagg_name,
+       max(monitoring_automation_state_1min.last_observed_at) AS materialization_coverage
+FROM monitoring_automation_state_1min
+UNION ALL
+SELECT 'monitoring_automation_state_5min'::TEXT AS cagg_name,
+       max(monitoring_automation_state_5min.last_observed_at) AS materialization_coverage
+FROM monitoring_automation_state_5min;
+CREATE TABLE public.time_rename_expected_dependent_view AS
+SELECT pg_get_viewdef(
+    'public.monitoring_cagg_materialization_coverage'::REGCLASS, TRUE) AS view_definition;
+SQL
+assert_equal "$(query_db "$DATABASE_NAME" \
+  "SELECT count(*) FROM public.time_rename_expected_dependent_view")" \
+  '1' 'production-only dependent-view definition is captured before apply'
+
 printf 'building isolated migration release and prior ledger head\n'
 seed_previous_migration_ledger
-printf 'applying 0007 with --skip-alembic --allow-downtime\n'
+printf 'proving quiescence timeout diagnostics and restart safety\n'
+prove_quiesce_timeout_diagnostic
+printf 'applying 0007 with --skip-alembic --allow-downtime after the worker finished\n'
 run_migrator "$DATABASE_NAME" apply --skip-alembic --allow-downtime
 BACKFILL_JOB_ID="$(query_db "$DATABASE_NAME" \
   "SELECT job_id FROM timescaledb_information.jobs WHERE proc_schema='public' AND proc_name='monitoring_backfill_aggregates'")"
@@ -1258,6 +1593,7 @@ done
 assert_backfill_parity
 assert_measurement_ancestor_freshness
 
+quiesce_phase4_jobs_for_down_proof
 printf 'forcing down migration failure after its first committed phase\n'
 down_migration_file="$MIGRATION_RELEASE_ROOT/Infrastructure/database/migrations/0007_time_column_rename.down.sql"
 if psql_as_postgres --dbname="$DATABASE_NAME" \
@@ -1271,11 +1607,14 @@ assert_equal "$(query_db "$DATABASE_NAME" \
   "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name IN ('automation_state','effective_setpoints','control_history','pid_parameter_history','relay_observation','monitoring_room_photoperiod','monitoring_photoperiod_coverage','mode_transition_history') AND column_name IN ('timestamp','observed_at','triggered_at')")" \
   '8' 'first down phase restored all source event-column names'
 assert_equal "$(query_db "$DATABASE_NAME" \
-  "SELECT count(*) FROM public.monitoring_job_snapshot_0007")" \
-  '4' 'down snapshots survive the injected post-commit failure'
+  "SELECT count(*) FROM public.monitoring_job_snapshot_0007 WHERE proc_schema='public' AND proc_name IN ('monitoring_refresh_overview_incremental','monitoring_rebuild_relay_overview')")" \
+  '4' 'down snapshots retain four overview jobs after first-phase failure'
 assert_equal "$(query_db "$DATABASE_NAME" \
-  "SELECT to_regclass('public.monitoring_job_snapshot_0007') IS NOT NULL AND to_regclass('public.monitoring_refresh_policy_snapshot_0007') IS NOT NULL AND to_regclass('public.monitoring_index_snapshot_0007') IS NOT NULL")" \
-  't' 'all down snapshots survive until the final phase succeeds'
+  "SELECT to_regclass('public.monitoring_job_snapshot_0007') IS NOT NULL AND to_regclass('public.monitoring_refresh_policy_snapshot_0007') IS NOT NULL AND to_regclass('public.monitoring_index_snapshot_0007') IS NOT NULL AND to_regclass('public.monitoring_dependent_view_snapshot_0007') IS NOT NULL")" \
+  't' 'all down snapshots survive until final restoration'
+assert_equal "$(query_db "$DATABASE_NAME" \
+  "SELECT to_regclass('public.monitoring_cagg_materialization_coverage') IS NULL AND (SELECT count(*) FROM public.monitoring_dependent_view_snapshot_0007 WHERE view_schema='public' AND view_name='monitoring_cagg_materialization_coverage')=1")" \
+  't' 'dependent view remains absent while its down snapshot is retained'
 assert_equal "$(query_db "$DATABASE_NAME" \
   "SELECT count(*) FROM timescaledb_information.continuous_aggregates WHERE view_schema='public' AND view_name = ANY (ARRAY['monitoring_measurement_5min','monitoring_measurement_1hour','monitoring_measurement_1day','monitoring_effective_setpoints_1min','monitoring_effective_setpoints_5min','monitoring_automation_state_1min','monitoring_automation_state_5min','monitoring_light_intensity_1hour','monitoring_light_intensity_1day','monitoring_requested_pid_1hour','monitoring_requested_pid_1day'])")" \
   '0' 'first down phase leaves rebuilt aggregates absent for canonical restoration'
@@ -1287,6 +1626,6 @@ printf 'reapplying 0007 after restartable down\n'
 run_migrator "$DATABASE_NAME" apply --skip-alembic --allow-downtime
 assert_event_time_cutover
 assert_equal "$(query_db "$DATABASE_NAME" \
-  "SELECT count(*) FROM public.monitoring_job_snapshot_0007")" \
+  "SELECT count(*) FROM public.monitoring_job_snapshot_0007 WHERE proc_schema='public' AND proc_name IN ('monitoring_refresh_overview_incremental','monitoring_rebuild_relay_overview')")" \
   '4' 'reapplied migration snapshots overview jobs again'
 printf 'Phase 4 time-column migration proof passed\n'

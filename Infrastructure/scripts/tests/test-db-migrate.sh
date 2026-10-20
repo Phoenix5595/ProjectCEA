@@ -7,6 +7,8 @@ HARNESS_LOCK='/tmp/grow-lifecycle-harness.lock'
 DB_NAME="monitoring_test_dbmigrate_$$"
 TMP_ROOT=''
 DB_CREATED=0
+source "$HARNESS_DIRECTORY/../../database/tests/test-monitoring-read-models.sh"
+
 
 fail() {
   printf 'db migration proof: %s\n' "$1" >&2
@@ -32,19 +34,19 @@ postgres_env() {
     "PATH=$PATH" \
     HOME=/var/lib/postgresql \
     PGHOST=/var/run/postgresql \
-    PGPORT=5432 \
+    PGPORT="$CEA_TEST_PGPORT" \
     PGUSER=postgres \
     "$@"
 }
 
 psql_as_postgres() {
-  postgres_env psql -X --no-psqlrc --set=ON_ERROR_STOP=1 "$@"
+  postgres_env psql -p "$CEA_TEST_PGPORT" -X --no-psqlrc --set=ON_ERROR_STOP=1 "$@"
 }
 
 run_migrator() {
   postgres_env \
     POSTGRES_HOST=/var/run/postgresql \
-    POSTGRES_PORT=5432 \
+    POSTGRES_PORT="$CEA_TEST_PGPORT" \
     POSTGRES_DB="$DB_NAME" \
     POSTGRES_USER=postgres \
     POSTGRES_PASSWORD= \
@@ -74,7 +76,8 @@ cleanup() {
   trap - EXIT
   set +e
   if (( DB_CREATED )); then
-    if [[ "$DB_NAME" =~ ^monitoring_test_dbmigrate_[0-9]+$ ]]; then
+    if [[ "$DB_NAME" =~ ^monitoring_test_dbmigrate_[0-9]+$ ]] && \
+       assert_monitoring_test_target "$DB_NAME"; then
       if ! psql_as_postgres --dbname=postgres \
         --command="DROP DATABASE IF EXISTS \"$DB_NAME\"" >/dev/null; then
         fail "could not drop disposable database: $DB_NAME"
@@ -129,6 +132,8 @@ chmod 755 "$TMP_ROOT" "$TMP_ROOT/release" \
   "$TMP_ROOT/release/Infrastructure/database/migrations" \
   "$TMP_ROOT/release/Infrastructure/automation-service"
 
+assert_monitoring_test_target "$DB_NAME"
+
 if [[ "$(psql_as_postgres --dbname=postgres --tuples-only --no-align \
   --command="SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'")" != '' ]]; then
   fail "disposable database already exists: $DB_NAME"
@@ -143,9 +148,9 @@ else
   DATABASE_OWNER='postgres'
   printf 'local database owner choice: postgres (cea_user role unavailable)\n'
 fi
-DB_CREATED=1
 psql_as_postgres --dbname=postgres \
   --command="CREATE DATABASE \"$DB_NAME\" OWNER \"$DATABASE_OWNER\"" >/dev/null
+DB_CREATED=1
 printf 'local database auth: sudo -u postgres over the local Unix socket (peer)\n'
 
 cat > "$TMP_ROOT/release/Infrastructure/database/migrations/0001_alembic_stamp_fixture.sql" <<'SQL'

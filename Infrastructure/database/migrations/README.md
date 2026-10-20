@@ -27,6 +27,19 @@ non-downtime migrations in that case. A migration whose name contains
 `alembic upgrade heads`. SQL rollback uses the matching `.down.sql` files
 newest-first; Alembic revisions are never downgraded by this command.
 
+Disposable proof and rehearsal databases live only on PostgreSQL cluster
+`15/test` at port `5433`, never production cluster `15/main` (`sj_cea`) at
+port `5432`. `CEA_TEST_PGPORT` defaults to `5433`; harnesses check the target's
+`data_directory` and port before creating or dropping any disposable database.
+This isolation is mandatory after a disposable migration proof segfaulted a
+TimescaleDB worker and reset the shared production cluster on 2026-10-20.
+`rehearse_migrations.sh` uses read-only `pg_dump` against `sj_cea` on port
+`5432`, then restores, migrates, and drops only the guarded target on port
+`5433`.
+
+If a 0007 prephase reports `migration_jobs_still_running`, its committed job
+snapshots remain; let workers finish (do not kill them), then rerun the migration.
+
 A downtime migration set must have a successful migration rehearsal before
 production deployment. `rehearse_migrations.sh <release_path>` restores a
 production dump into a guarded disposable database, applies the set, rolls it

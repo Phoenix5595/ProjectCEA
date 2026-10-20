@@ -21,11 +21,16 @@ fi
 SOURCE_DB="${REHEARSAL_SOURCE_DB:-sj_cea}"
 DUMP_DIR="${REHEARSAL_DUMP_DIR:-/var/lib/projectcea/rehearsal}"
 RESULT_DIR="${REHEARSAL_RESULT_DIR:-/var/lib/projectcea/migration-rehearsals}"
-POSTGRES_HOST="${POSTGRES_HOST:-127.0.0.1}"
-POSTGRES_PORT="${POSTGRES_PORT:-5432}"
-POSTGRES_USER="${POSTGRES_USER:-cea_user}"
-POSTGRES_DB="$SOURCE_DB"
-export POSTGRES_HOST POSTGRES_PORT POSTGRES_USER POSTGRES_DB
+CEA_TEST_PGPORT="${CEA_TEST_PGPORT:-5433}"
+CEA_TEST_PGHOST="${CEA_TEST_PGHOST:-127.0.0.1}"
+POSTGRES_HOST="$CEA_TEST_PGHOST"
+POSTGRES_PORT="$CEA_TEST_PGPORT"
+POSTGRES_USER='cea_user'
+export CEA_TEST_PGPORT CEA_TEST_PGHOST POSTGRES_HOST POSTGRES_PORT POSTGRES_USER
+[[ "$SOURCE_DB" == 'sj_cea' ]] || {
+  rehearse_fail "dump source must remain the production database sj_cea, got: $SOURCE_DB"
+  exit 1
+}
 
 if [[ "${POSTGRES_PASSWORD+x}" != x ]]; then
   if [[ -r /opt/projectcea/shared/env/postgres.env ]]; then
@@ -51,17 +56,63 @@ if [[ "${POSTGRES_PASSWORD+x}" == x ]]; then
 else
   unset PGPASSWORD || true
 fi
-
-export PGHOST="$POSTGRES_HOST"
-export PGPORT="$POSTGRES_PORT"
-export PGUSER="$POSTGRES_USER"
+export PGHOST="$CEA_TEST_PGHOST" PGPORT="$CEA_TEST_PGPORT" PGUSER="$POSTGRES_USER"
 
 postgres_local() {
   sudo -u postgres env -i \
     "PATH=$PATH" \
     HOME=/var/lib/postgresql \
-    "PGPORT=$POSTGRES_PORT" \
+    PGHOST=/var/run/postgresql \
+    "PGPORT=$CEA_TEST_PGPORT" \
+    PGUSER=postgres \
     "$@"
+}
+
+assert_rehearsal_target() {
+  local database_name="$1"
+  local target_identity data_directory actual_port
+  local -a target_settings
+
+  [[ "$database_name" =~ ^monitoring_test_[a-z0-9_]+$ ]] || {
+    rehearse_fail "refusing unsafe disposable database name: $database_name"
+    return 1
+  }
+  [[ "$CEA_TEST_PGPORT" =~ ^[0-9]+$ ]] || {
+    rehearse_fail "CEA_TEST_PGPORT is not a valid port: $CEA_TEST_PGPORT"
+    return 1
+  }
+  if ((10#$CEA_TEST_PGPORT < 1 || 10#$CEA_TEST_PGPORT > 65535)); then
+    rehearse_fail "CEA_TEST_PGPORT is outside the valid range: $CEA_TEST_PGPORT"
+    return 1
+  fi
+  case "${CEA_TEST_PGHOST,,}" in
+    127.0.0.1 | localhost) ;;
+    *)
+      rehearse_fail "CEA_TEST_PGHOST must be a loopback TCP host: $CEA_TEST_PGHOST"
+      return 1
+      ;;
+  esac
+  target_identity="$(postgres_local psql -p "$CEA_TEST_PGPORT" -X --no-psqlrc \
+    --set=ON_ERROR_STOP=1 --tuples-only --no-align \
+    --dbname=postgres --command='SHOW data_directory; SHOW port')" || {
+    rehearse_fail "could not inspect PostgreSQL rehearsal target on port $CEA_TEST_PGPORT"
+    return 1
+  }
+  mapfile -t target_settings <<< "$target_identity"
+  [[ "${#target_settings[@]}" -eq 2 ]] || {
+    rehearse_fail "PostgreSQL returned incomplete rehearsal target settings on port $CEA_TEST_PGPORT"
+    return 1
+  }
+  data_directory="${target_settings[0]}"
+  actual_port="${target_settings[1]}"
+  [[ "$data_directory" == */15/test ]] || {
+    rehearse_fail "refusing PostgreSQL data directory outside cluster 15/test: $data_directory"
+    return 1
+  }
+  [[ "$actual_port" != '5432' && "$actual_port" == "$CEA_TEST_PGPORT" ]] || {
+    rehearse_fail "refusing PostgreSQL port $actual_port (requested $CEA_TEST_PGPORT; production is 5432)"
+    return 1
+  }
 }
 
 TIMESTAMP="$(date +%s%N)"
@@ -84,9 +135,11 @@ elapsed_seconds() {
 
 cleanup_resources() {
   local cleanup_status=0
+
   if (( DB_CREATED )); then
-    if [[ "$DB_NAME" =~ ^monitoring_test_rehearsal_[0-9]+$ ]]; then
-      if ! postgres_local dropdb --if-exists --force "$DB_NAME"; then
+    if [[ "$DB_NAME" =~ ^monitoring_test_[a-z0-9_]+$ ]] && \
+       assert_rehearsal_target "$DB_NAME"; then
+      if ! postgres_local dropdb -p "$CEA_TEST_PGPORT" --if-exists --force "$DB_NAME"; then
         rehearse_fail "could not drop disposable database: $DB_NAME"
         cleanup_status=1
       else
@@ -139,7 +192,9 @@ if [[ -e "$DUMP_FILE" ]]; then
   exit 1
 fi
 
-DB_EXISTS="$(postgres_local psql -X --no-psqlrc --set=ON_ERROR_STOP=1 --tuples-only --no-align \
+assert_rehearsal_target "$DB_NAME"
+DB_EXISTS="$(postgres_local psql -p "$CEA_TEST_PGPORT" -X --no-psqlrc \
+  --set=ON_ERROR_STOP=1 --tuples-only --no-align \
   --dbname=postgres --command="SELECT 1 FROM pg_database WHERE datname = '${DB_NAME}'")"
 if [[ -n "$DB_EXISTS" ]]; then
   rehearse_fail "disposable database already exists: $DB_NAME"
@@ -149,25 +204,27 @@ fi
 DURATIONS=()
 STEP_START="$(date +%s%N)"
 DUMP_CREATED=1
-pg_dump --format=custom --file="$DUMP_FILE" --dbname="$SOURCE_DB"
+pg_dump --format=custom --file="$DUMP_FILE" \
+  --host=127.0.0.1 --port=5432 --username="$POSTGRES_USER" --dbname="$SOURCE_DB"
 DURATIONS+=("dump=$(elapsed_seconds "$STEP_START")")
 
 STEP_START="$(date +%s%N)"
 DB_CREATED=1
-postgres_local createdb --owner="$POSTGRES_USER" "$DB_NAME"
+postgres_local createdb -p "$CEA_TEST_PGPORT" --owner="$POSTGRES_USER" "$DB_NAME"
 DURATIONS+=("create_database=$(elapsed_seconds "$STEP_START")")
 
 STEP_START="$(date +%s%N)"
-postgres_local psql -X --no-psqlrc --set=ON_ERROR_STOP=1 --dbname="$DB_NAME" \
+postgres_local psql -p "$CEA_TEST_PGPORT" -X --no-psqlrc --set=ON_ERROR_STOP=1 --dbname="$DB_NAME" \
   --command='CREATE EXTENSION timescaledb; SELECT timescaledb_pre_restore();'
 DURATIONS+=("pre_restore=$(elapsed_seconds "$STEP_START")")
 
 STEP_START="$(date +%s%N)"
-postgres_local pg_restore --exit-on-error --dbname="$DB_NAME" < "$DUMP_FILE"
+postgres_local pg_restore --host=/var/run/postgresql --port="$CEA_TEST_PGPORT" \
+  --exit-on-error --dbname="$DB_NAME" < "$DUMP_FILE"
 DURATIONS+=("restore=$(elapsed_seconds "$STEP_START")")
 
 STEP_START="$(date +%s%N)"
-postgres_local psql -X --no-psqlrc --set=ON_ERROR_STOP=1 --dbname="$DB_NAME" \
+postgres_local psql -p "$CEA_TEST_PGPORT" -X --no-psqlrc --set=ON_ERROR_STOP=1 --dbname="$DB_NAME" \
   --command='SELECT timescaledb_post_restore();'
 DURATIONS+=("post_restore=$(elapsed_seconds "$STEP_START")")
 

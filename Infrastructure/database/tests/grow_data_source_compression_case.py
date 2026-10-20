@@ -25,9 +25,13 @@ class CompressionProofFailure(AssertionError):
 
 def _database_name(url: str) -> str:
     parsed = urlsplit(url)
+    expected_host = os.environ.get("CEA_TEST_PGHOST", "127.0.0.1").lower()
+    expected_port = int(os.environ.get("CEA_TEST_PGPORT", "5433"))
+    if expected_host not in {"127.0.0.1", "localhost"}:
+        raise CompressionProofFailure("CEA_TEST_PGHOST must be a loopback TCP host")
     if (
         parsed.scheme != "postgresql"
-        or parsed.hostname != "127.0.0.1"
+        or parsed.hostname != expected_host
         or parsed.username is None
         or parsed.password is None
         or parsed.port is None
@@ -35,7 +39,9 @@ def _database_name(url: str) -> str:
         or parsed.fragment
         or not parsed.path.startswith("/")
     ):
-        raise CompressionProofFailure("database URL is not the guarded loopback harness form")
+        raise CompressionProofFailure("database URL is not the configured loopback harness form")
+    if parsed.port != expected_port:
+        raise CompressionProofFailure("database port does not match CEA_TEST_PGPORT")
     name = unquote(parsed.path[1:])
     lowered = name.casefold()
     if any(protected in lowered for protected in PROTECTED_NAMES):

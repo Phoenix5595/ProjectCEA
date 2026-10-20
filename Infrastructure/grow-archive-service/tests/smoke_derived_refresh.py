@@ -70,6 +70,17 @@ TORONTO_DAY_START = datetime(2026, 2, 7, 0, 0, tzinfo=TORONTO).astimezone(UTC)
 TORONTO_DAY_END = datetime(2026, 2, 8, 0, 0, tzinfo=TORONTO).astimezone(UTC)
 
 
+def _test_pg_port() -> str:
+    port = os.environ.get("CEA_TEST_PGPORT", "5433")
+    _assert(port.isdecimal(), "CEA_TEST_PGPORT must be a decimal port")
+    port_number = int(port)
+    _assert(
+        1 <= port_number <= 65535 and port_number != 5432,
+        "CEA_TEST_PGPORT must not target production port 5432",
+    )
+    return str(port_number)
+
+
 async def _apply_file(database_url: str, path: Path, *, disposable_marker: bool = False) -> None:
     command = ["psql", "-X", "--set=ON_ERROR_STOP=1", "--no-psqlrc"]
     if disposable_marker:
@@ -101,6 +112,8 @@ async def _set_native_aggregate_owner(database_name: str, owner: str) -> None:
         "-u",
         "postgres",
         "psql",
+        "-p",
+        _test_pg_port(),
         "-X",
         "--set=ON_ERROR_STOP=1",
         "--host=/var/run/postgresql",
@@ -184,6 +197,8 @@ async def prove_monitoring_failure_gate(database_url: str, pool: asyncpg.Pool) -
                 "-u",
                 "postgres",
                 "psql",
+                "-p",
+                _test_pg_port(),
                 "-X",
                 "--no-psqlrc",
                 "--set=ON_ERROR_STOP=1",

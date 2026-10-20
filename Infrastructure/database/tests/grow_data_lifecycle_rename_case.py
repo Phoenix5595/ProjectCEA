@@ -45,8 +45,12 @@ class RenameProofFailure(AssertionError):
 
 def _database_name_from_url(url: str) -> str:
     parsed = urlsplit(url)
-    if parsed.scheme != "postgresql" or parsed.hostname != "127.0.0.1":
-        raise RenameProofFailure("database URL is not a guarded loopback PostgreSQL URL")
+    expected_host = os.environ.get("CEA_TEST_PGHOST", "127.0.0.1").lower()
+    expected_port = int(os.environ.get("CEA_TEST_PGPORT", "5433"))
+    if expected_host not in {"127.0.0.1", "localhost"}:
+        raise RenameProofFailure("CEA_TEST_PGHOST must be a loopback TCP host")
+    if parsed.scheme != "postgresql" or parsed.hostname != expected_host:
+        raise RenameProofFailure("database URL is not the configured loopback PostgreSQL URL")
     if parsed.username is None or parsed.password is None or parsed.port is None:
         raise RenameProofFailure("database URL does not contain the harness connection fields")
     if parsed.query or parsed.fragment or not parsed.path.startswith("/"):
@@ -57,8 +61,8 @@ def _database_name_from_url(url: str) -> str:
         raise RenameProofFailure("refusing protected database-name substring")
     if not re.fullmatch(r"monitoring_test_[a-z0-9_]+", lowered):
         raise RenameProofFailure("database name is outside monitoring_test_ namespace")
-    if not 1 <= parsed.port <= 65535:
-        raise RenameProofFailure("database port is outside the valid range")
+    if not 1 <= parsed.port <= 65535 or parsed.port != expected_port:
+        raise RenameProofFailure("database port does not match CEA_TEST_PGPORT")
     return name
 
 

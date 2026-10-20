@@ -1,10 +1,6 @@
 -- migration: downtime=true
 \set ON_ERROR_STOP on
 
-BEGIN;
-SET LOCAL lock_timeout = '0';
-SET LOCAL statement_timeout = '0';
-SET LOCAL search_path = public, pg_catalog;
 
 DO $phase4_preflight$
 DECLARE
@@ -88,49 +84,146 @@ BEGIN
             overview_refresh_count, relay_job_count;
     END IF;
 
-    IF to_regclass('public.monitoring_job_snapshot_0007') IS NOT NULL
-       OR to_regclass('public.monitoring_refresh_policy_snapshot_0007') IS NOT NULL
-       OR to_regclass('public.monitoring_index_snapshot_0007') IS NOT NULL
-       OR to_regprocedure('public.monitoring_backfill_aggregates(integer,jsonb)') IS NOT NULL
-       OR EXISTS (
-            SELECT 1 FROM timescaledb_information.jobs
-            WHERE proc_schema = 'public'
-              AND proc_name = 'monitoring_backfill_aggregates'
-       ) THEN
-        RAISE EXCEPTION '0007_time_column_rename snapshot or backfill objects already exist';
+    IF to_regclass('public.monitoring_index_snapshot_0007') IS NOT NULL
+       OR to_regclass('public.monitoring_dependent_view_snapshot_0007') IS NOT NULL THEN
+        RAISE EXCEPTION '0007_time_column_rename main-phase objects already exist';
     END IF;
 END
 $phase4_preflight$;
-
-CREATE TABLE public.monitoring_job_snapshot_0007 (
+-- Snapshot and quiesce every Timescale job whose target 0007 changes. This
+-- transaction commits before any aggregate/source DDL so the scheduler sees
+-- the pause even if the following in-flight-worker wait times out.
+BEGIN;
+SET LOCAL search_path = public, pg_catalog;
+CREATE TABLE IF NOT EXISTS public.monitoring_job_snapshot_0007 (
     job_id INTEGER PRIMARY KEY,
+    proc_schema TEXT NOT NULL,
     proc_name TEXT NOT NULL,
     scheduled BOOLEAN NOT NULL,
-    config JSONB NOT NULL
+    schedule_interval INTERVAL NOT NULL,
+    max_runtime INTERVAL,
+    max_retries INTEGER,
+    retry_period INTERVAL,
+    config JSONB NOT NULL,
+    next_start TIMESTAMPTZ,
+    target_schema TEXT,
+    target_name TEXT,
+    target_is_cagg BOOLEAN NOT NULL DEFAULT FALSE,
+    restore_after_down BOOLEAN NOT NULL DEFAULT TRUE,
+    check_schema TEXT,
+    check_name TEXT,
+    fixed_schedule BOOLEAN,
+    initial_start TIMESTAMPTZ,
+    timezone TEXT
 );
-INSERT INTO public.monitoring_job_snapshot_0007 (job_id, proc_name, scheduled, config)
-SELECT job_id, proc_name, scheduled, config
-FROM timescaledb_information.jobs
-WHERE proc_schema = 'public'
-  AND proc_name IN ('monitoring_refresh_overview_incremental',
-                    'monitoring_rebuild_relay_overview');
-
-CREATE TABLE public.monitoring_refresh_policy_snapshot_0007 (
+CREATE TABLE IF NOT EXISTS public.monitoring_refresh_policy_snapshot_0007 (
     view_name TEXT PRIMARY KEY,
     job_id INTEGER NOT NULL,
     scheduled BOOLEAN NOT NULL,
     schedule_interval INTERVAL NOT NULL,
     max_runtime INTERVAL,
     max_retries INTEGER,
-    config JSONB NOT NULL
+    retry_period INTERVAL,
+    config JSONB NOT NULL,
+    next_start TIMESTAMPTZ,
+    check_schema TEXT,
+    check_name TEXT,
+    fixed_schedule BOOLEAN,
+    initial_start TIMESTAMPTZ,
+    timezone TEXT
 );
+WITH cagg_targets AS (
+    SELECT cagg.user_view_schema, cagg.user_view_name, cagg.mat_hypertable_id
+    FROM _timescaledb_catalog.continuous_agg AS cagg
+    WHERE cagg.user_view_schema = 'public'
+      AND cagg.user_view_name = ANY (ARRAY[
+          'monitoring_measurement_1min', 'monitoring_measurement_5min',
+          'monitoring_measurement_1hour', 'monitoring_measurement_1day',
+          'monitoring_effective_setpoints_1min', 'monitoring_effective_setpoints_5min',
+          'monitoring_automation_state_1min', 'monitoring_automation_state_5min',
+          'monitoring_light_intensity_1hour', 'monitoring_light_intensity_1day',
+          'monitoring_requested_pid_1hour', 'monitoring_requested_pid_1day',
+          'monitoring_relay_duration_1day'
+      ])
+),
+job_targets AS (
+    SELECT job.job_id, job.proc_schema, job.proc_name, job.scheduled,
+           job.schedule_interval, job.max_runtime, job.max_retries,
+           job.retry_period, COALESCE(job.config, '{}'::JSONB) AS config,
+           stats.next_start, job.check_schema::TEXT AS check_schema,
+           job.check_name::TEXT AS check_name,
+           job.fixed_schedule, job.initial_start, config_job.timezone,
+           CASE WHEN cagg.user_view_name IS NOT NULL
+                THEN cagg.user_view_schema ELSE job.hypertable_schema END AS target_schema,
+           CASE WHEN cagg.user_view_name IS NOT NULL
+                THEN cagg.user_view_name ELSE job.hypertable_name END AS target_name,
+           cagg.user_view_name IS NOT NULL AS target_is_cagg,
+           job.proc_name <> 'monitoring_backfill_aggregates' AS restore_after_down
+    FROM timescaledb_information.jobs AS job
+    LEFT JOIN timescaledb_information.job_stats AS stats USING (job_id)
+    LEFT JOIN _timescaledb_config.bgw_job AS config_job
+      ON config_job.id = job.job_id
+    LEFT JOIN cagg_targets AS cagg
+      ON cagg.mat_hypertable_id = CASE
+          WHEN job.proc_name IN (
+              'policy_refresh_continuous_aggregate',
+              'policy_compression', 'policy_columnstore', 'policy_retention')
+          THEN COALESCE(
+              NULLIF(job.config ->> 'mat_hypertable_id', '')::INTEGER,
+              NULLIF(job.config ->> 'hypertable_id', '')::INTEGER)
+          ELSE NULL
+      END
+    WHERE (job.proc_schema = 'public'
+           AND job.proc_name IN (
+               'monitoring_refresh_overview_incremental',
+               'monitoring_rebuild_relay_overview',
+               'monitoring_backfill_aggregates'))
+       OR (job.proc_name IN ('policy_compression', 'policy_columnstore', 'policy_retention')
+           AND (
+               (job.hypertable_schema = 'public'
+                AND job.hypertable_name = ANY (ARRAY[
+                    'automation_state', 'effective_setpoints', 'control_history',
+                    'pid_parameter_history', 'relay_observation',
+                    'monitoring_room_photoperiod', 'monitoring_photoperiod_coverage',
+                    'mode_transition_history'
+                ]))
+               OR cagg.user_view_name IS NOT NULL
+           ))
+       OR (job.proc_schema = '_timescaledb_functions'
+           AND job.proc_name = 'policy_refresh_continuous_aggregate'
+           AND cagg.user_view_name = ANY (ARRAY[
+               'monitoring_measurement_1min', 'monitoring_relay_duration_1day'
+           ]))
+)
+INSERT INTO public.monitoring_job_snapshot_0007 (
+    job_id, proc_schema, proc_name, scheduled, schedule_interval, max_runtime,
+    max_retries, retry_period, config, next_start, target_schema, target_name,
+    target_is_cagg, restore_after_down, check_schema, check_name, fixed_schedule,
+    initial_start, timezone)
+SELECT job_id, proc_schema, proc_name, scheduled, schedule_interval, max_runtime,
+       max_retries, retry_period, config, next_start, target_schema, target_name,
+       target_is_cagg, restore_after_down, check_schema, check_name,
+       fixed_schedule, initial_start, timezone
+FROM job_targets
+ON CONFLICT (job_id) DO NOTHING;
+
 INSERT INTO public.monitoring_refresh_policy_snapshot_0007 (
-    view_name, job_id, scheduled, schedule_interval, max_runtime, max_retries, config)
-SELECT cagg.user_view_name AS view_name, job.job_id, job.scheduled, job.schedule_interval,
-       job.max_runtime, job.max_retries, job.config
+    view_name, job_id, scheduled, schedule_interval, max_runtime, max_retries,
+    retry_period, config, next_start, check_schema, check_name, fixed_schedule,
+    initial_start, timezone)
+SELECT cagg.user_view_name AS view_name, job.job_id, job.scheduled,
+       job.schedule_interval, job.max_runtime, job.max_retries,
+       job.retry_period, COALESCE(job.config, '{}'::JSONB), stats.next_start,
+       job.check_schema::TEXT, job.check_name::TEXT, job.fixed_schedule,
+       job.initial_start, config_job.timezone
 FROM _timescaledb_catalog.continuous_agg AS cagg
 JOIN timescaledb_information.jobs AS job
-  ON (job.config ->> 'mat_hypertable_id')::INTEGER = cagg.mat_hypertable_id
+  ON COALESCE(
+       NULLIF(job.config ->> 'mat_hypertable_id', '')::INTEGER,
+       NULLIF(job.config ->> 'hypertable_id', '')::INTEGER) = cagg.mat_hypertable_id
+LEFT JOIN timescaledb_information.job_stats AS stats USING (job_id)
+LEFT JOIN _timescaledb_config.bgw_job AS config_job
+  ON config_job.id = job.job_id
 WHERE cagg.user_view_schema = 'public'
   AND cagg.user_view_name = ANY (ARRAY[
       'monitoring_measurement_5min',
@@ -141,7 +234,134 @@ WHERE cagg.user_view_schema = 'public'
       'monitoring_requested_pid_1hour', 'monitoring_requested_pid_1day'
   ])
   AND job.proc_schema = '_timescaledb_functions'
-  AND job.proc_name = 'policy_refresh_continuous_aggregate';
+  AND job.proc_name = 'policy_refresh_continuous_aggregate'
+ON CONFLICT (view_name) DO NOTHING;
+DO $unschedule_phase4_jobs$
+BEGIN
+    PERFORM alter_job(job.job_id, scheduled => FALSE)
+    FROM timescaledb_information.jobs AS job
+    WHERE job.job_id IN (
+        SELECT job_id FROM public.monitoring_job_snapshot_0007
+        UNION
+        SELECT job_id FROM public.monitoring_refresh_policy_snapshot_0007
+    );
+END
+$unschedule_phase4_jobs$;
+COMMIT;
+
+DO $wait_for_phase4_jobs$
+DECLARE
+    jobs_running BOOLEAN;
+    wait_timeout INTERVAL := INTERVAL '10 minutes';
+    test_wait_timeout TEXT;
+    wait_deadline TIMESTAMPTZ;
+    running_job_details TEXT;
+BEGIN
+    IF current_database() ~ '^monitoring_test_[a-z0-9_]+$' THEN
+        test_wait_timeout := NULLIF(
+            current_setting('app.time_rename_test_quiesce_timeout', TRUE), '');
+        IF test_wait_timeout IS NOT NULL THEN
+            wait_timeout := test_wait_timeout::INTERVAL;
+        END IF;
+    END IF;
+    wait_deadline := clock_timestamp() + wait_timeout;
+
+    LOOP
+        WITH target_jobs AS (
+            SELECT job_id FROM public.monitoring_job_snapshot_0007
+            UNION
+            SELECT job_id FROM public.monitoring_refresh_policy_snapshot_0007
+        )
+        SELECT EXISTS (
+            SELECT 1
+            FROM target_jobs AS target
+            WHERE EXISTS (
+                SELECT 1
+                FROM pg_stat_activity AS activity
+                WHERE activity.datname = current_database()
+                  AND activity.backend_type <> 'client backend'
+                  AND activity.application_name LIKE
+                      '%[' || target.job_id::TEXT || ']%'
+            )
+        )
+        INTO jobs_running;
+        EXIT WHEN NOT jobs_running;
+        IF clock_timestamp() >= wait_deadline THEN
+            WITH target_jobs AS (
+                SELECT job_id, proc_schema, proc_name, target_schema, target_name
+                FROM public.monitoring_job_snapshot_0007
+                UNION
+                SELECT job_id, '_timescaledb_functions'::TEXT,
+                       'policy_refresh_continuous_aggregate'::TEXT,
+                       'public'::TEXT, view_name::TEXT
+                FROM public.monitoring_refresh_policy_snapshot_0007
+            )
+            SELECT string_agg(
+                format(
+                    'job_id=%s proc_name=%s.%s hypertable/view=%s worker_pid=%s worker_app=%s runtime=%s',
+                    target.job_id,
+                    COALESCE(target.proc_schema, job.proc_schema::TEXT, '<unknown>'),
+                    COALESCE(target.proc_name, job.proc_name::TEXT, '<unknown>'),
+                    CASE
+                        WHEN COALESCE(target.target_name, job.hypertable_name::TEXT) IS NULL
+                            THEN '<none>'
+                        ELSE format(
+                            '%I.%I',
+                            COALESCE(target.target_schema, job.hypertable_schema::TEXT, 'public'),
+                            COALESCE(target.target_name, job.hypertable_name::TEXT))
+                    END,
+                    COALESCE(worker.pid::TEXT, 'unknown'),
+                    COALESCE(worker.application_name::TEXT, 'unknown'),
+                    COALESCE(
+                        (clock_timestamp() - stats.last_run_started_at)::TEXT,
+                        (clock_timestamp() - worker.backend_start)::TEXT,
+                        'unknown')),
+                E'\n' ORDER BY target.job_id)
+            INTO running_job_details
+            FROM target_jobs AS target
+            LEFT JOIN timescaledb_information.jobs AS job USING (job_id)
+            LEFT JOIN timescaledb_information.job_stats AS stats USING (job_id)
+            LEFT JOIN LATERAL (
+                SELECT activity.pid, activity.backend_start, activity.application_name
+                FROM pg_stat_activity AS activity
+                WHERE activity.datname = current_database()
+                  AND activity.backend_type <> 'client backend'
+                  AND activity.application_name LIKE
+                      '%[' || target.job_id::TEXT || ']%'
+                ORDER BY activity.pid
+                LIMIT 1
+            ) AS worker ON TRUE
+            WHERE worker.pid IS NOT NULL;
+            IF running_job_details IS NULL THEN
+                EXIT;
+            END IF;
+            RAISE EXCEPTION 'migration_jobs_still_running'
+                USING DETAIL = running_job_details,
+                      HINT = 'Jobs are unscheduled and snapshotted; let these workers finish (do not kill them), then re-run the migration.';
+        END IF;
+        PERFORM pg_sleep(1);
+    END LOOP;
+END
+$wait_for_phase4_jobs$;
+
+DO $remove_stale_backfill_jobs$
+DECLARE
+    local_job_id INTEGER;
+BEGIN
+    FOR local_job_id IN
+        SELECT job_id
+        FROM timescaledb_information.jobs
+        WHERE proc_schema = 'public'
+          AND proc_name = 'monitoring_backfill_aggregates'
+    LOOP
+        PERFORM delete_job(local_job_id);
+    END LOOP;
+END
+$remove_stale_backfill_jobs$;
+BEGIN;
+SET LOCAL lock_timeout = '0';
+SET LOCAL statement_timeout = '0';
+SET LOCAL search_path = public, pg_catalog;
 
 CREATE TABLE public.monitoring_index_snapshot_0007 (
     table_name TEXT NOT NULL,
@@ -175,10 +395,21 @@ WHERE indexes.schemaname = 'public'
 
 DO $snapshot_shape$
 BEGIN
-    IF (SELECT count(*) FROM public.monitoring_job_snapshot_0007) <> 4 THEN
+    IF (SELECT count(*) FROM public.monitoring_job_snapshot_0007
+        WHERE proc_schema = 'public'
+          AND proc_name IN ('monitoring_refresh_overview_incremental',
+                            'monitoring_rebuild_relay_overview')) <> 4 THEN
         RAISE EXCEPTION '0007_time_column_rename did not snapshot all four overview jobs';
     END IF;
-    IF (SELECT count(*) FROM public.monitoring_refresh_policy_snapshot_0007) <> 11 THEN
+    IF (SELECT count(*) FROM public.monitoring_refresh_policy_snapshot_0007
+        WHERE view_name = ANY (ARRAY[
+            'monitoring_measurement_5min',
+            'monitoring_measurement_1hour', 'monitoring_measurement_1day',
+            'monitoring_effective_setpoints_1min', 'monitoring_effective_setpoints_5min',
+            'monitoring_automation_state_1min', 'monitoring_automation_state_5min',
+            'monitoring_light_intensity_1hour', 'monitoring_light_intensity_1day',
+            'monitoring_requested_pid_1hour', 'monitoring_requested_pid_1day'
+        ])) <> 11 THEN
         RAISE EXCEPTION '0007_time_column_rename expected eleven refresh policies for rebuilt aggregates, found %',
             (SELECT count(*) FROM public.monitoring_refresh_policy_snapshot_0007);
     END IF;
@@ -199,20 +430,95 @@ DECLARE
     snapshot_row RECORD;
 BEGIN
     FOR snapshot_row IN
-        SELECT job_id FROM public.monitoring_job_snapshot_0007 ORDER BY job_id
+        SELECT snapshot.job_id
+        FROM public.monitoring_job_snapshot_0007 AS snapshot
+        JOIN timescaledb_information.jobs AS job USING (job_id)
+        ORDER BY snapshot.job_id
     LOOP
         PERFORM alter_job(snapshot_row.job_id, scheduled => FALSE);
     END LOOP;
 
     FOR snapshot_row IN
-        SELECT job_id
-        FROM public.monitoring_refresh_policy_snapshot_0007
-        ORDER BY job_id
+        SELECT snapshot.job_id
+        FROM public.monitoring_refresh_policy_snapshot_0007 AS snapshot
+        JOIN timescaledb_information.jobs AS job USING (job_id)
+        ORDER BY snapshot.job_id
     LOOP
         PERFORM alter_job(snapshot_row.job_id, scheduled => FALSE);
     END LOOP;
 END
 $pause_overview_jobs$;
+
+-- Non-internal views directly depending on a dropped CAGG are release-local
+-- orphans. Save their exact query and remove them; up must not re-pin the new
+-- aggregates, while down restores these views after the pre-0007 CAGGs exist.
+CREATE TABLE public.monitoring_dependent_view_snapshot_0007 (
+    view_schema TEXT NOT NULL,
+    view_name TEXT NOT NULL,
+    view_definition TEXT NOT NULL,
+    PRIMARY KEY (view_schema, view_name)
+);
+INSERT INTO public.monitoring_dependent_view_snapshot_0007 (
+    view_schema, view_name, view_definition)
+SELECT DISTINCT
+       view_namespace.nspname,
+       view_class.relname,
+       pg_get_viewdef(view_class.oid, TRUE)
+FROM pg_depend AS dependency
+JOIN pg_rewrite AS view_rule
+  ON dependency.classid = 'pg_rewrite'::REGCLASS
+ AND dependency.objid = view_rule.oid
+ AND view_rule.rulename = '_RETURN'
+JOIN pg_class AS view_class
+  ON view_class.oid = view_rule.ev_class
+ AND view_class.relkind = 'v'
+JOIN pg_namespace AS view_namespace
+  ON view_namespace.oid = view_class.relnamespace
+WHERE dependency.refclassid = 'pg_class'::REGCLASS
+  AND dependency.deptype = 'n'
+  AND view_namespace.nspname NOT IN ('pg_catalog', 'information_schema')
+  AND view_namespace.nspname !~ '^_timescaledb_'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM _timescaledb_catalog.continuous_agg AS own_cagg
+      WHERE own_cagg.user_view_schema = view_namespace.nspname
+        AND own_cagg.user_view_name = view_class.relname
+  )
+  AND dependency.refobjid IN (
+      SELECT target_relation.oid
+      FROM pg_class AS target_relation
+      JOIN pg_namespace AS target_namespace
+        ON target_namespace.oid = target_relation.relnamespace
+      WHERE target_namespace.nspname = 'public'
+        AND target_relation.relkind IN ('m', 'v')
+        AND target_relation.relname = ANY (ARRAY[
+            'monitoring_light_intensity_1day',
+            'monitoring_requested_pid_1day',
+            'monitoring_measurement_1day',
+            'monitoring_light_intensity_1hour',
+            'monitoring_requested_pid_1hour',
+            'monitoring_measurement_1hour',
+            'monitoring_measurement_5min',
+            'monitoring_effective_setpoints_5min',
+            'monitoring_effective_setpoints_1min',
+            'monitoring_automation_state_5min',
+            'monitoring_automation_state_1min'
+        ])
+  );
+DO $drop_dependent_views$
+DECLARE
+    snapshot_row RECORD;
+BEGIN
+    FOR snapshot_row IN
+        SELECT view_schema, view_name
+        FROM public.monitoring_dependent_view_snapshot_0007
+        ORDER BY view_schema, view_name
+    LOOP
+        EXECUTE format('DROP VIEW %I.%I',
+                       snapshot_row.view_schema, snapshot_row.view_name);
+    END LOOP;
+END
+$drop_dependent_views$;
 
 -- Dependents first. The 1-minute measurement aggregate and relay-duration day
 -- aggregate do not depend on a renamed source column and remain in place.
@@ -402,6 +708,9 @@ $base_refresh_policies$;
 DO $aggregate_compression$
 DECLARE
     view_name TEXT;
+    materialization_id INTEGER;
+    compression_job_id INTEGER;
+    compression_job_count INTEGER;
 BEGIN
     FOREACH view_name IN ARRAY ARRAY[
         'monitoring_measurement_1min', 'monitoring_measurement_5min',
@@ -418,6 +727,37 @@ BEGIN
             format('public.%I', view_name)::REGCLASS,
             compress_after => INTERVAL '3 months',
             if_not_exists => TRUE);
+
+        SELECT cagg.mat_hypertable_id
+        INTO materialization_id
+        FROM _timescaledb_catalog.continuous_agg AS cagg
+        WHERE cagg.user_view_schema = 'public'
+          AND cagg.user_view_name = view_name;
+        SELECT count(*)
+        INTO compression_job_count
+        FROM timescaledb_information.jobs AS job
+        WHERE job.proc_schema = '_timescaledb_functions'
+          AND job.proc_name IN ('policy_compression', 'policy_columnstore')
+          AND COALESCE(
+                  NULLIF(job.config ->> 'mat_hypertable_id', '')::INTEGER,
+                  NULLIF(job.config ->> 'hypertable_id', '')::INTEGER)
+              = materialization_id;
+        IF compression_job_count < 1 THEN
+            RAISE EXCEPTION '0007_time_column_rename missing compression policy for %',
+                view_name;
+        END IF;
+        FOR compression_job_id IN
+            SELECT job.job_id
+            FROM timescaledb_information.jobs AS job
+            WHERE job.proc_schema = '_timescaledb_functions'
+              AND job.proc_name IN ('policy_compression', 'policy_columnstore')
+              AND COALESCE(
+                      NULLIF(job.config ->> 'mat_hypertable_id', '')::INTEGER,
+                      NULLIF(job.config ->> 'hypertable_id', '')::INTEGER)
+                  = materialization_id
+        LOOP
+            PERFORM alter_job(compression_job_id, scheduled => FALSE);
+        END LOOP;
     END LOOP;
 END
 $aggregate_compression$;

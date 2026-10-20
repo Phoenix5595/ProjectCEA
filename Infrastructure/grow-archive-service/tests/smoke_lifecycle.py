@@ -79,6 +79,9 @@ def _parse_database_url(value: str) -> dict[str, Any]:
     if parsed.scheme not in {"postgres", "postgresql"}:
         raise SmokeFailure("database URL must use PostgreSQL")
     host = (parsed.hostname or "").lower()
+    expected_host = os.environ.get("CEA_TEST_PGHOST", "127.0.0.1").lower()
+    if host != expected_host:
+        raise SmokeFailure(f"database URL host does not match CEA_TEST_PGHOST: {host!r}")
     if host not in {"127.0.0.1", "localhost", "::1"}:
         raise SmokeFailure(f"refusing non-loopback database host {host!r}")
     for marker in ("mothernode", "projectcea"):
@@ -95,10 +98,13 @@ def _parse_database_url(value: str) -> dict[str, Any]:
         raise SmokeFailure("database role must use monitoring_role_* namespace")
     password = unquote(parsed.password or "")
     port = parsed.port
+    expected_port = int(os.environ.get("CEA_TEST_PGPORT", "5433"))
     if not password or port is None or not 1 <= port <= 65535:
         raise SmokeFailure("database URL is missing a password or valid port")
+    if port != expected_port:
+        raise SmokeFailure(f"database URL port does not match CEA_TEST_PGPORT: {port}")
     return {
-        "host": "127.0.0.1",
+        "host": host,
         "port": port,
         "database": database,
         "user": username,
@@ -491,7 +497,7 @@ async def run(database_url: str, *, scenario=None) -> None:
     api_key = secrets.token_urlsafe(32)
     os.environ.update(
         {
-            "POSTGRES_HOST": "127.0.0.1",
+            "POSTGRES_HOST": db_config["host"],
             "POSTGRES_PORT": str(db_config["port"]),
             "POSTGRES_DB": db_config["database"],
             "POSTGRES_USER": db_config["user"],

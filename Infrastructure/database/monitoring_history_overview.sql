@@ -1748,9 +1748,150 @@ REVOKE EXECUTE ON PROCEDURE public.monitoring_refresh_overview_incremental(INTEG
 -- authorization transaction; the shared failure gate and the coverage table
 -- above already exist for it.
 \ir monitoring_relay_history_overview.sql
--- Phase 4 aggregate backfill. Migration 0007 snapshots and pauses the
--- overview jobs before including this procedure, then creates its scheduled
--- job with the source-derived cursor after all aggregates are rebuilt.
+-- Restore the pre-0007 job settings after backfill or after a down migration.
+-- CAGG policies can have new job ids after their materializations are rebuilt,
+-- so match them by procedure and target view before recreating/altering them.
+CREATE OR REPLACE PROCEDURE public.monitoring_restore_quiesced_jobs_0007()
+LANGUAGE plpgsql
+SECURITY INVOKER
+AS $restore_jobs$
+DECLARE
+    snapshot_row RECORD;
+    local_job_id INTEGER;
+    local_mat_hypertable_id INTEGER;
+    local_config JSONB;
+    local_check_config REGPROC;
+BEGIN
+    FOR snapshot_row IN
+        SELECT *
+        FROM public.monitoring_job_snapshot_0007
+        WHERE restore_after_down
+        ORDER BY job_id
+    LOOP
+        local_job_id := NULL;
+        local_config := snapshot_row.config;
+        local_check_config := CASE
+            WHEN snapshot_row.check_schema IS NULL
+              OR snapshot_row.check_name IS NULL THEN NULL::REGPROC
+            ELSE format(
+                '%I.%I', snapshot_row.check_schema, snapshot_row.check_name)::REGPROC
+        END;
+
+        IF snapshot_row.target_is_cagg THEN
+            SELECT cagg.mat_hypertable_id
+              INTO local_mat_hypertable_id
+              FROM _timescaledb_catalog.continuous_agg AS cagg
+             WHERE cagg.user_view_schema = snapshot_row.target_schema
+               AND cagg.user_view_name = snapshot_row.target_name;
+            IF local_mat_hypertable_id IS NULL THEN
+                RAISE EXCEPTION 'cannot restore job %: continuous aggregate %.% is missing',
+                    snapshot_row.job_id, snapshot_row.target_schema, snapshot_row.target_name;
+            END IF;
+            IF local_config ? 'mat_hypertable_id' THEN
+                local_config := jsonb_set(
+                    local_config, '{mat_hypertable_id}',
+                    to_jsonb(local_mat_hypertable_id), TRUE);
+            END IF;
+            IF local_config ? 'hypertable_id' THEN
+                local_config := jsonb_set(
+                    local_config, '{hypertable_id}',
+                    to_jsonb(local_mat_hypertable_id), TRUE);
+            END IF;
+
+            SELECT job.job_id
+              INTO local_job_id
+              FROM timescaledb_information.jobs AS job
+             WHERE job.proc_schema = snapshot_row.proc_schema
+               AND job.proc_name = snapshot_row.proc_name
+               AND COALESCE(
+                       NULLIF(job.config ->> 'mat_hypertable_id', '')::INTEGER,
+                       NULLIF(job.config ->> 'hypertable_id', '')::INTEGER)
+                   = local_mat_hypertable_id
+             ORDER BY job.job_id
+             LIMIT 1;
+        ELSE
+            SELECT job.job_id
+              INTO local_job_id
+              FROM timescaledb_information.jobs AS job
+             WHERE job.job_id = snapshot_row.job_id
+               AND job.proc_schema = snapshot_row.proc_schema
+               AND job.proc_name = snapshot_row.proc_name;
+        END IF;
+
+        IF local_job_id IS NULL THEN
+            IF NOT snapshot_row.target_is_cagg THEN
+                RAISE EXCEPTION 'cannot restore missing pre-0007 job % (% %)',
+                    snapshot_row.job_id, snapshot_row.proc_schema, snapshot_row.proc_name;
+            END IF;
+            local_job_id := add_job(
+                format('%I.%I', snapshot_row.proc_schema, snapshot_row.proc_name)::REGPROC,
+                schedule_interval => snapshot_row.schedule_interval,
+                config => local_config,
+                initial_start => snapshot_row.initial_start,
+                scheduled => snapshot_row.scheduled,
+                check_config => local_check_config,
+                fixed_schedule => snapshot_row.fixed_schedule,
+                timezone => snapshot_row.timezone);
+            IF local_job_id IS NULL OR local_job_id < 1 THEN
+                RAISE EXCEPTION 'could not recreate pre-0007 job % (% %)',
+                    snapshot_row.job_id, snapshot_row.proc_schema, snapshot_row.proc_name;
+            END IF;
+        END IF;
+
+        PERFORM alter_job(
+            local_job_id,
+            schedule_interval => snapshot_row.schedule_interval,
+            max_runtime => snapshot_row.max_runtime,
+            max_retries => snapshot_row.max_retries,
+            retry_period => snapshot_row.retry_period,
+            scheduled => snapshot_row.scheduled,
+            config => local_config,
+            next_start => NULLIF(snapshot_row.next_start, '-infinity'::TIMESTAMPTZ),
+            check_config => local_check_config,
+            fixed_schedule => snapshot_row.fixed_schedule,
+            initial_start => snapshot_row.initial_start,
+            timezone => snapshot_row.timezone);
+    END LOOP;
+
+    FOR local_job_id IN
+        SELECT job.job_id
+        FROM _timescaledb_catalog.continuous_agg AS cagg
+        JOIN timescaledb_information.jobs AS job
+          ON COALESCE(
+                 NULLIF(job.config ->> 'mat_hypertable_id', '')::INTEGER,
+                 NULLIF(job.config ->> 'hypertable_id', '')::INTEGER)
+             = cagg.mat_hypertable_id
+        WHERE cagg.user_view_schema = 'public'
+          AND cagg.user_view_name = ANY (ARRAY[
+              'monitoring_measurement_1min', 'monitoring_measurement_5min',
+              'monitoring_measurement_1hour', 'monitoring_measurement_1day',
+              'monitoring_effective_setpoints_1min', 'monitoring_effective_setpoints_5min',
+              'monitoring_automation_state_1min', 'monitoring_automation_state_5min',
+              'monitoring_light_intensity_1hour', 'monitoring_light_intensity_1day',
+              'monitoring_requested_pid_1hour', 'monitoring_requested_pid_1day',
+              'monitoring_relay_duration_1day'
+          ])
+          AND job.proc_schema = '_timescaledb_functions'
+          AND job.proc_name IN ('policy_compression', 'policy_columnstore')
+          AND NOT EXISTS (
+              SELECT 1
+              FROM public.monitoring_job_snapshot_0007 AS snapshot
+              WHERE snapshot.restore_after_down
+                AND snapshot.target_is_cagg
+                AND snapshot.target_schema = cagg.user_view_schema
+                AND snapshot.target_name = cagg.user_view_name
+                AND snapshot.proc_schema = job.proc_schema
+                AND snapshot.proc_name = job.proc_name
+          )
+    LOOP
+        PERFORM alter_job(local_job_id, scheduled => TRUE);
+    END LOOP;
+END
+$restore_jobs$;
+REVOKE EXECUTE ON PROCEDURE public.monitoring_restore_quiesced_jobs_0007() FROM PUBLIC;
+
+-- Phase 4 aggregate backfill job restores snapshotted non-refresh jobs after
+-- the eleven rebuilt CAGGs have reached their materialization frontier.
 CREATE OR REPLACE PROCEDURE public.monitoring_backfill_aggregates(job_id INTEGER, config JSONB)
 LANGUAGE plpgsql
 SECURITY INVOKER
@@ -1777,7 +1918,6 @@ DECLARE
     configured_start TIMESTAMPTZ;
     policy_job_id INTEGER;
     policy_count INTEGER;
-    snapshot_row RECORD;
 BEGIN
     IF jsonb_typeof(configured) IS DISTINCT FROM 'object'
        OR jsonb_typeof(configured -> 'views') IS DISTINCT FROM 'array'
@@ -1848,15 +1988,7 @@ BEGIN
             PERFORM alter_job(policy_job_id, scheduled => TRUE);
         END LOOP;
 
-        FOR snapshot_row IN
-            SELECT snapshot.job_id, snapshot.scheduled, snapshot.config
-            FROM public.monitoring_job_snapshot_0007 AS snapshot
-            ORDER BY snapshot.job_id
-        LOOP
-            PERFORM alter_job(snapshot_row.job_id,
-                              scheduled => snapshot_row.scheduled,
-                              config => snapshot_row.config);
-        END LOOP;
+        CALL public.monitoring_restore_quiesced_jobs_0007();
 
         configured := jsonb_set(configured, '{done}', 'true'::JSONB, TRUE);
         PERFORM alter_job(job_id, scheduled => FALSE, config => configured);
@@ -1866,7 +1998,7 @@ BEGIN
 END
 $procedure$;
 COMMENT ON PROCEDURE public.monitoring_backfill_aggregates(INTEGER, JSONB) IS
-'Oldest-first UTC-day materialization of the eleven Phase 4 aggregates; on completion schedules their refresh policies and restores the snapshotted overview jobs.';
+'Oldest-first UTC-day materialization of the eleven Phase 4 aggregates; on completion schedules their refresh policies and restores the snapshotted non-refresh Timescale jobs.';
 REVOKE EXECUTE ON PROCEDURE public.monitoring_backfill_aggregates(INTEGER, JSONB) FROM PUBLIC;
 
 \if :{?monitoring_time_rename_migration}

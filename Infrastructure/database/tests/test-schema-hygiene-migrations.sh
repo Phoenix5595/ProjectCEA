@@ -42,6 +42,10 @@ assert_database_url() {
     fail "refusing non-loopback database host: $database_host"
     return 1
   }
+  [[ "$raw_database_host" == "$CEA_TEST_PGHOST" ]] || {
+    fail "database URL host does not match CEA_TEST_PGHOST: $raw_database_host"
+    return 1
+  }
   [[ "$database_name" =~ ^monitoring_test_[a-z0-9_]+$ ]] || {
     fail "refusing database outside monitoring_test_ namespace: $database_name"
     return 1
@@ -52,6 +56,10 @@ assert_database_url() {
   }
   [[ "$database_port" =~ ^[0-9]+$ ]] || {
     fail 'refusing invalid database port'
+    return 1
+  }
+  [[ "$database_port" == "$CEA_TEST_PGPORT" ]] || {
+    fail "database URL port does not match CEA_TEST_PGPORT: $database_port"
     return 1
   }
 
@@ -314,7 +322,7 @@ SQL
     fail "refusing superuser simulation on non-disposable database: $database_name"
     return 1
   }
-  sudo -u postgres psql -X --no-psqlrc --set=ON_ERROR_STOP=1 --dbname="$database_name" <<'SQL' || {
+  sudo -u postgres psql -p "$CEA_TEST_PGPORT" -X --no-psqlrc --set=ON_ERROR_STOP=1 --dbname="$database_name" <<'SQL' || {
 DO $simulate_interrupted_build$
 DECLARE
     chunk_index regclass;

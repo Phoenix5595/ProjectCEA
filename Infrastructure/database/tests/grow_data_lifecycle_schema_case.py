@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import re
 import sys
 from pathlib import Path
@@ -53,6 +54,9 @@ def assert_safe_database_url(url: str) -> None:
     host, port, database_name = match.group(1), match.group(2), match.group(3)
     lowered_host = host.lower()
     lowered_database = database_name.lower()
+    expected_host = os.environ.get("CEA_TEST_PGHOST", "127.0.0.1").lower()
+    if lowered_host != expected_host:
+        raise CaseFailure(f"database host does not match CEA_TEST_PGHOST: {host}")
     if lowered_host not in ("127.0.0.1", "localhost", "::1"):
         raise CaseFailure(f"refusing non-loopback database host: {host}")
     for marker in ("mothernode", "projectcea"):
@@ -63,8 +67,9 @@ def assert_safe_database_url(url: str) -> None:
             raise CaseFailure(f"refusing production database name: {database_name}")
     if not re.fullmatch(r"monitoring_test_[a-z0-9_]+", lowered_database):
         raise CaseFailure(f"test database name must use the monitoring_test_ namespace: {database_name}")
-    if not 1 <= int(port) <= 65535:
-        raise CaseFailure(f"invalid PostgreSQL port: {port}")
+    expected_port = int(os.environ.get("CEA_TEST_PGPORT", "5433"))
+    if not 1 <= int(port) <= 65535 or int(port) != expected_port:
+        raise CaseFailure(f"database port does not match CEA_TEST_PGPORT: {port}")
 
 
 def expect_blocked(report, stream_name: str, code: str) -> None:
