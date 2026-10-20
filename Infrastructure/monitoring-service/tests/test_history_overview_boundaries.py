@@ -9,6 +9,20 @@ from monitoring_service.history_overview_models import (
     HistoryOverviewPoint,
     MonitoringValidationError,
 )
+from monitoring_service.history_overview_sql import SENSOR_OVERVIEW_STATEMENT
+
+
+def test_sensor_overview_freshness_covers_measurement_ancestors():
+    statement = " ".join(SENSOR_OVERVIEW_STATEMENT.split())
+    hourly_tiers = (
+        "cagg_name IN ('monitoring_measurement_1hour', 'monitoring_measurement_1min')"
+    )
+    daily_tiers = (
+        "cagg_name IN ('monitoring_measurement_1day', "
+        "'monitoring_measurement_1hour', 'monitoring_measurement_1min')"
+    )
+    assert statement.count(hourly_tiers) == 2
+    assert statement.count(daily_tiers) == 2
 
 
 @pytest.mark.parametrize(

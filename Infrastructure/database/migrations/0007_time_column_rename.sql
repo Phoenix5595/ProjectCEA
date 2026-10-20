@@ -474,7 +474,7 @@ BEGIN
     END IF;
     PERFORM alter_job(new_job_id,
                       max_runtime => INTERVAL '10 minutes',
-                      max_retries => 0,
+                      max_retries => -1,
                       scheduled => TRUE);
 END
 $create_backfill_job$;

@@ -168,40 +168,46 @@ $existing_object_preflight$;
 -- An invalidation endpoint below PostgreSQL 15's minimum finite timestamp
 -- can occur when native refresh splits its initial unbounded range. Such a
 -- span has no representable observations; map that endpoint to -infinity.
+-- The measurement 1min CAGG is a source ancestor of the hourly and daily
+-- overviews; expose its watermark and invalidations for their freshness guards.
 CREATE OR REPLACE VIEW public.monitoring_history_cagg_watermark AS
-SELECT
-    cagg.user_view_name::TEXT AS cagg_name,
-    _timescaledb_functions.to_timestamp(
-        _timescaledb_functions.cagg_watermark(cagg.mat_hypertable_id)
-    ) AS materialization_watermark,
-    invalidation.invalidation_source,
-    CASE WHEN invalidation.lowest_modified_value < -210866803200000000::BIGINT
-         THEN '-infinity'::TIMESTAMPTZ
-         ELSE _timescaledb_functions.to_timestamp(invalidation.lowest_modified_value)
-    END AS invalidation_start,
-    CASE WHEN invalidation.greatest_modified_value < -210866803200000000::BIGINT
-         THEN '-infinity'::TIMESTAMPTZ
-         ELSE _timescaledb_functions.to_timestamp(invalidation.greatest_modified_value)
-    END AS invalidation_end
-FROM _timescaledb_catalog.continuous_agg AS cagg
-LEFT JOIN LATERAL (
-    SELECT 'materialization'::TEXT AS invalidation_source,
-           log.lowest_modified_value, log.greatest_modified_value
-      FROM _timescaledb_catalog.continuous_aggs_materialization_invalidation_log AS log
-     WHERE log.materialization_id = cagg.mat_hypertable_id
-    UNION ALL
-    SELECT 'hypertable'::TEXT AS invalidation_source,
-           log.lowest_modified_value, log.greatest_modified_value
-      FROM _timescaledb_catalog.continuous_aggs_hypertable_invalidation_log AS log
-     WHERE log.hypertable_id = cagg.raw_hypertable_id
-) AS invalidation ON TRUE
-WHERE cagg.user_view_schema = 'public'
-  AND cagg.user_view_name IN (
-      'monitoring_measurement_1hour', 'monitoring_measurement_1day',
-      'monitoring_light_intensity_1hour', 'monitoring_light_intensity_1day',
-      'monitoring_requested_pid_1hour', 'monitoring_requested_pid_1day',
-      'monitoring_relay_duration_1day'
-  );
+WITH native AS (
+    SELECT
+        cagg.user_view_name::TEXT AS cagg_name,
+        _timescaledb_functions.to_timestamp(
+            _timescaledb_functions.cagg_watermark(cagg.mat_hypertable_id)
+        ) AS materialization_watermark,
+        invalidation.invalidation_source,
+        CASE WHEN invalidation.lowest_modified_value < -210866803200000000::BIGINT
+             THEN '-infinity'::TIMESTAMPTZ
+             ELSE _timescaledb_functions.to_timestamp(invalidation.lowest_modified_value)
+        END AS invalidation_start,
+        CASE WHEN invalidation.greatest_modified_value < -210866803200000000::BIGINT
+             THEN '-infinity'::TIMESTAMPTZ
+             ELSE _timescaledb_functions.to_timestamp(invalidation.greatest_modified_value)
+        END AS invalidation_end
+    FROM _timescaledb_catalog.continuous_agg AS cagg
+    LEFT JOIN LATERAL (
+        SELECT 'materialization'::TEXT AS invalidation_source,
+               log.lowest_modified_value, log.greatest_modified_value
+          FROM _timescaledb_catalog.continuous_aggs_materialization_invalidation_log AS log
+         WHERE log.materialization_id = cagg.mat_hypertable_id
+        UNION ALL
+        SELECT 'hypertable'::TEXT AS invalidation_source,
+               log.lowest_modified_value, log.greatest_modified_value
+          FROM _timescaledb_catalog.continuous_aggs_hypertable_invalidation_log AS log
+         WHERE log.hypertable_id = cagg.raw_hypertable_id
+    ) AS invalidation ON TRUE
+    WHERE cagg.user_view_schema = 'public'
+      AND cagg.user_view_name IN (
+          'monitoring_measurement_1min',
+          'monitoring_measurement_1hour', 'monitoring_measurement_1day',
+          'monitoring_light_intensity_1hour', 'monitoring_light_intensity_1day',
+          'monitoring_requested_pid_1hour', 'monitoring_requested_pid_1day',
+          'monitoring_relay_duration_1day'
+      )
+)
+SELECT * FROM native;
 
 -- ------------------------------------------------------------------ §4: shared failure-acknowledgement gate
 -- Contract: public.monitoring_overview_unacknowledged_failures(config JSONB)
@@ -1075,7 +1081,7 @@ BEGIN
                 v_no_work := TRUE;  -- nothing settled on the hourly tier
             END IF;
 
-            -- Hourly tier's candidate day native freshness.
+            -- The measurement hour must not outrun its 1min source frontier.
             v_hour_ready := FALSE;
             IF v_no_work IS NOT TRUE THEN
                 v_hour_ready := EXISTS (
@@ -1083,9 +1089,20 @@ BEGIN
                       FROM public.monitoring_history_cagg_watermark
                      WHERE cagg_name = v_hour_view
                        AND materialization_watermark >= v_hour_cand_end
+                ) AND (
+                    v_family IS DISTINCT FROM 'measurement'
+                    OR EXISTS (
+                        SELECT 1 FROM public.monitoring_history_cagg_watermark
+                         WHERE cagg_name = 'monitoring_measurement_1min'
+                           AND materialization_watermark >= v_hour_cand_end
+                    )
                 ) AND NOT EXISTS (
                     SELECT 1 FROM public.monitoring_history_cagg_watermark
-                     WHERE cagg_name = v_hour_view
+                     WHERE (
+                               cagg_name = v_hour_view
+                               OR (v_family IS NOT DISTINCT FROM 'measurement'
+                                   AND cagg_name = 'monitoring_measurement_1min')
+                           )
                        AND invalidation_start < v_hour_cand_end
                        AND invalidation_end >= v_hour_front
                 );
@@ -1339,16 +1356,11 @@ BEGIN
 
             -----------------------------------------------------------------
             -- 3c. Daily candidate day = [v_day_front, + 1 day). Its end
-            --     may not run past the hourly frontier of the PREVIOUS
-            --     pass (the hourly data it consumes must already be
-            --     verified), must sit at least 26 hours behind now(),
-            --     must be covered by the native DAILY watermark with no
-            --     pending DAILY invalidation, and the HOURLY tier inside
-            --     that window must still show a clean materialization
-            --     with no pending hourly invalidation. The parity compare
-            --     below branches on the concrete family pairs
-            --     (measurement/light_intensity/requested_pid) with
-            --     bucket keys proving the day-hour-rollup row identity.
+            --     may not run past the previously verified hourly frontier,
+            --     must sit at least 26 hours behind now(), and needs a clean
+            --     native daily watermark. Measurement additionally requires
+            --     clean hourly and 1min ancestor materialization. Pending
+            --     invalidations on any tier block this candidate.
             -----------------------------------------------------------------
             v_day_cand_end := v_day_front + INTERVAL '24 hours';
             v_day_ready := v_day_cand_end <= v_hour_front
@@ -1357,23 +1369,32 @@ BEGIN
                     SELECT 1 FROM public.monitoring_history_cagg_watermark
                      WHERE cagg_name = v_day_view
                        AND materialization_watermark >= v_day_cand_end
+                ) AND (
+                    v_family IS DISTINCT FROM 'measurement'
+                    OR (
+                        EXISTS (
+                            SELECT 1 FROM public.monitoring_history_cagg_watermark
+                             WHERE cagg_name = v_hour_view
+                               AND materialization_watermark >= v_day_cand_end
+                        )
+                        AND EXISTS (
+                            SELECT 1 FROM public.monitoring_history_cagg_watermark
+                             WHERE cagg_name = 'monitoring_measurement_1min'
+                               AND materialization_watermark >= v_day_cand_end
+                        )
+                    )
                 ) AND NOT EXISTS (
                     SELECT 1 FROM public.monitoring_history_cagg_watermark
-                     WHERE cagg_name = v_day_view
+                     WHERE (
+                               cagg_name = v_day_view
+                               OR cagg_name = v_hour_view
+                               OR (v_family IS NOT DISTINCT FROM 'measurement'
+                                   AND cagg_name = 'monitoring_measurement_1min')
+                           )
                        AND invalidation_start < v_day_cand_end
                        AND invalidation_end >= v_day_front
                 );
 
-            IF v_day_ready THEN
-                IF EXISTS (
-                    SELECT 1 FROM public.monitoring_history_cagg_watermark
-                     WHERE cagg_name = v_hour_view
-                       AND invalidation_start < v_day_cand_end
-                       AND invalidation_end >= v_day_front
-                ) THEN
-                    v_day_ready := FALSE;  -- hourly freshness of the day pending
-                END IF;
-            END IF;
 
             IF v_day_ready THEN
                 v_day_parity := NULL;
@@ -1786,10 +1807,9 @@ BEGIN
         RETURN;
     END IF;
 
-    -- The source-day windows use the same UTC boundaries as the 1-day CAGGs.
-    -- time_bucket returns those boundaries independent of the database timezone,
-    -- so each refresh covers a complete day even across DST transitions.
-    next_cursor := time_bucket(INTERVAL '1 day', cursor_start + INTERVAL '1 day');
+    -- Source windows are complete elapsed UTC days, independent of session
+    -- TimeZone and daylight-saving transitions.
+    next_cursor := cursor_start + INTERVAL '24 hours';
     FOREACH view_name IN ARRAY configured_views LOOP
         CALL public.refresh_continuous_aggregate(
             format('public.%I', view_name)::REGCLASS,

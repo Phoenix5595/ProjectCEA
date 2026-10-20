@@ -1,4 +1,24 @@
 \set ON_ERROR_STOP on
+SELECT EXISTS (
+    SELECT 1
+    FROM (VALUES
+        ('automation_state'),
+        ('effective_setpoints'),
+        ('control_history'),
+        ('pid_parameter_history'),
+        ('relay_observation'),
+        ('monitoring_room_photoperiod'),
+        ('monitoring_photoperiod_coverage'),
+        ('mode_transition_history')
+    ) AS source_table(table_name)
+    JOIN information_schema.columns AS column_info
+      ON column_info.table_schema = 'public'
+     AND column_info.table_name = source_table.table_name
+     AND column_info.column_name = 'time'
+) AS rollback_phase_one_needed \gset
+\if :rollback_phase_one_needed
+-- Phase one is atomic. Its old-column shape is the durable marker; after it
+-- commits, a retry skips destructive drops and renames while restoring SQL.
 
 -- The prior canonical read-model files own their transactions. This first
 -- transaction reverses the column/index names and removes the rebuilt views.
@@ -100,17 +120,41 @@ BEGIN
 END
 $remove_retained_aggregate_compression$;
 
-DROP MATERIALIZED VIEW public.monitoring_light_intensity_1day;
-DROP MATERIALIZED VIEW public.monitoring_requested_pid_1day;
-DROP MATERIALIZED VIEW public.monitoring_measurement_1day;
-DROP MATERIALIZED VIEW public.monitoring_light_intensity_1hour;
-DROP MATERIALIZED VIEW public.monitoring_requested_pid_1hour;
-DROP MATERIALIZED VIEW public.monitoring_measurement_1hour;
-DROP MATERIALIZED VIEW public.monitoring_measurement_5min;
-DROP MATERIALIZED VIEW public.monitoring_effective_setpoints_5min;
-DROP MATERIALIZED VIEW public.monitoring_effective_setpoints_1min;
-DROP MATERIALIZED VIEW public.monitoring_automation_state_5min;
-DROP MATERIALIZED VIEW public.monitoring_automation_state_1min;
+-- A Timescale policy launcher may be committing job metadata while a policy
+-- worker exits; retry its transient catalog tuple race before aborting down.
+DO $drop_rebuilt_aggregates$
+DECLARE
+    dropped_view TEXT;
+    attempt INTEGER;
+BEGIN
+    FOREACH dropped_view IN ARRAY ARRAY[
+        'monitoring_light_intensity_1day',
+        'monitoring_requested_pid_1day',
+        'monitoring_measurement_1day',
+        'monitoring_light_intensity_1hour',
+        'monitoring_requested_pid_1hour',
+        'monitoring_measurement_1hour',
+        'monitoring_measurement_5min',
+        'monitoring_effective_setpoints_5min',
+        'monitoring_effective_setpoints_1min',
+        'monitoring_automation_state_5min',
+        'monitoring_automation_state_1min'
+    ] LOOP
+        FOR attempt IN 1..5 LOOP
+            BEGIN
+                EXECUTE format('DROP MATERIALIZED VIEW public.%I', dropped_view);
+                EXIT;
+            EXCEPTION WHEN OTHERS THEN
+                IF SQLERRM NOT LIKE '%tuple concurrently deleted%'
+                   OR attempt = 5 THEN
+                    RAISE;
+                END IF;
+                PERFORM pg_sleep(0.5);
+            END;
+        END LOOP;
+    END LOOP;
+END
+$drop_rebuilt_aggregates$;
 
 DO $drop_time_bounds$
 DECLARE
@@ -173,6 +217,32 @@ BEGIN
 END
 $restore_event_indexes$;
 COMMIT;
+DO $test_failure_after_first_commit$
+DECLARE
+    restored_columns INTEGER;
+BEGIN
+    IF current_database() ~ '^monitoring_test_[a-z0-9_]+$'
+       AND COALESCE(
+           current_setting('app.time_rename_test_fail_after_first_commit', TRUE) = '1',
+           FALSE)
+       AND to_regclass('public.monitoring_job_snapshot_0007') IS NOT NULL THEN
+        SELECT count(*)
+          INTO restored_columns
+          FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name IN (
+               'automation_state', 'effective_setpoints', 'control_history',
+               'pid_parameter_history', 'relay_observation',
+               'monitoring_room_photoperiod', 'monitoring_photoperiod_coverage',
+               'mode_transition_history')
+           AND column_name IN ('timestamp', 'observed_at', 'triggered_at');
+        IF restored_columns = 8 THEN
+            RAISE EXCEPTION 'test-only failure after the first 0007 down migration commit';
+        END IF;
+    END IF;
+END
+$test_failure_after_first_commit$;
+\endif
 
 -- These exact pre-0007 canonical snapshots restore their old source-column
 -- definitions and transactions. \\ir paths are relative to this down file.
@@ -185,8 +255,8 @@ SELECT set_config(
 \ir 0007_time_column_rename.down.d/monitoring_read_models.sql
 \ir 0007_time_column_rename.down.d/monitoring_history_overview.sql
 -- The old definitions contain ROW-based last() aggregations. Rebuild them
--- oldest-first one UTC source day at a time so each call stays within a source
--- chunk and the pre-release readers regain their materialized frontiers.
+-- oldest-first in elapsed 24-hour UTC windows; saved definitions create only
+-- missing aggregates and each refresh window is safe to replay after failure.
 WITH source_bounds AS (
     SELECT min(source_min) AS source_min, max(source_max) AS source_max
     FROM (
@@ -202,7 +272,7 @@ days AS (
     SELECT generate_series(
         date_trunc('day', source_min AT TIME ZONE 'UTC') AT TIME ZONE 'UTC',
         date_trunc('day', source_max AT TIME ZONE 'UTC') AT TIME ZONE 'UTC',
-        INTERVAL '1 day') AS day_start
+        INTERVAL '24 hours') AS day_start
     FROM source_bounds
 ),
 views(ordinal, view_name) AS (
@@ -223,7 +293,7 @@ SELECT format(
     'CALL public.refresh_continuous_aggregate(%L::REGCLASS, %L::TIMESTAMPTZ, %L::TIMESTAMPTZ);',
     format('public.%I', views.view_name),
     days.day_start,
-    days.day_start + INTERVAL '1 day')
+    days.day_start + INTERVAL '24 hours')
 FROM days CROSS JOIN views
 ORDER BY days.day_start, views.ordinal
 \gexec

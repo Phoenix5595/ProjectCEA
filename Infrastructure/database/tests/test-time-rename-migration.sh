@@ -207,6 +207,72 @@ assert_time_bounds_writes() {
   psql_as_postgres --dbname="$DATABASE_NAME" --command="DO \$\$ BEGIN BEGIN INSERT INTO public.time_bounds_compressed_probe VALUES (now() + INTERVAL '25 hours', 'compressed'); EXCEPTION WHEN check_violation THEN RAISE NOTICE 'compressed_range_time_check_rejected'; RETURN; END; RAISE EXCEPTION 'NOT_VALID_check_accepted_compressed_range_row'; END \$\$" \
     >/dev/null
 }
+assert_dst_utc_windows() {
+  psql_as_postgres --dbname="$DATABASE_NAME" <<'SQL' >/dev/null
+SET TIME ZONE 'America/Toronto';
+DO $utc_day_windows$
+DECLARE
+    spring_cursor TIMESTAMPTZ := '2026-03-08 00:00:00+00';
+    fall_cursor TIMESTAMPTZ := '2026-11-01 00:00:00+00';
+    transition RECORD;
+    window_start TIMESTAMPTZ;
+    expected_start TIMESTAMPTZ;
+    window_count INTEGER;
+BEGIN
+    IF current_setting('TimeZone') <> 'America/Toronto' THEN
+        RAISE EXCEPTION 'DST proof did not use America/Toronto';
+    END IF;
+    IF spring_cursor + INTERVAL '24 hours'
+       IS DISTINCT FROM '2026-03-09 00:00:00+00'::TIMESTAMPTZ
+       OR fall_cursor + INTERVAL '24 hours'
+       IS DISTINCT FROM '2026-11-02 00:00:00+00'::TIMESTAMPTZ THEN
+        RAISE EXCEPTION 'elapsed UTC backfill cursor did not advance 24 hours';
+    END IF;
+    IF spring_cursor + INTERVAL '1 day' = spring_cursor + INTERVAL '24 hours'
+       OR fall_cursor + INTERVAL '1 day' = fall_cursor + INTERVAL '24 hours' THEN
+        RAISE EXCEPTION 'DST proof did not distinguish calendar and elapsed days';
+    END IF;
+
+    FOR transition IN
+        SELECT * FROM (VALUES
+            ('spring-forward',
+             '2026-03-07 00:00:00+00'::TIMESTAMPTZ,
+             '2026-03-10 00:00:00+00'::TIMESTAMPTZ),
+            ('fall-back',
+             '2026-10-31 00:00:00+00'::TIMESTAMPTZ,
+             '2026-11-03 00:00:00+00'::TIMESTAMPTZ)
+        ) AS cases(transition_name, range_start, range_end)
+    LOOP
+        expected_start := transition.range_start;
+        window_count := 0;
+        FOR window_start IN
+            SELECT generate_series(
+                date_trunc('day', transition.range_start AT TIME ZONE 'UTC')
+                    AT TIME ZONE 'UTC',
+                date_trunc('day', transition.range_end AT TIME ZONE 'UTC')
+                    AT TIME ZONE 'UTC',
+                INTERVAL '24 hours')
+        LOOP
+            IF window_start IS DISTINCT FROM expected_start THEN
+                RAISE EXCEPTION '% generated a non-UTC 24-hour window: expected %, got %',
+                    transition.transition_name, expected_start, window_start;
+            END IF;
+            expected_start := expected_start + INTERVAL '24 hours';
+            window_count := window_count + 1;
+        END LOOP;
+        IF window_count <> 4
+           OR expected_start IS DISTINCT FROM
+              transition.range_end + INTERVAL '24 hours' THEN
+            RAISE EXCEPTION '% did not cover each UTC day through %',
+                transition.transition_name, transition.range_end;
+        END IF;
+    END LOOP;
+END
+$utc_day_windows$;
+SQL
+  printf 'verified 24-hour UTC backfill and rollback windows across Toronto DST transitions\n'
+}
+
 
 assert_backfill_parity() {
   psql_as_postgres --dbname="$DATABASE_NAME" <<'SQL'
@@ -297,6 +363,223 @@ BEGIN
 END
 $measurement_hierarchy_parity$;
 SQL
+}
+
+assert_measurement_ancestor_freshness() {
+  psql_as_postgres --dbname="$DATABASE_NAME" <<'SQL' >/dev/null
+CREATE TEMP TABLE measurement_ancestor_test_window AS
+WITH base AS (
+    SELECT (date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')
+               - INTERVAL '30 days' + INTERVAL '15 minutes' AS test_time
+)
+SELECT test_time,
+       time_bucket(INTERVAL '1 day', test_time) AS day_start,
+       time_bucket(INTERVAL '1 day', test_time) + INTERVAL '24 hours' AS day_end,
+       time_bucket(INTERVAL '1 hour', test_time) AS hour_start,
+       time_bucket(INTERVAL '1 hour', test_time) + INTERVAL '1 hour' AS hour_end
+FROM base;
+
+CREATE TEMP TABLE measurement_ancestor_prior_coverage AS
+SELECT model_name, covered_from, covered_through
+FROM public.monitoring_overview_coverage
+WHERE model_name IN ('monitoring_measurement_1hour', 'monitoring_measurement_1day');
+CREATE TEMP TABLE measurement_ancestor_prior_minute_policy AS
+SELECT job.job_id, job.scheduled
+FROM timescaledb_information.jobs AS job
+JOIN _timescaledb_catalog.continuous_agg AS cagg
+  ON (job.config ->> 'mat_hypertable_id')::INTEGER = cagg.mat_hypertable_id
+WHERE cagg.user_view_schema = 'public'
+  AND cagg.user_view_name = 'monitoring_measurement_1min'
+  AND job.proc_schema = '_timescaledb_functions'
+  AND job.proc_name = 'policy_refresh_continuous_aggregate';
+CREATE PROCEDURE pg_temp.refresh_measurement_ancestor_cagg(view_to_refresh REGCLASS)
+LANGUAGE plpgsql
+AS $refresh$
+DECLARE
+    range_start TIMESTAMPTZ;
+    range_end TIMESTAMPTZ;
+BEGIN
+    SELECT day_start, day_end
+      INTO range_start, range_end
+      FROM pg_temp.measurement_ancestor_test_window;
+    CALL public.refresh_continuous_aggregate(
+        view_to_refresh, range_start, range_end, TRUE,
+        '{"buckets_per_batch":0}'::JSONB);
+END
+$refresh$;
+
+CREATE FUNCTION pg_temp.measurement_overview_guard_ok()
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+AS $guard$
+WITH bounds AS (
+    SELECT hour.covered_from AS h_from,
+           hour.covered_through AS h_through,
+           day.covered_from AS d_from,
+           day.covered_through AS d_through,
+           test_window.day_start AS range_start,
+           test_window.day_end AS range_end,
+           (SELECT MIN(materialization_watermark)
+              FROM public.monitoring_history_cagg_watermark
+             WHERE cagg_name IN ('monitoring_measurement_1hour',
+                                 'monitoring_measurement_1min')) AS h_wm,
+           (SELECT MIN(materialization_watermark)
+              FROM public.monitoring_history_cagg_watermark
+             WHERE cagg_name IN ('monitoring_measurement_1day',
+                                 'monitoring_measurement_1hour',
+                                 'monitoring_measurement_1min')) AS d_wm
+      FROM pg_temp.measurement_ancestor_test_window AS test_window
+      JOIN public.monitoring_overview_coverage AS hour
+        ON hour.model_name = 'monitoring_measurement_1hour'
+      JOIN public.monitoring_overview_coverage AS day
+        ON day.model_name = 'monitoring_measurement_1day'
+),
+frontiers AS (
+    SELECT *,
+           CASE WHEN h_wm IS NOT NULL THEN LEAST(h_through, h_wm) END AS h_read_through,
+           CASE WHEN d_wm IS NOT NULL THEN LEAST(d_through, d_wm) END AS d_read_through
+    FROM bounds
+)
+SELECT d_read_through >= range_end
+   AND NOT EXISTS (
+       SELECT 1 FROM public.monitoring_history_cagg_watermark
+        WHERE cagg_name IN ('monitoring_measurement_1hour',
+                            'monitoring_measurement_1min')
+          AND invalidation_source IS NOT NULL
+          AND invalidation_start < LEAST(frontiers.h_read_through, frontiers.range_end)
+          AND invalidation_end >= GREATEST(frontiers.h_from, frontiers.range_start)
+   )
+   AND NOT EXISTS (
+       SELECT 1 FROM public.monitoring_history_cagg_watermark
+        WHERE cagg_name IN ('monitoring_measurement_1day',
+                            'monitoring_measurement_1hour',
+                            'monitoring_measurement_1min')
+          AND invalidation_source IS NOT NULL
+          AND invalidation_start < LEAST(frontiers.d_read_through, frontiers.range_end)
+          AND invalidation_end >= GREATEST(frontiers.d_from, frontiers.range_start)
+   )
+FROM frontiers;
+$guard$;
+
+SELECT alter_job(job.job_id, scheduled => FALSE)
+FROM timescaledb_information.jobs AS job
+JOIN _timescaledb_catalog.continuous_agg AS cagg
+  ON (job.config ->> 'mat_hypertable_id')::INTEGER = cagg.mat_hypertable_id
+WHERE cagg.user_view_schema = 'public'
+  AND cagg.user_view_name IN (
+      'monitoring_measurement_1min',
+      'monitoring_measurement_5min',
+      'monitoring_measurement_1hour',
+      'monitoring_measurement_1day')
+  AND job.proc_schema = '_timescaledb_functions'
+  AND job.proc_name = 'policy_refresh_continuous_aggregate';
+SELECT alter_job(job_id, scheduled => FALSE)
+FROM timescaledb_information.jobs
+WHERE proc_schema = 'public'
+  AND proc_name IN ('monitoring_refresh_overview_incremental',
+                    'monitoring_rebuild_relay_overview');
+
+INSERT INTO public.measurement (time, sensor_id, value)
+SELECT test_time, 1, 100.0
+FROM pg_temp.measurement_ancestor_test_window;
+CALL pg_temp.refresh_measurement_ancestor_cagg(
+    'public.monitoring_measurement_1min'::REGCLASS);
+CALL pg_temp.refresh_measurement_ancestor_cagg(
+    'public.monitoring_measurement_1hour'::REGCLASS);
+CALL pg_temp.refresh_measurement_ancestor_cagg(
+    'public.monitoring_measurement_1day'::REGCLASS);
+INSERT INTO public.monitoring_overview_coverage (model_name, covered_from, covered_through)
+SELECT 'monitoring_measurement_1hour', hour_start, hour_end
+FROM pg_temp.measurement_ancestor_test_window
+ON CONFLICT (model_name) DO UPDATE
+SET covered_from = EXCLUDED.covered_from,
+    covered_through = EXCLUDED.covered_through;
+INSERT INTO public.monitoring_overview_coverage (model_name, covered_from, covered_through)
+SELECT 'monitoring_measurement_1day', day_start, day_end
+FROM pg_temp.measurement_ancestor_test_window
+ON CONFLICT (model_name) DO UPDATE
+SET covered_from = EXCLUDED.covered_from,
+    covered_through = EXCLUDED.covered_through;
+DO $baseline_guard$
+BEGIN
+    IF pg_temp.measurement_overview_guard_ok() IS DISTINCT FROM TRUE THEN
+        RAISE EXCEPTION 'measurement overview guard was not fresh after ancestor refresh';
+    END IF;
+END
+$baseline_guard$;
+
+UPDATE public.measurement AS measurement
+   SET value = measurement.value + 1
+  FROM pg_temp.measurement_ancestor_test_window AS test_window
+ WHERE measurement.time = test_window.test_time
+   AND measurement.sensor_id = 1;
+DO $invalidated_guard$
+BEGIN
+    IF pg_temp.measurement_overview_guard_ok() IS DISTINCT FROM FALSE THEN
+        RAISE EXCEPTION 'measurement overview guard missed its 1min ancestor invalidation';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1
+        FROM public.monitoring_history_cagg_watermark AS watermark
+        CROSS JOIN pg_temp.measurement_ancestor_test_window AS test_window
+        WHERE watermark.cagg_name = 'monitoring_measurement_1min'
+          AND watermark.invalidation_source IS NOT NULL
+          AND watermark.invalidation_start < test_window.day_end
+          AND watermark.invalidation_end >= test_window.day_start
+    ) THEN
+        RAISE EXCEPTION 'raw correction did not invalidate the old 1min measurement bucket';
+    END IF;
+END
+$invalidated_guard$;
+
+CALL pg_temp.refresh_measurement_ancestor_cagg(
+    'public.monitoring_measurement_1min'::REGCLASS);
+DO $ancestor_refreshed$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM public.monitoring_history_cagg_watermark AS watermark
+        CROSS JOIN pg_temp.measurement_ancestor_test_window AS test_window
+        WHERE watermark.cagg_name = 'monitoring_measurement_1min'
+          AND watermark.invalidation_source IS NOT NULL
+          AND watermark.invalidation_start < test_window.day_end
+          AND watermark.invalidation_end >= test_window.day_start
+    ) THEN
+        RAISE EXCEPTION 'refresh did not clear the 1min ancestor invalidation';
+    END IF;
+END
+$ancestor_refreshed$;
+CALL pg_temp.refresh_measurement_ancestor_cagg(
+    'public.monitoring_measurement_1hour'::REGCLASS);
+CALL pg_temp.refresh_measurement_ancestor_cagg(
+    'public.monitoring_measurement_1day'::REGCLASS);
+DO $fully_refreshed_guard$
+BEGIN
+    IF pg_temp.measurement_overview_guard_ok() IS DISTINCT FROM TRUE THEN
+        RAISE EXCEPTION 'measurement overview guard stayed stale after ancestor and parents refreshed';
+    END IF;
+END
+$fully_refreshed_guard$;
+
+DELETE FROM public.measurement AS measurement
+USING pg_temp.measurement_ancestor_test_window AS test_window
+WHERE measurement.time = test_window.test_time
+  AND measurement.sensor_id = 1;
+CALL pg_temp.refresh_measurement_ancestor_cagg(
+    'public.monitoring_measurement_1min'::REGCLASS);
+CALL pg_temp.refresh_measurement_ancestor_cagg(
+    'public.monitoring_measurement_1hour'::REGCLASS);
+CALL pg_temp.refresh_measurement_ancestor_cagg(
+    'public.monitoring_measurement_1day'::REGCLASS);
+DELETE FROM public.monitoring_overview_coverage
+WHERE model_name IN ('monitoring_measurement_1hour', 'monitoring_measurement_1day');
+INSERT INTO public.monitoring_overview_coverage
+SELECT * FROM pg_temp.measurement_ancestor_prior_coverage;
+SELECT alter_job(job.job_id, scheduled => job.scheduled)
+FROM pg_temp.measurement_ancestor_prior_minute_policy AS job;
+SQL
+  printf 'verified overview guard blocks old measurement invalidation until the 1min ancestor is refreshed\n'
 }
 
 assert_original_state_restored() {
@@ -897,9 +1180,6 @@ printf 'building isolated migration release and prior ledger head\n'
 seed_previous_migration_ledger
 printf 'applying 0007 with --skip-alembic --allow-downtime\n'
 run_migrator "$DATABASE_NAME" apply --skip-alembic --allow-downtime
-assert_event_time_cutover
-assert_time_bounds_writes
-
 BACKFILL_JOB_ID="$(query_db "$DATABASE_NAME" \
   "SELECT job_id FROM timescaledb_information.jobs WHERE proc_schema='public' AND proc_name='monitoring_backfill_aggregates'")"
 [[ "$BACKFILL_JOB_ID" =~ ^[0-9]+$ ]] || { fail 'backfill job was not created'; exit 1; }
@@ -907,27 +1187,59 @@ assert_equal "$(query_db "$DATABASE_NAME" \
   "SELECT scheduled FROM timescaledb_information.jobs WHERE job_id=$BACKFILL_JOB_ID")" \
   't' 'backfill job is initially scheduled'
 assert_equal "$(query_db "$DATABASE_NAME" \
+  "SELECT max_retries = -1 FROM timescaledb_information.jobs WHERE job_id=$BACKFILL_JOB_ID")" \
+  't' 'backfill job retries transient failures indefinitely'
+assert_equal "$(query_db "$DATABASE_NAME" \
   "SELECT schedule_interval=INTERVAL '1 minute' AND max_runtime=INTERVAL '10 minutes' AND config->>'done'='false' AND config->>'start'=config->>'cursor' AND jsonb_array_length(config->'views')=11 FROM timescaledb_information.jobs WHERE job_id=$BACKFILL_JOB_ID")" \
   't' 'backfill job has the configured one-minute oldest-first window'
 psql_as_postgres --dbname="$DATABASE_NAME" \
   --command="SELECT alter_job($BACKFILL_JOB_ID, scheduled => FALSE)" >/dev/null
+assert_event_time_cutover
+assert_time_bounds_writes
+assert_dst_utc_windows
 
-printf 'running the oldest-first one-day backfill manually\n'
-backfill_done=false
-for ((run_number = 1; run_number <= 10; run_number++)); do
-  backfill_config="$(query_db "$DATABASE_NAME" \
-    "SELECT config::text FROM timescaledb_information.jobs WHERE job_id=$BACKFILL_JOB_ID")"
-  backfill_done="$(query_db "$DATABASE_NAME" \
-    "SELECT config->>'done' FROM timescaledb_information.jobs WHERE job_id=$BACKFILL_JOB_ID")"
-  [[ "$backfill_done" == 'true' ]] && break
-  psql_as_postgres --dbname="$DATABASE_NAME" \
-    --command="CALL public.monitoring_backfill_aggregates($BACKFILL_JOB_ID, '$backfill_config'::JSONB)" >/dev/null
-  printf 'completed backfill day %s\n' "$run_number"
+printf 'proving the Timescale scheduler retries a transient backfill failure\n'
+backfill_config="$(query_db "$DATABASE_NAME" \
+  "SELECT config::text FROM timescaledb_information.jobs WHERE job_id=$BACKFILL_JOB_ID")"
+backfill_cursor="$(query_db "$DATABASE_NAME" \
+  "SELECT config->>'cursor' FROM timescaledb_information.jobs WHERE job_id=$BACKFILL_JOB_ID")"
+psql_as_postgres --dbname="$DATABASE_NAME" \
+  --command="SELECT alter_job($BACKFILL_JOB_ID, schedule_interval => INTERVAL '1 second', retry_period => INTERVAL '1 second', max_retries => -1, config => jsonb_set(config, '{views,0}', to_jsonb('monitoring_test_missing_cagg'::TEXT), TRUE), next_start => clock_timestamp(), scheduled => TRUE) FROM timescaledb_information.jobs WHERE job_id=$BACKFILL_JOB_ID" \
+  >/dev/null
+failure_seen=false
+for ((attempt = 1; attempt <= 30; attempt++)); do
+  if [[ "$(query_db "$DATABASE_NAME" \
+      "SELECT COALESCE((SELECT last_run_status = 'Failed' FROM timescaledb_information.job_stats WHERE job_id=$BACKFILL_JOB_ID), FALSE)")" == 't' ]]; then
+    failure_seen=true
+    break
+  fi
+  sleep 1
 done
-assert_equal "$backfill_done" 'true' 'backfill reaches done within the bounded test window'
+assert_equal "$failure_seen" 'true' 'scheduler recorded the forced transient backfill failure'
 assert_equal "$(query_db "$DATABASE_NAME" \
   "SELECT scheduled FROM timescaledb_information.jobs WHERE job_id=$BACKFILL_JOB_ID")" \
-  'f' 'completed backfill job is unscheduled'
+  't' 'backfill remains scheduled after a failed scheduler run'
+assert_equal "$(query_db "$DATABASE_NAME" \
+  "SELECT max_retries = -1 FROM timescaledb_information.jobs WHERE job_id=$BACKFILL_JOB_ID")" \
+  't' 'Timescale retains unlimited retries after failure'
+assert_equal "$(query_db "$DATABASE_NAME" \
+  "SELECT config->>'cursor' = '$backfill_cursor' FROM timescaledb_information.jobs WHERE job_id=$BACKFILL_JOB_ID")" \
+  't' 'failed backfill leaves its persisted cursor unchanged'
+psql_as_postgres --dbname="$DATABASE_NAME" \
+  --command="SELECT alter_job($BACKFILL_JOB_ID, config => '$backfill_config'::JSONB, next_start => clock_timestamp(), scheduled => TRUE)" \
+  >/dev/null
+backfill_done=false
+backfill_scheduled=true
+for ((attempt = 1; attempt <= 120; attempt++)); do
+  backfill_done="$(query_db "$DATABASE_NAME" \
+    "SELECT config->>'done' FROM timescaledb_information.jobs WHERE job_id=$BACKFILL_JOB_ID")"
+  backfill_scheduled="$(query_db "$DATABASE_NAME" \
+    "SELECT scheduled FROM timescaledb_information.jobs WHERE job_id=$BACKFILL_JOB_ID")"
+  [[ "$backfill_done" == 'true' && "$backfill_scheduled" == 'f' ]] && break
+  sleep 1
+done
+assert_equal "$backfill_done" 'true' 'scheduler resumes and completes the persisted backfill cursor'
+assert_equal "$backfill_scheduled" 'f' 'completed scheduled backfill job is unscheduled'
 assert_equal "$(query_db "$DATABASE_NAME" \
   "SELECT count(*) FROM _timescaledb_catalog.continuous_agg cagg JOIN timescaledb_information.jobs job ON (job.config->>'mat_hypertable_id')::integer=cagg.mat_hypertable_id WHERE cagg.user_view_schema='public' AND cagg.user_view_name = ANY (ARRAY['monitoring_measurement_5min','monitoring_measurement_1hour','monitoring_measurement_1day','monitoring_effective_setpoints_1min','monitoring_effective_setpoints_5min','monitoring_automation_state_1min','monitoring_automation_state_5min','monitoring_light_intensity_1hour','monitoring_light_intensity_1day','monitoring_requested_pid_1hour','monitoring_requested_pid_1day']) AND job.proc_name='policy_refresh_continuous_aggregate' AND job.scheduled")" \
   '11' 'backfill completion schedules all eleven view refresh policies'
@@ -944,12 +1256,34 @@ for view_name in \
     "backfill materialized $view_name"
 done
 assert_backfill_parity
+assert_measurement_ancestor_freshness
 
-printf 'rolling 0007 down to the pre-phase-4 schema\n'
+printf 'forcing down migration failure after its first committed phase\n'
+down_migration_file="$MIGRATION_RELEASE_ROOT/Infrastructure/database/migrations/0007_time_column_rename.down.sql"
+if psql_as_postgres --dbname="$DATABASE_NAME" \
+    --command="SELECT set_config('app.time_rename_test_fail_after_first_commit', '1', FALSE)" \
+    --file="$down_migration_file" >/dev/null; then
+  fail 'test-only down migration failure switch did not stop after the first commit'
+  exit 1
+fi
+printf 'first down phase committed; checking snapshots and renamed schema remain resumable\n'
+assert_equal "$(query_db "$DATABASE_NAME" \
+  "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name IN ('automation_state','effective_setpoints','control_history','pid_parameter_history','relay_observation','monitoring_room_photoperiod','monitoring_photoperiod_coverage','mode_transition_history') AND column_name IN ('timestamp','observed_at','triggered_at')")" \
+  '8' 'first down phase restored all source event-column names'
+assert_equal "$(query_db "$DATABASE_NAME" \
+  "SELECT count(*) FROM public.monitoring_job_snapshot_0007")" \
+  '4' 'down snapshots survive the injected post-commit failure'
+assert_equal "$(query_db "$DATABASE_NAME" \
+  "SELECT to_regclass('public.monitoring_job_snapshot_0007') IS NOT NULL AND to_regclass('public.monitoring_refresh_policy_snapshot_0007') IS NOT NULL AND to_regclass('public.monitoring_index_snapshot_0007') IS NOT NULL")" \
+  't' 'all down snapshots survive until the final phase succeeds'
+assert_equal "$(query_db "$DATABASE_NAME" \
+  "SELECT count(*) FROM timescaledb_information.continuous_aggregates WHERE view_schema='public' AND view_name = ANY (ARRAY['monitoring_measurement_5min','monitoring_measurement_1hour','monitoring_measurement_1day','monitoring_effective_setpoints_1min','monitoring_effective_setpoints_5min','monitoring_automation_state_1min','monitoring_automation_state_5min','monitoring_light_intensity_1hour','monitoring_light_intensity_1day','monitoring_requested_pid_1hour','monitoring_requested_pid_1day'])")" \
+  '0' 'first down phase leaves rebuilt aggregates absent for canonical restoration'
+printf 're-running down migration from the committed phase\n'
 run_migrator "$DATABASE_NAME" down --to 0006_monitoring_gate_auto_clear
 assert_original_state_restored
 
-printf 'reapplying 0007 after down\n'
+printf 'reapplying 0007 after restartable down\n'
 run_migrator "$DATABASE_NAME" apply --skip-alembic --allow-downtime
 assert_event_time_cutover
 assert_equal "$(query_db "$DATABASE_NAME" \

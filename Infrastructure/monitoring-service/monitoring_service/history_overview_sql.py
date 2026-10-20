@@ -5,8 +5,9 @@ safe-coverage state of the exact material that serves the request, so a
 source and its guards always share one snapshot:
 
 * ``monitoring_overview_coverage`` verified-contiguous bounds per tier,
-* native ``monitoring_history_cagg_watermark`` materialization watermark as an upper
-  materialization bound plus pending invalidation overlap per tier,
+* ``monitoring_history_cagg_watermark`` native materialization watermarks, including
+  the measurement 1min/1hour ancestor chain, as an upper bound plus pending
+  invalidation overlap per tier,
 * below-coverage regions proven raw-empty inside the same statement,
 * relay support state through ``monitoring_relay_overview_hourly_ready`` and
   one request observation watermark.
@@ -192,8 +193,8 @@ piece_guard AS (
 
 # Daily rows serve a display bucket only when a whole 24-hour day fits inside
 # it, so the daily pending-invalidation gate activates only when some
-# requested bucket could actually select daily material (``uses_daily``);
-# hourly invalidations stay fully gated for every request.
+# requested bucket could actually select daily material (``uses_daily``).
+# Measurement hour/day watermarks and invalidations include the 1min ancestor.
 SENSOR_OVERVIEW_STATEMENT: Final[str] = (
     "WITH "
     + _SENSOR_ANGLES
@@ -206,13 +207,16 @@ cov AS (
         (SELECT covered_through FROM monitoring_overview_coverage
           WHERE model_name = 'monitoring_measurement_1hour') AS h_through,
         (SELECT MIN(materialization_watermark) FROM monitoring_history_cagg_watermark
-          WHERE cagg_name = 'monitoring_measurement_1hour') AS h_wm,
+          WHERE cagg_name IN ('monitoring_measurement_1hour',
+                              'monitoring_measurement_1min')) AS h_wm,
         (SELECT covered_from FROM monitoring_overview_coverage
           WHERE model_name = 'monitoring_measurement_1day') AS d_from,
         (SELECT covered_through FROM monitoring_overview_coverage
           WHERE model_name = 'monitoring_measurement_1day') AS d_through,
         (SELECT MIN(materialization_watermark) FROM monitoring_history_cagg_watermark
-          WHERE cagg_name = 'monitoring_measurement_1day') AS d_wm
+          WHERE cagg_name IN ('monitoring_measurement_1day',
+                              'monitoring_measurement_1hour',
+                              'monitoring_measurement_1min')) AS d_wm
 ),
 bounds AS (
     SELECT request.range_start, request.range_end,
@@ -240,7 +244,8 @@ pending AS (
         EXISTS (
             SELECT 1
             FROM monitoring_history_cagg_watermark
-            WHERE cagg_name = 'monitoring_measurement_1hour'
+            WHERE cagg_name IN ('monitoring_measurement_1hour',
+                                'monitoring_measurement_1min')
               AND invalidation_source IS NOT NULL
               AND invalidation_start < LEAST(bounds.h_through, bounds.range_end)
               AND invalidation_end >= GREATEST(bounds.h_from, bounds.range_start)
@@ -248,7 +253,9 @@ pending AS (
         EXISTS (
             SELECT 1
             FROM monitoring_history_cagg_watermark
-            WHERE cagg_name = 'monitoring_measurement_1day'
+            WHERE cagg_name IN ('monitoring_measurement_1day',
+                                'monitoring_measurement_1hour',
+                                'monitoring_measurement_1min')
               AND invalidation_source IS NOT NULL
               AND invalidation_start < LEAST(bounds.d_through, bounds.range_end)
               AND invalidation_end >= GREATEST(bounds.d_from, bounds.range_start)

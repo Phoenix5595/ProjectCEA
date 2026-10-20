@@ -61,8 +61,9 @@ the implementation's schema and writer/HTTP smoke run only in the guarded
   sources used by the request. Missing, dirty or unverified source history
   returns 503; `/ready` alone is not Historical readiness proof.
 - Historical native metadata comes from `monitoring_history_cagg_watermark`,
-  restricted to the seven new continuous aggregates. It does not scan the
-  deployed legacy materialization-coverage fallback or change detailed read models.
+  restricted to the seven overview aggregates plus the measurement 1min
+  ancestor. It does not scan the deployed legacy materialization-coverage
+  fallback or change detailed read models.
   Native invalidation spans below PostgreSQL's minimum timestamp remain outside
   every readable range instead of causing timestamp-decoding failures.
 - Aggregate-hour joins use the request's explicit epoch-aligned bucket width;
