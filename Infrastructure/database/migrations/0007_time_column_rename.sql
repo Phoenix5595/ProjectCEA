@@ -13,6 +13,14 @@ BEGIN
         RAISE EXCEPTION '0007_time_column_rename may only run on sj_cea or a monitoring_test_ database (current database: %)',
             current_database();
     END IF;
+    IF current_database() !~ '^monitoring_test_[a-z0-9_]+$'
+       AND (
+           NULLIF(current_setting('app.time_rename_test_synthetic_worker_job_id', TRUE), '') IS NOT NULL
+           OR NULLIF(current_setting('app.time_rename_test_synthetic_worker_pid', TRUE), '') IS NOT NULL
+           OR NULLIF(current_setting('app.time_rename_test_capture_quiescence', TRUE), '') IS NOT NULL
+       ) THEN
+        RAISE EXCEPTION '0007 test-only quiescence overrides are disposable-only';
+    END IF;
 
     IF EXISTS (
         SELECT 1
@@ -90,9 +98,11 @@ BEGIN
     END IF;
 END
 $phase4_preflight$;
--- Snapshot and quiesce every Timescale job whose target 0007 changes. This
--- transaction commits before any aggregate/source DDL so the scheduler sees
--- the pause even if the following in-flight-worker wait times out.
+-- Snapshot and unschedule every Timescale job whose target 0007 changes.
+-- TimescaleDB 2.28.3 cancels a running worker when its job is unscheduled; the
+-- committed pause prevents new starts, and the following wait confirms the
+-- cancelled workers have exited before DDL. Never delete a job or drop its
+-- target while its worker is still active: that caused the 2026-10-20 crash.
 BEGIN;
 SET LOCAL search_path = public, pg_catalog;
 CREATE TABLE IF NOT EXISTS public.monitoring_job_snapshot_0007 (
@@ -254,9 +264,39 @@ DECLARE
     jobs_running BOOLEAN;
     wait_timeout INTERVAL := INTERVAL '10 minutes';
     test_wait_timeout TEXT;
+    synthetic_job_setting TEXT;
+    synthetic_pid_setting TEXT;
+    synthetic_job_id INTEGER;
+    synthetic_worker_pid INTEGER;
     wait_deadline TIMESTAMPTZ;
     running_job_details TEXT;
 BEGIN
+    synthetic_job_setting := NULLIF(
+        current_setting('app.time_rename_test_synthetic_worker_job_id', TRUE), '');
+    synthetic_pid_setting := NULLIF(
+        current_setting('app.time_rename_test_synthetic_worker_pid', TRUE), '');
+    IF synthetic_job_setting IS NOT NULL OR synthetic_pid_setting IS NOT NULL THEN
+        IF current_database() !~ '^monitoring_test_[a-z0-9_]+$' THEN
+            RAISE EXCEPTION '0007 synthetic-worker test override is disposable-only';
+        END IF;
+        IF synthetic_job_setting IS NULL OR synthetic_pid_setting IS NULL THEN
+            RAISE EXCEPTION '0007 synthetic-worker test override requires both job id and pid';
+        END IF;
+        synthetic_job_id := synthetic_job_setting::INTEGER;
+        synthetic_worker_pid := synthetic_pid_setting::INTEGER;
+        IF synthetic_worker_pid < 1 THEN
+            RAISE EXCEPTION '0007 synthetic-worker test pid must be positive';
+        END IF;
+        IF NOT EXISTS (
+            SELECT 1
+            FROM public.monitoring_job_snapshot_0007
+            WHERE job_id = synthetic_job_id
+        ) THEN
+            RAISE EXCEPTION '0007 synthetic-worker test job % is not snapshotted',
+                synthetic_job_id;
+        END IF;
+    END IF;
+
     IF current_database() ~ '^monitoring_test_[a-z0-9_]+$' THEN
         test_wait_timeout := NULLIF(
             current_setting('app.time_rename_test_quiesce_timeout', TRUE), '');
@@ -271,16 +311,28 @@ BEGIN
             SELECT job_id FROM public.monitoring_job_snapshot_0007
             UNION
             SELECT job_id FROM public.monitoring_refresh_policy_snapshot_0007
+        ),
+        worker_activity(pid, backend_start, application_name, datname, backend_type) AS (
+            SELECT activity.pid, activity.backend_start, activity.application_name,
+                   activity.datname, activity.backend_type
+            FROM pg_stat_activity AS activity
+            WHERE activity.datname = current_database()
+              AND activity.backend_type <> 'client backend'
+            UNION ALL
+            SELECT synthetic_worker_pid,
+                   clock_timestamp(),
+                   format('phase4_quiesce_diagnostic [%s]', synthetic_job_id),
+                   current_database(),
+                   'background worker'::TEXT
+            WHERE synthetic_job_id IS NOT NULL
         )
         SELECT EXISTS (
             SELECT 1
             FROM target_jobs AS target
             WHERE EXISTS (
                 SELECT 1
-                FROM pg_stat_activity AS activity
-                WHERE activity.datname = current_database()
-                  AND activity.backend_type <> 'client backend'
-                  AND activity.application_name LIKE
+                FROM worker_activity AS activity
+                WHERE activity.application_name LIKE
                       '%[' || target.job_id::TEXT || ']%'
             )
         )
@@ -295,6 +347,20 @@ BEGIN
                        'policy_refresh_continuous_aggregate'::TEXT,
                        'public'::TEXT, view_name::TEXT
                 FROM public.monitoring_refresh_policy_snapshot_0007
+            ),
+            worker_activity(pid, backend_start, application_name, datname, backend_type) AS (
+                SELECT activity.pid, activity.backend_start, activity.application_name,
+                       activity.datname, activity.backend_type
+                FROM pg_stat_activity AS activity
+                WHERE activity.datname = current_database()
+                  AND activity.backend_type <> 'client backend'
+                UNION ALL
+                SELECT synthetic_worker_pid,
+                       clock_timestamp(),
+                       format('phase4_quiesce_diagnostic [%s]', synthetic_job_id),
+                       current_database(),
+                       'background worker'::TEXT
+                WHERE synthetic_job_id IS NOT NULL
             )
             SELECT string_agg(
                 format(
@@ -313,7 +379,8 @@ BEGIN
                     COALESCE(worker.pid::TEXT, 'unknown'),
                     COALESCE(worker.application_name::TEXT, 'unknown'),
                     COALESCE(
-                        (clock_timestamp() - stats.last_run_started_at)::TEXT,
+                        (clock_timestamp() - NULLIF(
+                            stats.last_run_started_at, '-infinity'::TIMESTAMPTZ))::TEXT,
                         (clock_timestamp() - worker.backend_start)::TEXT,
                         'unknown')),
                 E'\n' ORDER BY target.job_id)
@@ -323,10 +390,8 @@ BEGIN
             LEFT JOIN timescaledb_information.job_stats AS stats USING (job_id)
             LEFT JOIN LATERAL (
                 SELECT activity.pid, activity.backend_start, activity.application_name
-                FROM pg_stat_activity AS activity
-                WHERE activity.datname = current_database()
-                  AND activity.backend_type <> 'client backend'
-                  AND activity.application_name LIKE
+                FROM worker_activity AS activity
+                WHERE activity.application_name LIKE
                       '%[' || target.job_id::TEXT || ']%'
                 ORDER BY activity.pid
                 LIMIT 1
@@ -343,6 +408,62 @@ BEGIN
     END LOOP;
 END
 $wait_for_phase4_jobs$;
+DO $capture_test_quiescence_snapshot$
+DECLARE
+    capture_setting TEXT := NULLIF(
+        current_setting('app.time_rename_test_capture_quiescence', TRUE), '');
+BEGIN
+    IF capture_setting IS NOT NULL THEN
+        IF current_database() !~ '^monitoring_test_[a-z0-9_]+$'
+           OR capture_setting <> '1' THEN
+            RAISE EXCEPTION '0007 quiescence snapshot hook is disposable-only';
+        END IF;
+        CREATE TABLE IF NOT EXISTS public.monitoring_test_quiescence_snapshot_0007 (
+            captured_at TIMESTAMPTZ NOT NULL,
+            active_worker_count INTEGER NOT NULL,
+            active_worker_job_ids INTEGER[] NOT NULL,
+            active_worker_pids INTEGER[] NOT NULL,
+            job_statuses JSONB NOT NULL
+        );
+        WITH target_jobs AS (
+            SELECT job_id FROM public.monitoring_job_snapshot_0007
+            UNION
+            SELECT job_id FROM public.monitoring_refresh_policy_snapshot_0007
+        ),
+        active_workers AS (
+            SELECT target.job_id, activity.pid
+            FROM target_jobs AS target
+            JOIN pg_stat_activity AS activity
+              ON activity.datname = current_database()
+             AND activity.backend_type <> 'client backend'
+             AND activity.application_name LIKE
+                 '%[' || target.job_id::TEXT || ']%'
+        ),
+        job_statuses AS (
+            SELECT COALESCE(
+                       jsonb_object_agg(
+                           target.job_id::TEXT,
+                           COALESCE(stats.last_run_status::TEXT, '<null>')),
+                       '{}'::JSONB) AS statuses
+            FROM target_jobs AS target
+            LEFT JOIN timescaledb_information.job_stats AS stats USING (job_id)
+        )
+        INSERT INTO public.monitoring_test_quiescence_snapshot_0007 (
+            captured_at, active_worker_count, active_worker_job_ids,
+            active_worker_pids, job_statuses)
+        SELECT clock_timestamp(),
+               count(active_workers.pid)::INTEGER,
+               COALESCE(array_agg(DISTINCT active_workers.job_id)
+                   FILTER (WHERE active_workers.job_id IS NOT NULL), '{}'::INTEGER[]),
+               COALESCE(array_agg(DISTINCT active_workers.pid)
+                   FILTER (WHERE active_workers.pid IS NOT NULL), '{}'::INTEGER[]),
+               job_statuses.statuses
+        FROM job_statuses
+        LEFT JOIN active_workers ON TRUE
+        GROUP BY job_statuses.statuses;
+    END IF;
+END
+$capture_test_quiescence_snapshot$;
 
 DO $remove_stale_backfill_jobs$
 DECLARE

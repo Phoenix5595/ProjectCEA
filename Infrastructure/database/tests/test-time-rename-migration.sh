@@ -145,7 +145,8 @@ seed_previous_migration_ledger() {
 }
 
 prove_quiesce_timeout_diagnostic() {
-  local fake_job_id fake_job_running fake_worker_pid quiesce_output expected active_workers
+  local fake_job_id synthetic_worker_pid quiesce_output expected
+  synthetic_worker_pid='2147483000'
 
   psql_as_postgres --dbname=postgres \
     --command="ALTER DATABASE \"$DATABASE_NAME\" SET app.time_rename_test_quiesce_timeout TO '1 second'" \
@@ -154,14 +155,15 @@ prove_quiesce_timeout_diagnostic() {
 CREATE OR REPLACE PROCEDURE public.monitoring_backfill_aggregates(
     job_id INTEGER, config JSONB)
 LANGUAGE plpgsql
-AS $test_sleep$
+AS $diagnostic_noop$
 BEGIN
-    PERFORM pg_sleep(20);
+    NULL;
 END
-$test_sleep$;
+$diagnostic_noop$;
 SELECT add_job(
     'public.monitoring_backfill_aggregates(integer,jsonb)'::REGPROCEDURE::REGPROC,
     schedule_interval => INTERVAL '1 day',
+    initial_start => clock_timestamp() + INTERVAL '1 day',
     config => '{}'::JSONB,
     scheduled => TRUE,
     job_name => 'phase4_quiesce_diagnostic');
@@ -169,29 +171,21 @@ SQL
   fake_job_id="$(query_db "$DATABASE_NAME" \
     "SELECT job_id FROM timescaledb_information.jobs WHERE proc_schema='public' AND proc_name='monitoring_backfill_aggregates'")"
   [[ "$fake_job_id" =~ ^[0-9]+$ ]] || {
-    fail "quiescence diagnostic worker was not registered: $fake_job_id"
+    fail "quiescence diagnostic job was not registered: $fake_job_id"
     return 1
   }
   psql_as_postgres --dbname="$DATABASE_NAME" \
-    --command="SELECT alter_job($fake_job_id, scheduled => TRUE, next_start => clock_timestamp())" \
+    --command="SELECT alter_job($fake_job_id, scheduled => TRUE, next_start => clock_timestamp() + INTERVAL '1 day')" \
     >/dev/null
-
-  fake_worker_pid=''
-  for ((attempt = 1; attempt <= 40; attempt++)); do
-    fake_worker_pid="$(query_db "$DATABASE_NAME" \
-      "SELECT COALESCE((SELECT pid::TEXT FROM pg_stat_activity WHERE datname=current_database() AND backend_type <> 'client backend' AND application_name LIKE '%[$fake_job_id]%' ORDER BY pid LIMIT 1), '')")"
-    [[ "$fake_worker_pid" =~ ^[0-9]+$ ]] && break
-    sleep 0.25
-  done
-  [[ "$fake_worker_pid" =~ ^[0-9]+$ ]] || {
-    active_workers="$(query_db "$DATABASE_NAME" \
-      "SELECT COALESCE(string_agg(format('pid=%s type=%s app=%s query=%s', pid, backend_type, application_name, query), E'\\n' ORDER BY pid), '<none>') FROM pg_stat_activity WHERE datname=current_database()")"
-    fail "test-only Timescale worker did not expose a PID for job $fake_job_id: $active_workers"
-    return 1
-  }
+  psql_as_postgres --dbname=postgres <<SQL >/dev/null
+ALTER DATABASE "$DATABASE_NAME"
+    SET app.time_rename_test_synthetic_worker_job_id TO '$fake_job_id';
+ALTER DATABASE "$DATABASE_NAME"
+    SET app.time_rename_test_synthetic_worker_pid TO '$synthetic_worker_pid';
+SQL
 
   if quiesce_output="$(run_migrator "$DATABASE_NAME" apply --skip-alembic --allow-downtime 2>&1)"; then
-    fail 'quiescence wait did not time out while the test worker was sleeping'
+    fail 'synthetic live-worker override did not exercise the quiescence timeout'
     return 1
   fi
   for expected in \
@@ -199,7 +193,7 @@ SQL
     "job_id=$fake_job_id" \
     'proc_name=public.monitoring_backfill_aggregates' \
     'hypertable/view=<none>' \
-    "worker_pid=$fake_worker_pid" \
+    "worker_pid=$synthetic_worker_pid" \
     'worker_app=phase4_quiesce_diagnostic' \
     'DETAIL:' \
     'HINT:' \
@@ -209,30 +203,99 @@ SQL
       return 1
     fi
   done
-  printf 'quiescence timeout error detail:\n%s\n' "$quiesce_output" >&2
+  printf 'synthetic-worker timeout detail:\n%s\n' "$quiesce_output" >&2
   [[ "$quiesce_output" == *'runtime='* ]] || {
     fail "quiescence timeout error omitted worker runtime: $quiesce_output"
     return 1
   }
   assert_equal "$(query_db "$DATABASE_NAME" \
     "SELECT scheduled FROM timescaledb_information.jobs WHERE job_id=$fake_job_id")" \
-    'f' 'quiesce timeout leaves the worker job unscheduled'
+    'f' 'quiesce timeout leaves the diagnostic job unscheduled'
   assert_equal "$(query_db "$DATABASE_NAME" \
     "SELECT scheduled FROM public.monitoring_job_snapshot_0007 WHERE job_id=$fake_job_id")" \
-    't' 'quiesce timeout retains the worker job original schedule'
+    't' 'quiesce timeout retains the diagnostic job original schedule'
+  assert_equal "$(query_db "$DATABASE_NAME" \
+    "SELECT NOT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND application_name LIKE '%[' || $fake_job_id::TEXT || ']%')")" \
+    't' 'synthetic diagnostic does not require a real worker'
 
-  fake_job_running=true
-  for ((attempt = 1; attempt <= 40; attempt++)); do
-    fake_job_running="$(query_db "$DATABASE_NAME" \
-      "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND backend_type <> 'client backend' AND application_name LIKE '%[$fake_job_id]%')")"
-    [[ "$fake_job_running" == 'f' ]] && break
-    sleep 0.5
-  done
-  assert_equal "$fake_job_running" 'f' 'test-only worker finishes without being killed'
+  psql_as_postgres --dbname=postgres <<SQL >/dev/null
+ALTER DATABASE "$DATABASE_NAME" RESET app.time_rename_test_quiesce_timeout;
+ALTER DATABASE "$DATABASE_NAME" RESET app.time_rename_test_synthetic_worker_job_id;
+ALTER DATABASE "$DATABASE_NAME" RESET app.time_rename_test_synthetic_worker_pid;
+SQL
+  printf 'synthetic timeout detail and hint were verified\n'
+}
+
+prove_quiesce_drain() {
+  local fake_job_id fake_worker_pid active_workers apply_output
+
+  fake_job_id="$(query_db "$DATABASE_NAME" \
+    "SELECT job_id FROM timescaledb_information.jobs WHERE proc_schema='public' AND proc_name='monitoring_backfill_aggregates'")"
+  [[ "$fake_job_id" =~ ^[0-9]+$ ]] || {
+    fail "quiescence drain job was not registered: $fake_job_id"
+    return 1
+  }
+  psql_as_postgres --dbname="$DATABASE_NAME" <<SQL >/dev/null
+CREATE OR REPLACE PROCEDURE public.monitoring_backfill_aggregates(
+    job_id INTEGER, config JSONB)
+LANGUAGE plpgsql
+AS \$drain_sleep\$
+BEGIN
+    PERFORM pg_sleep(60);
+END
+\$drain_sleep\$;
+SELECT alter_job($fake_job_id,
+                 max_runtime => INTERVAL '2 minutes',
+                 scheduled => TRUE,
+                 next_start => clock_timestamp());
+SQL
   psql_as_postgres --dbname=postgres \
-    --command="ALTER DATABASE \"$DATABASE_NAME\" RESET app.time_rename_test_quiesce_timeout" \
+    --command="ALTER DATABASE \"$DATABASE_NAME\" SET app.time_rename_test_capture_quiescence TO '1'" \
     >/dev/null
-  printf 'quiescence timeout detail names the live worker; retry is safe after it finishes\n'
+
+  fake_worker_pid=''
+  for ((attempt = 1; attempt <= 120; attempt++)); do
+    fake_worker_pid="$(query_db "$DATABASE_NAME" \
+      "SELECT COALESCE((SELECT pid::TEXT FROM pg_stat_activity WHERE datname=current_database() AND backend_type <> 'client backend' AND right(application_name, length(' [$fake_job_id]')) = ' [$fake_job_id]' AND query LIKE '%monitoring_backfill_aggregates%' AND wait_event_type='Timeout' AND wait_event='PgSleep' ORDER BY pid LIMIT 1), '')")"
+    [[ "$fake_worker_pid" =~ ^[0-9]+$ ]] && break
+    sleep 0.25
+  done
+  [[ "$fake_worker_pid" =~ ^[0-9]+$ ]] || {
+    active_workers="$(query_db "$DATABASE_NAME" \
+      "SELECT COALESCE(string_agg(format('pid=%s type=%s app=%s wait=%s/%s query=%s', pid, backend_type, application_name, wait_event_type, wait_event, query), E'\\n' ORDER BY pid), '<none>') FROM pg_stat_activity WHERE datname=current_database()")"
+    psql_as_postgres --dbname=postgres \
+      --command="ALTER DATABASE \"$DATABASE_NAME\" RESET app.time_rename_test_capture_quiescence" \
+      >/dev/null
+    fail "test job did not begin sleeping before 0007: $active_workers"
+    return 1
+  }
+  printf 'drain proof starts with worker pid=%s job_id=%s\n' "$fake_worker_pid" "$fake_job_id" >&2
+
+  if apply_output="$(run_migrator "$DATABASE_NAME" apply --skip-alembic --allow-downtime 2>&1)"; then
+    printf '%s\n' "$apply_output"
+  else
+    psql_as_postgres --dbname=postgres \
+      --command="ALTER DATABASE \"$DATABASE_NAME\" RESET app.time_rename_test_capture_quiescence" \
+      >/dev/null
+    fail "0007 did not complete after cancelling and draining its worker: $apply_output"
+    return 1
+  fi
+  psql_as_postgres --dbname=postgres \
+    --command="ALTER DATABASE \"$DATABASE_NAME\" RESET app.time_rename_test_capture_quiescence" \
+    >/dev/null
+
+  assert_equal "$(query_db "$DATABASE_NAME" \
+    "SELECT count(*) FROM public.monitoring_test_quiescence_snapshot_0007")" \
+    '1' '0007 recorded the quiescence barrier snapshot'
+  assert_equal "$(query_db "$DATABASE_NAME" \
+    "SELECT active_worker_count = 0 AND cardinality(active_worker_job_ids) = 0 AND cardinality(active_worker_pids) = 0 FROM public.monitoring_test_quiescence_snapshot_0007 ORDER BY captured_at DESC LIMIT 1")" \
+    't' 'no target worker remained alive at the DDL boundary'
+  assert_equal "$(query_db "$DATABASE_NAME" \
+    "SELECT job_statuses->>'$fake_job_id' FROM public.monitoring_test_quiescence_snapshot_0007 ORDER BY captured_at DESC LIMIT 1")" \
+    'Failed' 'Timescale records the running worker cancellation before DDL'
+  printf 'quiescence barrier snapshot: %s\n' \
+    "$(query_db "$DATABASE_NAME" \
+      "SELECT format('captured_at=%s active_worker_count=%s job_statuses=%s', captured_at, active_worker_count, job_statuses) FROM public.monitoring_test_quiescence_snapshot_0007 ORDER BY captured_at DESC LIMIT 1")"
 }
 
 assert_event_time_cutover() {
@@ -1587,10 +1650,10 @@ assert_equal "$(query_db "$DATABASE_NAME" \
 
 printf 'building isolated migration release and prior ledger head\n'
 seed_previous_migration_ledger
-printf 'proving quiescence timeout diagnostics and restart safety\n'
+printf 'proving synthetic quiescence timeout diagnostics\n'
 prove_quiesce_timeout_diagnostic
-printf 'applying 0007 with --skip-alembic --allow-downtime after the worker finished\n'
-run_migrator "$DATABASE_NAME" apply --skip-alembic --allow-downtime
+printf 'proving 0007 cancels and drains a running worker before DDL\n'
+prove_quiesce_drain
 BACKFILL_JOB_ID="$(query_db "$DATABASE_NAME" \
   "SELECT job_id FROM timescaledb_information.jobs WHERE proc_schema='public' AND proc_name='monitoring_backfill_aggregates'")"
 [[ "$BACKFILL_JOB_ID" =~ ^[0-9]+$ ]] || { fail 'backfill job was not created'; exit 1; }
