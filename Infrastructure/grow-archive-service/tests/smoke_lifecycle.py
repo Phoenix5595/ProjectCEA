@@ -435,7 +435,11 @@ async def _exercise_calendar_membership(
             dataset["dataset_id"],
         )
         checkpoint = json.loads(job["checkpoint"]) if isinstance(job["checkpoint"], str) else dict(job["checkpoint"])
-        _assert(job["kind"] == "export" and job["state"] == "pending", "close must queue export")
+        # The worker may claim the queued export before this assertion reads it.
+        _assert(
+            job["kind"] == "export" and job["state"] in {"pending", "claimed", "running"},
+            "close must queue export",
+        )
         _assert(job["requested_revision"] == dataset["data_revision"] == 1, "job content revision fence changed on close")
         _assert(checkpoint["calendar_revision"] == dataset["calendar_revision"] == closed["calendar_revision"],
                 "job checkpoint must pin Calendar and content revisions")

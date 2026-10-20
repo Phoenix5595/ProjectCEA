@@ -291,14 +291,17 @@ assert_event_time_cutover() {
     "SELECT count(*) FROM public.monitoring_refresh_policy_snapshot_0007 WHERE view_name IN ('monitoring_measurement_5min','monitoring_measurement_1hour','monitoring_measurement_1day','monitoring_effective_setpoints_1min','monitoring_effective_setpoints_5min','monitoring_automation_state_1min','monitoring_automation_state_5min','monitoring_light_intensity_1hour','monitoring_light_intensity_1day','monitoring_requested_pid_1hour','monitoring_requested_pid_1day')")" \
     '11' 'all rebuilt continuous-aggregate policies are snapshotted'
   assert_equal "$(query_db "$DATABASE_NAME" \
-    "SELECT to_regclass('public.monitoring_cagg_materialization_coverage') IS NULL")" \
-    't' 'production-only dependent view is removed from the new release'
+    "SELECT to_regclass('public.monitoring_cagg_materialization_coverage') IS NULL AND pg_get_viewdef('public.monitoring_cagg_watermark'::REGCLASS, TRUE) = (SELECT view_definition FROM public.time_rename_expected_canonical_watermark)")" \
+    't' 'up removes the orphan coverage view and leaves the canonical watermark definition'
   assert_equal "$(query_db "$DATABASE_NAME" \
     "SELECT count(*) FROM public.monitoring_dependent_view_snapshot_0007")" \
-    '1' 'dependent view definition is snapshotted'
+    '2' 'both direct and transitive dependent view definitions are snapshotted'
   assert_equal "$(query_db "$DATABASE_NAME" \
-    "SELECT snapshot.view_definition = expected.view_definition FROM public.monitoring_dependent_view_snapshot_0007 AS snapshot CROSS JOIN public.time_rename_expected_dependent_view AS expected WHERE snapshot.view_schema='public' AND snapshot.view_name='monitoring_cagg_materialization_coverage'")" \
-    't' 'dependent view snapshot matches pg_get_viewdef before apply'
+    "SELECT count(*) FROM public.monitoring_dependent_view_snapshot_0007 AS snapshot JOIN public.time_rename_expected_dependent_view AS expected USING (view_schema, view_name) WHERE snapshot.view_definition IS DISTINCT FROM expected.view_definition OR snapshot.view_owner IS DISTINCT FROM expected.view_owner OR snapshot.view_acl IS DISTINCT FROM expected.view_acl")" \
+    '0' 'dependent view definitions, owners, and grants match their pre-apply state'
+  assert_equal "$(query_db "$DATABASE_NAME" \
+    "SELECT (SELECT dependency_depth FROM public.monitoring_dependent_view_snapshot_0007 WHERE view_name='monitoring_cagg_materialization_coverage') = 1 AND (SELECT dependency_depth FROM public.monitoring_dependent_view_snapshot_0007 WHERE view_name='monitoring_cagg_watermark') = 2")" \
+    't' 'transitive dependent views have dependency-ordered depths'
   assert_equal "$(query_db "$DATABASE_NAME" \
     "SELECT count(*) FROM _timescaledb_catalog.continuous_agg cagg JOIN timescaledb_information.jobs job ON (job.config->>'mat_hypertable_id')::integer=cagg.mat_hypertable_id WHERE cagg.user_view_schema='public' AND cagg.user_view_name = ANY (ARRAY['monitoring_measurement_5min','monitoring_measurement_1hour','monitoring_measurement_1day','monitoring_effective_setpoints_1min','monitoring_effective_setpoints_5min','monitoring_automation_state_1min','monitoring_automation_state_5min','monitoring_light_intensity_1hour','monitoring_light_intensity_1day','monitoring_requested_pid_1hour','monitoring_requested_pid_1day']) AND job.proc_name='policy_refresh_continuous_aggregate' AND NOT job.scheduled")" \
     '11' 'all rebuilt aggregate refresh policies start paused'
@@ -830,7 +833,11 @@ DO $restore_assertions$
 DECLARE
     mismatch_count BIGINT;
     snapshot_row RECORD;
+    expected_view RECORD;
     actual_count BIGINT;
+    actual_view_definition TEXT;
+    actual_view_owner TEXT;
+    actual_view_acl ACLITEM[];
 BEGIN
     WITH actual AS (
         SELECT table_name, column_name, ordinal_position, data_type, is_nullable
@@ -945,15 +952,36 @@ BEGIN
        OR to_regprocedure('public.monitoring_restore_quiesced_jobs_0007()') IS NOT NULL THEN
         RAISE EXCEPTION 'rollback left Phase 4 snapshot/backfill objects';
     END IF;
-    IF to_regclass('public.monitoring_cagg_materialization_coverage') IS NULL THEN
-        RAISE EXCEPTION 'rollback did not restore production-only dependent view';
-    END IF;
-    IF (SELECT view_definition
-        FROM public.time_rename_expected_dependent_view)
-       IS DISTINCT FROM
-       pg_get_viewdef('public.monitoring_cagg_materialization_coverage'::REGCLASS, TRUE) THEN
-        RAISE EXCEPTION 'rollback dependent-view definition differs from pre-0007 pg_get_viewdef';
-    END IF;
+    FOR expected_view IN
+        SELECT view_schema, view_name, view_definition, view_owner, view_acl
+        FROM public.time_rename_expected_dependent_view
+        ORDER BY view_schema, view_name
+    LOOP
+        SELECT pg_get_viewdef(relation.oid, TRUE),
+               pg_get_userbyid(relation.relowner),
+               relation.relacl
+        INTO actual_view_definition, actual_view_owner, actual_view_acl
+        FROM pg_class AS relation
+        JOIN pg_namespace AS namespace
+          ON namespace.oid = relation.relnamespace
+        WHERE namespace.nspname = expected_view.view_schema
+          AND relation.relname = expected_view.view_name
+          AND relation.relkind = 'v';
+
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'rollback did not restore dependent view %.%',
+                expected_view.view_schema, expected_view.view_name;
+        END IF;
+        IF actual_view_definition IS DISTINCT FROM expected_view.view_definition THEN
+            RAISE EXCEPTION 'rollback dependent-view definition differs from pre-0007 pg_get_viewdef: %.%',
+                expected_view.view_schema, expected_view.view_name;
+        END IF;
+        IF actual_view_owner IS DISTINCT FROM expected_view.view_owner
+           OR actual_view_acl IS DISTINCT FROM expected_view.view_acl THEN
+            RAISE EXCEPTION 'rollback dependent-view owner or grants differ from pre-0007 state: %.%',
+                expected_view.view_schema, expected_view.view_name;
+        END IF;
+    END LOOP;
     IF position('monitoring_measurement_1min' IN
                 pg_get_viewdef('public.monitoring_measurement_5min'::REGCLASS, TRUE)) > 0
        OR position('monitoring_measurement_1min' IN
@@ -1501,13 +1529,61 @@ UNION ALL
 SELECT 'monitoring_automation_state_5min'::TEXT AS cagg_name,
        max(monitoring_automation_state_5min.last_observed_at) AS materialization_coverage
 FROM monitoring_automation_state_5min;
-CREATE TABLE public.time_rename_expected_dependent_view AS
+CREATE TABLE public.time_rename_expected_canonical_watermark AS
 SELECT pg_get_viewdef(
-    'public.monitoring_cagg_materialization_coverage'::REGCLASS, TRUE) AS view_definition;
+    'public.monitoring_cagg_watermark'::REGCLASS, TRUE) AS view_definition;
+CREATE OR REPLACE VIEW public.monitoring_cagg_watermark AS
+SELECT
+    continuous_agg.user_view_name::TEXT AS cagg_name,
+    GREATEST(
+        _timescaledb_functions.to_timestamp(
+            _timescaledb_functions.cagg_watermark(continuous_agg.mat_hypertable_id)
+        ),
+        coverage.materialization_coverage
+    ) AS materialization_watermark,
+    invalidation.invalidation_source,
+    _timescaledb_functions.to_timestamp(invalidation.lowest_modified_value) AS invalidation_start,
+    _timescaledb_functions.to_timestamp(invalidation.greatest_modified_value) AS invalidation_end
+FROM _timescaledb_catalog.continuous_agg AS continuous_agg
+LEFT JOIN public.monitoring_cagg_materialization_coverage AS coverage
+  ON coverage.cagg_name = continuous_agg.user_view_name
+LEFT JOIN LATERAL (
+    SELECT
+        'materialization'::TEXT AS invalidation_source,
+        materialization_log.lowest_modified_value,
+        materialization_log.greatest_modified_value
+    FROM _timescaledb_catalog.continuous_aggs_materialization_invalidation_log AS materialization_log
+    WHERE materialization_log.materialization_id = continuous_agg.mat_hypertable_id
+    UNION ALL
+    SELECT
+        'hypertable'::TEXT AS invalidation_source,
+        hypertable_log.lowest_modified_value,
+        hypertable_log.greatest_modified_value
+    FROM _timescaledb_catalog.continuous_aggs_hypertable_invalidation_log AS hypertable_log
+    WHERE hypertable_log.hypertable_id = continuous_agg.raw_hypertable_id
+) AS invalidation ON TRUE
+WHERE continuous_agg.user_view_schema = 'public'
+  AND continuous_agg.user_view_name LIKE 'monitoring\_%' ESCAPE '\';
+GRANT SELECT ON TABLE public.monitoring_cagg_materialization_coverage TO PUBLIC;
+GRANT SELECT ON TABLE public.monitoring_cagg_watermark TO PUBLIC;
+CREATE TABLE public.time_rename_expected_dependent_view AS
+SELECT view_namespace.nspname AS view_schema,
+       view_class.relname AS view_name,
+       pg_get_viewdef(view_class.oid, TRUE) AS view_definition,
+       pg_get_userbyid(view_class.relowner) AS view_owner,
+       view_class.relacl AS view_acl
+FROM pg_class AS view_class
+JOIN pg_namespace AS view_namespace
+  ON view_namespace.oid = view_class.relnamespace
+WHERE view_namespace.nspname = 'public'
+  AND view_class.relname = ANY (ARRAY[
+      'monitoring_cagg_materialization_coverage',
+      'monitoring_cagg_watermark'
+  ]);
 SQL
 assert_equal "$(query_db "$DATABASE_NAME" \
   "SELECT count(*) FROM public.time_rename_expected_dependent_view")" \
-  '1' 'production-only dependent-view definition is captured before apply'
+  '2' 'production-only direct and transitive dependent definitions are captured'
 
 printf 'building isolated migration release and prior ledger head\n'
 seed_previous_migration_ledger
@@ -1613,8 +1689,8 @@ assert_equal "$(query_db "$DATABASE_NAME" \
   "SELECT to_regclass('public.monitoring_job_snapshot_0007') IS NOT NULL AND to_regclass('public.monitoring_refresh_policy_snapshot_0007') IS NOT NULL AND to_regclass('public.monitoring_index_snapshot_0007') IS NOT NULL AND to_regclass('public.monitoring_dependent_view_snapshot_0007') IS NOT NULL")" \
   't' 'all down snapshots survive until final restoration'
 assert_equal "$(query_db "$DATABASE_NAME" \
-  "SELECT to_regclass('public.monitoring_cagg_materialization_coverage') IS NULL AND (SELECT count(*) FROM public.monitoring_dependent_view_snapshot_0007 WHERE view_schema='public' AND view_name='monitoring_cagg_materialization_coverage')=1")" \
-  't' 'dependent view remains absent while its down snapshot is retained'
+  "SELECT to_regclass('public.monitoring_cagg_materialization_coverage') IS NULL AND pg_get_viewdef('public.monitoring_cagg_watermark'::REGCLASS, TRUE) = (SELECT view_definition FROM public.time_rename_expected_canonical_watermark) AND (SELECT count(*) FROM public.monitoring_dependent_view_snapshot_0007 WHERE view_schema='public' AND view_name IN ('monitoring_cagg_materialization_coverage','monitoring_cagg_watermark'))=2")" \
+  't' 'both dependent snapshots remain while the orphan stays absent through down restart'
 assert_equal "$(query_db "$DATABASE_NAME" \
   "SELECT count(*) FROM timescaledb_information.continuous_aggregates WHERE view_schema='public' AND view_name = ANY (ARRAY['monitoring_measurement_5min','monitoring_measurement_1hour','monitoring_measurement_1day','monitoring_effective_setpoints_1min','monitoring_effective_setpoints_5min','monitoring_automation_state_1min','monitoring_automation_state_5min','monitoring_light_intensity_1hour','monitoring_light_intensity_1day','monitoring_requested_pid_1hour','monitoring_requested_pid_1day'])")" \
   '0' 'first down phase leaves rebuilt aggregates absent for canonical restoration'

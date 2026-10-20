@@ -449,62 +449,121 @@ BEGIN
 END
 $pause_overview_jobs$;
 
--- Non-internal views directly depending on a dropped CAGG are release-local
--- orphans. Save their exact query and remove them; up must not re-pin the new
--- aggregates, while down restores these views after the pre-0007 CAGGs exist.
+-- Snapshot the full regular-view dependency closure rooted at every rebuilt
+-- CAGG and every source table whose event-time column is renamed. Record the
+-- greatest dependency depth so teardown is deepest-first and rollback is
+-- shallowest-first; CAGG wrapper views and TimescaleDB internals are excluded.
 CREATE TABLE public.monitoring_dependent_view_snapshot_0007 (
     view_schema TEXT NOT NULL,
     view_name TEXT NOT NULL,
     view_definition TEXT NOT NULL,
+    dependency_depth INTEGER NOT NULL CHECK (dependency_depth > 0),
+    view_owner TEXT NOT NULL,
+    view_owner_oid OID NOT NULL,
+    view_acl ACLITEM[],
     PRIMARY KEY (view_schema, view_name)
 );
+WITH RECURSIVE seed_relations AS (
+    SELECT relation.oid AS relation_oid
+    FROM pg_class AS relation
+    JOIN pg_namespace AS relation_namespace
+      ON relation_namespace.oid = relation.relnamespace
+    WHERE relation_namespace.nspname = 'public'
+      AND relation.relname = ANY (ARRAY[
+          'monitoring_light_intensity_1day',
+          'monitoring_requested_pid_1day',
+          'monitoring_measurement_1day',
+          'monitoring_light_intensity_1hour',
+          'monitoring_requested_pid_1hour',
+          'monitoring_measurement_1hour',
+          'monitoring_measurement_5min',
+          'monitoring_effective_setpoints_5min',
+          'monitoring_effective_setpoints_1min',
+          'monitoring_automation_state_5min',
+          'monitoring_automation_state_1min',
+          'automation_state', 'effective_setpoints', 'control_history',
+          'pid_parameter_history', 'relay_observation',
+          'monitoring_room_photoperiod', 'monitoring_photoperiod_coverage',
+          'mode_transition_history'
+      ])
+      AND relation.relkind IN ('m', 'p', 'r', 'v')
+),
+dependent_views(view_oid, dependency_depth, path) AS (
+    SELECT view_class.oid,
+           1,
+           ARRAY[seed.relation_oid, view_class.oid]::OID[]
+    FROM seed_relations AS seed
+    JOIN pg_depend AS dependency
+      ON dependency.refclassid = 'pg_class'::REGCLASS
+     AND dependency.refobjid = seed.relation_oid
+     AND dependency.classid = 'pg_rewrite'::REGCLASS
+     AND dependency.deptype = 'n'
+    JOIN pg_rewrite AS view_rule
+      ON view_rule.oid = dependency.objid
+     AND view_rule.rulename = '_RETURN'
+    JOIN pg_class AS view_class
+      ON view_class.oid = view_rule.ev_class
+     AND view_class.relkind = 'v'
+    JOIN pg_namespace AS view_namespace
+      ON view_namespace.oid = view_class.relnamespace
+    WHERE view_namespace.nspname NOT IN ('pg_catalog', 'information_schema')
+      AND view_namespace.nspname !~ '^_timescaledb_'
+      AND NOT EXISTS (
+          SELECT 1
+          FROM _timescaledb_catalog.continuous_agg AS own_cagg
+          WHERE own_cagg.user_view_schema = view_namespace.nspname
+            AND own_cagg.user_view_name = view_class.relname
+      )
+
+    UNION ALL
+
+    SELECT view_class.oid,
+           parent.dependency_depth + 1,
+           parent.path || view_class.oid
+    FROM dependent_views AS parent
+    JOIN pg_depend AS dependency
+      ON dependency.refclassid = 'pg_class'::REGCLASS
+     AND dependency.refobjid = parent.view_oid
+     AND dependency.classid = 'pg_rewrite'::REGCLASS
+     AND dependency.deptype = 'n'
+    JOIN pg_rewrite AS view_rule
+      ON view_rule.oid = dependency.objid
+     AND view_rule.rulename = '_RETURN'
+    JOIN pg_class AS view_class
+      ON view_class.oid = view_rule.ev_class
+     AND view_class.relkind = 'v'
+    JOIN pg_namespace AS view_namespace
+      ON view_namespace.oid = view_class.relnamespace
+    WHERE NOT (view_class.oid = ANY (parent.path))
+      AND view_namespace.nspname NOT IN ('pg_catalog', 'information_schema')
+      AND view_namespace.nspname !~ '^_timescaledb_'
+      AND NOT EXISTS (
+          SELECT 1
+          FROM _timescaledb_catalog.continuous_agg AS own_cagg
+          WHERE own_cagg.user_view_schema = view_namespace.nspname
+            AND own_cagg.user_view_name = view_class.relname
+      )
+),
+view_depths AS (
+    SELECT view_oid, max(dependency_depth)::INTEGER AS dependency_depth
+    FROM dependent_views
+    GROUP BY view_oid
+)
 INSERT INTO public.monitoring_dependent_view_snapshot_0007 (
-    view_schema, view_name, view_definition)
-SELECT DISTINCT
-       view_namespace.nspname,
+    view_schema, view_name, view_definition, dependency_depth,
+    view_owner, view_owner_oid, view_acl)
+SELECT view_namespace.nspname,
        view_class.relname,
-       pg_get_viewdef(view_class.oid, TRUE)
-FROM pg_depend AS dependency
-JOIN pg_rewrite AS view_rule
-  ON dependency.classid = 'pg_rewrite'::REGCLASS
- AND dependency.objid = view_rule.oid
- AND view_rule.rulename = '_RETURN'
+       pg_get_viewdef(view_class.oid, TRUE),
+       view_depths.dependency_depth,
+       pg_get_userbyid(view_class.relowner),
+       view_class.relowner,
+       view_class.relacl
+FROM view_depths
 JOIN pg_class AS view_class
-  ON view_class.oid = view_rule.ev_class
- AND view_class.relkind = 'v'
+  ON view_class.oid = view_depths.view_oid
 JOIN pg_namespace AS view_namespace
-  ON view_namespace.oid = view_class.relnamespace
-WHERE dependency.refclassid = 'pg_class'::REGCLASS
-  AND dependency.deptype = 'n'
-  AND view_namespace.nspname NOT IN ('pg_catalog', 'information_schema')
-  AND view_namespace.nspname !~ '^_timescaledb_'
-  AND NOT EXISTS (
-      SELECT 1
-      FROM _timescaledb_catalog.continuous_agg AS own_cagg
-      WHERE own_cagg.user_view_schema = view_namespace.nspname
-        AND own_cagg.user_view_name = view_class.relname
-  )
-  AND dependency.refobjid IN (
-      SELECT target_relation.oid
-      FROM pg_class AS target_relation
-      JOIN pg_namespace AS target_namespace
-        ON target_namespace.oid = target_relation.relnamespace
-      WHERE target_namespace.nspname = 'public'
-        AND target_relation.relkind IN ('m', 'v')
-        AND target_relation.relname = ANY (ARRAY[
-            'monitoring_light_intensity_1day',
-            'monitoring_requested_pid_1day',
-            'monitoring_measurement_1day',
-            'monitoring_light_intensity_1hour',
-            'monitoring_requested_pid_1hour',
-            'monitoring_measurement_1hour',
-            'monitoring_measurement_5min',
-            'monitoring_effective_setpoints_5min',
-            'monitoring_effective_setpoints_1min',
-            'monitoring_automation_state_5min',
-            'monitoring_automation_state_1min'
-        ])
-  );
+  ON view_namespace.oid = view_class.relnamespace;
 DO $drop_dependent_views$
 DECLARE
     snapshot_row RECORD;
@@ -512,7 +571,7 @@ BEGIN
     FOR snapshot_row IN
         SELECT view_schema, view_name
         FROM public.monitoring_dependent_view_snapshot_0007
-        ORDER BY view_schema, view_name
+        ORDER BY dependency_depth DESC, view_schema, view_name
     LOOP
         EXECUTE format('DROP VIEW %I.%I',
                        snapshot_row.view_schema, snapshot_row.view_name);
@@ -669,6 +728,92 @@ SET LOCAL app.grow_cycle_history_disposable = '1';
 \set monitoring_time_rename_migration true
 \ir ../monitoring_read_models.sql
 \ir ../monitoring_history_overview.sql
+DO $restore_canonical_view_security$
+DECLARE
+    snapshot_row RECORD;
+    acl_entry RECORD;
+    grantee_sql TEXT;
+BEGIN
+    -- Canonical files recreated only views they own. Restore the saved access
+    -- metadata on those objects without recreating any missing orphan views.
+    FOR snapshot_row IN
+        SELECT snapshot.view_schema, snapshot.view_name, snapshot.view_owner,
+               snapshot.view_owner_oid, snapshot.view_acl,
+               relation.oid AS existing_oid, relation.relowner AS existing_owner
+        FROM public.monitoring_dependent_view_snapshot_0007 AS snapshot
+        JOIN pg_namespace AS namespace
+          ON namespace.nspname = snapshot.view_schema
+        JOIN pg_class AS relation
+          ON relation.relnamespace = namespace.oid
+         AND relation.relname = snapshot.view_name
+         AND relation.relkind = 'v'
+        ORDER BY snapshot.dependency_depth, snapshot.view_schema, snapshot.view_name
+    LOOP
+        FOR acl_entry IN
+            SELECT exploded.grantee, exploded.privilege_type, exploded.is_grantable
+            FROM aclexplode(COALESCE(
+                snapshot_row.view_acl,
+                acldefault('r', snapshot_row.view_owner_oid))) AS exploded
+            WHERE exploded.grantee <> snapshot_row.view_owner_oid
+        LOOP
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_class AS current_view
+                CROSS JOIN LATERAL aclexplode(COALESCE(
+                    current_view.relacl,
+                    acldefault('r', current_view.relowner))) AS current_acl
+                WHERE current_view.oid = snapshot_row.existing_oid
+                  AND current_acl.grantee = acl_entry.grantee
+                  AND current_acl.privilege_type = acl_entry.privilege_type
+                  AND current_acl.is_grantable = acl_entry.is_grantable
+            ) THEN
+                grantee_sql := CASE
+                    WHEN acl_entry.grantee = 0 THEN 'PUBLIC'
+                    ELSE format('%I', pg_get_userbyid(acl_entry.grantee))
+                END;
+                EXECUTE format(
+                    'GRANT %s ON TABLE %I.%I TO %s%s',
+                    acl_entry.privilege_type,
+                    snapshot_row.view_schema,
+                    snapshot_row.view_name,
+                    grantee_sql,
+                    CASE WHEN acl_entry.is_grantable
+                         THEN ' WITH GRANT OPTION' ELSE '' END);
+            END IF;
+        END LOOP;
+
+        IF snapshot_row.existing_owner IS DISTINCT FROM snapshot_row.view_owner_oid THEN
+            EXECUTE format('ALTER VIEW %I.%I OWNER TO %I',
+                           snapshot_row.view_schema,
+                           snapshot_row.view_name,
+                           snapshot_row.view_owner);
+        END IF;
+    END LOOP;
+END
+$restore_canonical_view_security$;
+DO $report_noncanonical_dependent_views$
+DECLARE
+    missing_views TEXT;
+BEGIN
+    SELECT string_agg(
+               format('%I.%I', snapshot.view_schema, snapshot.view_name),
+               ', ' ORDER BY snapshot.view_schema, snapshot.view_name)
+    INTO missing_views
+    FROM public.monitoring_dependent_view_snapshot_0007 AS snapshot
+    LEFT JOIN pg_namespace AS namespace
+      ON namespace.nspname = snapshot.view_schema
+    LEFT JOIN pg_class AS relation
+      ON relation.relnamespace = namespace.oid
+     AND relation.relname = snapshot.view_name
+    WHERE relation.oid IS NULL
+       OR relation.relkind <> 'v';
+
+    IF missing_views IS NOT NULL THEN
+        RAISE NOTICE '0007_time_column_rename dropped non-canonical dependent views (not recreated): %',
+            missing_views;
+    END IF;
+END
+$report_noncanonical_dependent_views$;
 SET LOCAL lock_timeout = '0';
 SET LOCAL statement_timeout = '0';
 

@@ -444,9 +444,9 @@ DECLARE
     existing_definition TEXT;
 BEGIN
     FOR snapshot_row IN
-        SELECT view_schema, view_name, view_definition
+        SELECT view_schema, view_name, view_definition, dependency_depth
         FROM public.monitoring_dependent_view_snapshot_0007
-        ORDER BY view_schema, view_name
+        ORDER BY dependency_depth, view_schema, view_name
     LOOP
         SELECT relation.oid, relation.relkind::TEXT,
                CASE WHEN relation.relkind = 'v'
@@ -467,12 +467,75 @@ BEGIN
             RAISE EXCEPTION 'rollback dependent object %.% is not a view',
                 snapshot_row.view_schema, snapshot_row.view_name;
         ELSIF existing_definition IS DISTINCT FROM snapshot_row.view_definition THEN
-            RAISE EXCEPTION 'rollback dependent view %.% has a different definition',
-                snapshot_row.view_schema, snapshot_row.view_name;
+            EXECUTE format('CREATE OR REPLACE VIEW %I.%I AS %s',
+                           snapshot_row.view_schema,
+                           snapshot_row.view_name,
+                           snapshot_row.view_definition);
         END IF;
     END LOOP;
 END
 $restore_dependent_views$;
+DO $restore_dependent_view_security$
+DECLARE
+    snapshot_row RECORD;
+    acl_entry RECORD;
+    grantee_sql TEXT;
+BEGIN
+    FOR snapshot_row IN
+        SELECT snapshot.view_schema, snapshot.view_name, snapshot.view_owner,
+               snapshot.view_owner_oid, snapshot.view_acl,
+               relation.oid AS existing_oid, relation.relowner AS existing_owner
+        FROM public.monitoring_dependent_view_snapshot_0007 AS snapshot
+        JOIN pg_namespace AS namespace
+          ON namespace.nspname = snapshot.view_schema
+        JOIN pg_class AS relation
+          ON relation.relnamespace = namespace.oid
+         AND relation.relname = snapshot.view_name
+         AND relation.relkind = 'v'
+        ORDER BY snapshot.dependency_depth, snapshot.view_schema, snapshot.view_name
+    LOOP
+        FOR acl_entry IN
+            SELECT exploded.grantee, exploded.privilege_type, exploded.is_grantable
+            FROM aclexplode(COALESCE(
+                snapshot_row.view_acl,
+                acldefault('r', snapshot_row.view_owner_oid))) AS exploded
+            WHERE exploded.grantee <> snapshot_row.view_owner_oid
+        LOOP
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_class AS current_view
+                CROSS JOIN LATERAL aclexplode(COALESCE(
+                    current_view.relacl,
+                    acldefault('r', current_view.relowner))) AS current_acl
+                WHERE current_view.oid = snapshot_row.existing_oid
+                  AND current_acl.grantee = acl_entry.grantee
+                  AND current_acl.privilege_type = acl_entry.privilege_type
+                  AND current_acl.is_grantable = acl_entry.is_grantable
+            ) THEN
+                grantee_sql := CASE
+                    WHEN acl_entry.grantee = 0 THEN 'PUBLIC'
+                    ELSE format('%I', pg_get_userbyid(acl_entry.grantee))
+                END;
+                EXECUTE format(
+                    'GRANT %s ON TABLE %I.%I TO %s%s',
+                    acl_entry.privilege_type,
+                    snapshot_row.view_schema,
+                    snapshot_row.view_name,
+                    grantee_sql,
+                    CASE WHEN acl_entry.is_grantable
+                         THEN ' WITH GRANT OPTION' ELSE '' END);
+            END IF;
+        END LOOP;
+
+        IF snapshot_row.existing_owner IS DISTINCT FROM snapshot_row.view_owner_oid THEN
+            EXECUTE format('ALTER VIEW %I.%I OWNER TO %I',
+                           snapshot_row.view_schema,
+                           snapshot_row.view_name,
+                           snapshot_row.view_owner);
+        END IF;
+    END LOOP;
+END
+$restore_dependent_view_security$;
 -- The old definitions contain ROW-based last() aggregations. Rebuild them
 -- oldest-first in elapsed 24-hour UTC windows; saved definitions create only
 -- missing aggregates and each refresh window is safe to replay after failure.
