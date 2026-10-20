@@ -73,7 +73,7 @@ SENSOR_COLUMNS: Final[str] = (
 CONTROL_COLUMNS: Final[str] = (
     "kind, guard_ok, family, idx, b0, b1, partial, location, cluster,"
     " device_name, sample_count, value_sum, value_sum_squares, min_value,"
-    " max_value, present"
+    " max_value, present, weighted_value, covered_seconds"
 )
 
 RELAY_COLUMNS: Final[str] = (
@@ -521,6 +521,7 @@ _CONTROL_FAMILY_TEMPLATE: Final[str] = """
         (SELECT MIN(materialization_watermark) FROM monitoring_history_cagg_watermark
           WHERE cagg_name = '{day_model}') AS d_wm
 ),
+{tier_value_ctes}
 {p}_bounds AS (
     SELECT request.range_start, request.range_end,
            cov.h_from, cov.h_through, cov.h_wm,
@@ -597,9 +598,11 @@ _CONTROL_FAMILY_TEMPLATE: Final[str] = """
             SELECT "time" AS observed_at FROM {raw_table} AS facts
              WHERE facts.location = $1 AND {beyond_probe}
             UNION ALL
-            SELECT bucket FROM {hour_table} WHERE location = $1
+            SELECT bucket FROM {hour_table}
+             WHERE location = $1 AND {hour_probe_predicate}
             UNION ALL
-            SELECT bucket FROM {hour_day_table} WHERE location = $1
+            SELECT bucket FROM {hour_day_table}
+             WHERE location = $1 AND {day_probe_predicate}
         ) AS facts
         WHERE facts.observed_at >= COALESCE({p}_bounds.cov_through_max,
                                             {p}_bounds.range_start)
@@ -678,6 +681,7 @@ _CONTROL_FAMILY_TEMPLATE: Final[str] = """
         {day_value_select},
         TRUE AS present
     FROM {hour_day_table} AS c
+    {day_value_join}
     JOIN buckets AS b
       ON c.bucket >= b.b0
      AND c.bucket + INTERVAL '24 hours' <= b.b1
@@ -697,6 +701,7 @@ _CONTROL_FAMILY_TEMPLATE: Final[str] = """
         {hour_value_select},
         TRUE AS present
     FROM {hour_table} AS c
+    {hour_value_join}
     JOIN buckets AS b
       ON time_bucket($5::bigint * INTERVAL '1 second', c.bucket,
                      '1970-01-01T00:00:00Z'::timestamptz) =
@@ -722,26 +727,7 @@ _CONTROL_FAMILY_TEMPLATE: Final[str] = """
             AND dr.bucket + INTERVAL '24 hours' > c.bucket
       )
 ),
-{p}_raw_rows AS (
-    SELECT
-        rp.idx,
-        facts.location,
-        facts.cluster,
-        facts.device_name,
-        {raw_value_select},
-        TRUE AS present
-    FROM {p}_raw_pieces AS rp
-    CROSS JOIN LATERAL (
-        SELECT {raw_projection}
-        FROM {raw_table} AS facts
-        WHERE facts.location = $1
-          AND facts."time" >= rp.lo
-          AND facts."time" < rp.hi
-          AND {raw_predicate}
-        OFFSET 0
-    ) AS facts
-    GROUP BY rp.idx, facts.location, facts.cluster, facts.device_name
-),
+{raw_rows_sql}
 {p}_merged AS (
     SELECT
         n.idx,
@@ -756,18 +742,23 @@ _CONTROL_FAMILY_TEMPLATE: Final[str] = """
         SUM(u.value_sum_squares) AS value_sum_squares,
         MIN(u.min_value) AS min_value,
         MAX(u.max_value) AS max_value,
-        bool_or(u.present) AS present
+        bool_or(u.present) AS present,
+        SUM(u.weighted_value) AS weighted_value,
+        SUM(u.covered_seconds) AS covered_seconds
     FROM (
         SELECT idx, location, cluster, device_name, sample_count, value_sum,
-               value_sum_squares, min_value, max_value, present
+               value_sum_squares, min_value, max_value, present,
+               weighted_value, covered_seconds
         FROM {p}_day_rows
         UNION ALL
         SELECT idx, location, cluster, device_name, sample_count, value_sum,
-               value_sum_squares, min_value, max_value, present
+               value_sum_squares, min_value, max_value, present,
+               weighted_value, covered_seconds
         FROM {p}_hour_rows
         UNION ALL
         SELECT idx, location, cluster, device_name, sample_count, value_sum,
-               value_sum_squares, min_value, max_value, present
+               value_sum_squares, min_value, max_value, present,
+               weighted_value, covered_seconds
         FROM {p}_raw_rows
     ) AS u
     JOIN buckets AS n
@@ -783,15 +774,22 @@ _LIGHT_FAMILY_SQL: Final[str] = _CONTROL_FAMILY_TEMPLATE.format(
     hour_table="monitoring_light_intensity_1hour",
     hour_day_table="monitoring_light_intensity_1day",
     raw_table="effective_setpoints",
+    tier_value_ctes="",
+    day_value_join="",
+    hour_value_join="",
+    hour_probe_predicate="TRUE",
+    day_probe_predicate="TRUE",
     day_value_select=(
         "c.sample_count AS sample_count, c.value_sum AS value_sum,"
         " c.value_sum_squares AS value_sum_squares, c.min_value AS min_value,"
-        " c.max_value AS max_value"
+        " c.max_value AS max_value, NULL::NUMERIC AS weighted_value,"
+        " NULL::NUMERIC AS covered_seconds"
     ),
     hour_value_select=(
         "c.sample_count AS sample_count, c.value_sum AS value_sum,"
         " c.value_sum_squares AS value_sum_squares, c.min_value AS min_value,"
-        " c.max_value AS max_value"
+        " c.max_value AS max_value, NULL::NUMERIC AS weighted_value,"
+        " NULL::NUMERIC AS covered_seconds"
     ),
     beyond_probe=(
         "facts.device_name IS NOT NULL"
@@ -799,23 +797,39 @@ _LIGHT_FAMILY_SQL: Final[str] = _CONTROL_FAMILY_TEMPLATE.format(
         " OR facts.nominal_light_intensity IS NOT NULL"
         " OR facts.ramp_progress_light IS NOT NULL)"
     ),
-    raw_predicate=(
-        "facts.device_name IS NOT NULL"
-        " AND (facts.effective_light_intensity IS NOT NULL"
-        " OR facts.nominal_light_intensity IS NOT NULL"
-        " OR facts.ramp_progress_light IS NOT NULL)"
-    ),
-    raw_projection=(
-        "facts.location, facts.cluster, facts.device_name, facts.effective_light_intensity"
-    ),
-    raw_value_select=(
-        "count(facts.effective_light_intensity)::BIGINT AS sample_count,"
-        " sum(facts.effective_light_intensity::NUMERIC) AS value_sum,"
-        " sum(facts.effective_light_intensity::NUMERIC"
-        " * facts.effective_light_intensity::NUMERIC) AS value_sum_squares,"
-        " min(facts.effective_light_intensity::NUMERIC) AS min_value,"
-        " max(facts.effective_light_intensity::NUMERIC) AS max_value"
-    ),
+    raw_rows_sql="""
+light_raw_rows AS (
+    SELECT
+        rp.idx,
+        facts.location,
+        facts.cluster,
+        facts.device_name,
+        count(facts.effective_light_intensity)::BIGINT AS sample_count,
+        sum(facts.effective_light_intensity::NUMERIC) AS value_sum,
+        sum(facts.effective_light_intensity::NUMERIC
+            * facts.effective_light_intensity::NUMERIC) AS value_sum_squares,
+        min(facts.effective_light_intensity::NUMERIC) AS min_value,
+        max(facts.effective_light_intensity::NUMERIC) AS max_value,
+        TRUE AS present,
+        NULL::NUMERIC AS weighted_value,
+        NULL::NUMERIC AS covered_seconds
+    FROM light_raw_pieces AS rp
+    CROSS JOIN LATERAL (
+        SELECT facts.location, facts.cluster, facts.device_name,
+               facts.effective_light_intensity
+        FROM effective_setpoints AS facts
+        WHERE facts.location = $1
+          AND facts."time" >= rp.lo
+          AND facts."time" < rp.hi
+          AND facts.device_name IS NOT NULL
+          AND (facts.effective_light_intensity IS NOT NULL
+               OR facts.nominal_light_intensity IS NOT NULL
+               OR facts.ramp_progress_light IS NOT NULL)
+        OFFSET 0
+    ) AS facts
+    GROUP BY rp.idx, facts.location, facts.cluster, facts.device_name
+),
+""",
 )
 
 _PID_FAMILY_SQL: Final[str] = _CONTROL_FAMILY_TEMPLATE.format(
@@ -825,49 +839,199 @@ _PID_FAMILY_SQL: Final[str] = _CONTROL_FAMILY_TEMPLATE.format(
     hour_table="monitoring_requested_pid_1hour",
     hour_day_table="monitoring_requested_pid_1day",
     raw_table="automation_state",
+    tier_value_ctes="""
+pid_hour_window AS (
+    SELECT c.bucket, c.location, c.cluster, c.device_name, c.requested_tw,
+           lag(c.requested_tw) OVER summary_window AS previous_tw,
+           lead(c.requested_tw) OVER summary_window AS next_tw
+    FROM monitoring_requested_pid_1hour AS c
+    WHERE c.location = $1
+      AND c.requested_tw IS NOT NULL
+    WINDOW summary_window AS (
+        PARTITION BY c.location, c.cluster, c.device_name
+        ORDER BY c.bucket
+    )
+),
+pid_hour_values AS (
+    SELECT averaged.*,
+           CASE WHEN averaged.previous_tw IS NULL
+                THEN EXTRACT(EPOCH FROM (
+                    averaged.bucket + INTERVAL '1 hour'
+                    - first_time(averaged.requested_tw)))::NUMERIC
+                ELSE 3600::NUMERIC
+           END AS covered_seconds
+    FROM (
+        SELECT pid_hour_window.*,
+               interpolated_average(
+                   requested_tw, bucket, INTERVAL '1 hour',
+                   previous_tw, next_tw
+               ) AS requested_average
+        FROM pid_hour_window
+    ) AS averaged
+    WHERE averaged.requested_average IS NOT NULL
+),
+pid_day_window AS (
+    SELECT c.bucket, c.location, c.cluster, c.device_name, c.requested_tw,
+           lag(c.requested_tw) OVER summary_window AS previous_tw,
+           lead(c.requested_tw) OVER summary_window AS next_tw
+    FROM monitoring_requested_pid_1day AS c
+    WHERE c.location = $1
+      AND c.requested_tw IS NOT NULL
+    WINDOW summary_window AS (
+        PARTITION BY c.location, c.cluster, c.device_name
+        ORDER BY c.bucket
+    )
+),
+pid_day_values AS (
+    SELECT averaged.*,
+           CASE WHEN averaged.previous_tw IS NULL
+                THEN EXTRACT(EPOCH FROM (
+                    averaged.bucket + INTERVAL '24 hours'
+                    - first_time(averaged.requested_tw)))::NUMERIC
+                ELSE 86400::NUMERIC
+           END AS covered_seconds
+    FROM (
+        SELECT pid_day_window.*,
+               interpolated_average(
+                   requested_tw, bucket, INTERVAL '24 hours',
+                   previous_tw, next_tw
+               ) AS requested_average
+        FROM pid_day_window
+    ) AS averaged
+    WHERE averaged.requested_average IS NOT NULL
+),
+""",
+    day_value_join="""JOIN pid_day_values AS tw
+      ON tw.bucket = c.bucket
+     AND tw.location = c.location
+     AND tw.cluster = c.cluster
+     AND tw.device_name = c.device_name""",
+    hour_value_join="""JOIN pid_hour_values AS tw
+      ON tw.bucket = c.bucket
+     AND tw.location = c.location
+     AND tw.cluster = c.cluster
+     AND tw.device_name = c.device_name""",
+    hour_probe_predicate="requested_tw IS NOT NULL",
+    day_probe_predicate="requested_tw IS NOT NULL",
     day_value_select=(
-        "c.requested_count AS sample_count, c.requested_sum AS value_sum,"
-        " c.requested_sum_squares AS value_sum_squares,"
-        " c.requested_min AS min_value, c.requested_max AS max_value"
+        "c.sample_count AS sample_count, NULL::NUMERIC AS value_sum,"
+        " NULL::NUMERIC AS value_sum_squares,"
+        " CASE WHEN tw.previous_tw IS NOT NULL"
+        " AND first_time(tw.requested_tw) > c.bucket"
+        " THEN LEAST(c.requested_min,"
+        " last_val(tw.previous_tw)::NUMERIC)"
+        " ELSE c.requested_min END AS min_value,"
+        " CASE WHEN tw.previous_tw IS NOT NULL"
+        " AND first_time(tw.requested_tw) > c.bucket"
+        " THEN GREATEST(c.requested_max,"
+        " last_val(tw.previous_tw)::NUMERIC)"
+        " ELSE c.requested_max END AS max_value,"
+        " tw.requested_average::NUMERIC * tw.covered_seconds AS weighted_value,"
+        " tw.covered_seconds AS covered_seconds"
     ),
     hour_value_select=(
-        "c.requested_count AS sample_count, c.requested_sum AS value_sum,"
-        " c.requested_sum_squares AS value_sum_squares,"
-        " c.requested_min AS min_value, c.requested_max AS max_value"
+        "c.sample_count AS sample_count, NULL::NUMERIC AS value_sum,"
+        " NULL::NUMERIC AS value_sum_squares,"
+        " CASE WHEN tw.previous_tw IS NOT NULL"
+        " AND first_time(tw.requested_tw) > c.bucket"
+        " THEN LEAST(c.requested_min,"
+        " last_val(tw.previous_tw)::NUMERIC)"
+        " ELSE c.requested_min END AS min_value,"
+        " CASE WHEN tw.previous_tw IS NOT NULL"
+        " AND first_time(tw.requested_tw) > c.bucket"
+        " THEN GREATEST(c.requested_max,"
+        " last_val(tw.previous_tw)::NUMERIC)"
+        " ELSE c.requested_max END AS max_value,"
+        " tw.requested_average::NUMERIC * tw.covered_seconds AS weighted_value,"
+        " tw.covered_seconds AS covered_seconds"
     ),
-    beyond_probe="facts.location = $1",
-    raw_predicate="facts.location = $1",
-    raw_projection="facts.location, facts.cluster, facts.device_name, facts.pid_output",
-    raw_value_select=(
-        "count(*) FILTER (WHERE facts.pid_output::double precision"
-        " >= 0::double precision"
-        " AND facts.pid_output::double precision <= 1::double precision)::BIGINT"
-        " AS sample_count,"
-        " sum((facts.pid_output::double precision"
-        " * 100.0::double precision)::NUMERIC)"
-        " FILTER (WHERE facts.pid_output::double precision >= 0::double precision"
-        " AND facts.pid_output::double precision <= 1::double precision)"
-        " AS value_sum,"
-        " sum((facts.pid_output::double precision"
-        " * 100.0::double precision)::NUMERIC"
-        " * (facts.pid_output::double precision"
-        " * 100.0::double precision)::NUMERIC)"
-        " FILTER (WHERE facts.pid_output::double precision >= 0::double precision"
-        " AND facts.pid_output::double precision <= 1::double precision)"
-        " AS value_sum_squares,"
-        " min((facts.pid_output::double precision"
-        " * 100.0::double precision)::NUMERIC)"
-        " FILTER (WHERE facts.pid_output::double precision >= 0::double precision"
-        " AND facts.pid_output::double precision <= 1::double precision)"
-        " AS min_value,"
-        " max((facts.pid_output::double precision"
-        " * 100.0::double precision)::NUMERIC)"
-        " FILTER (WHERE facts.pid_output::double precision >= 0::double precision"
-        " AND facts.pid_output::double precision <= 1::double precision)"
-        " AS max_value"
+    beyond_probe=(
+        "facts.location = $1"
+        " AND facts.pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION"
+        " AND facts.pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION"
     ),
+    raw_rows_sql="""
+pid_raw_rows AS (
+    SELECT
+        rp.idx,
+        facts.location,
+        facts.cluster,
+        facts.device_name,
+        facts.sample_count,
+        NULL::NUMERIC AS value_sum,
+        NULL::NUMERIC AS value_sum_squares,
+        weighted.min_value,
+        weighted.max_value,
+        TRUE AS present,
+        weighted.weighted_value,
+        weighted.covered_seconds
+    FROM pid_raw_pieces AS rp
+    CROSS JOIN LATERAL (
+        SELECT source.location, source.cluster, source.device_name,
+               count(*)::BIGINT AS sample_count
+        FROM automation_state AS source
+        WHERE source.location = $1
+          AND source."time" >= rp.lo
+          AND source."time" < rp.hi
+        GROUP BY source.location, source.cluster, source.device_name
+        OFFSET 0
+    ) AS facts
+    CROSS JOIN LATERAL (
+        SELECT
+            sum(intervals.percent * intervals.covered_seconds) AS weighted_value,
+            sum(intervals.covered_seconds) AS covered_seconds,
+            min(intervals.percent) AS min_value,
+            max(intervals.percent) AS max_value
+        FROM (
+            SELECT points.percent,
+                   GREATEST(
+                       0::NUMERIC,
+                       EXTRACT(EPOCH FROM (
+                           LEAST(rp.hi, points.next_time)
+                           - GREATEST(rp.lo, points.sample_time)
+                       ))::NUMERIC
+                   ) AS covered_seconds
+            FROM (
+                SELECT samples.sample_time,
+                       samples.percent,
+                       lead(samples.sample_time, 1, rp.hi)
+                           OVER (ORDER BY samples.sample_time) AS next_time
+                FROM (
+                    (
+                        SELECT previous."time" AS sample_time,
+                               ((previous.pid_output * 100::REAL)::DOUBLE PRECISION)::NUMERIC AS percent
+                        FROM automation_state AS previous
+                        WHERE previous.location = facts.location
+                          AND previous.cluster = facts.cluster
+                          AND previous.device_name = facts.device_name
+                          AND previous."time" < rp.lo
+                          AND previous.pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
+                          AND previous.pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION
+                        ORDER BY previous."time" DESC
+                        LIMIT 1
+                    )
+                    UNION ALL
+                    (
+                        SELECT current_point."time" AS sample_time,
+                               ((current_point.pid_output * 100::REAL)::DOUBLE PRECISION)::NUMERIC AS percent
+                        FROM automation_state AS current_point
+                        WHERE current_point.location = facts.location
+                          AND current_point.cluster = facts.cluster
+                          AND current_point.device_name = facts.device_name
+                          AND current_point."time" >= rp.lo
+                          AND current_point."time" < rp.hi
+                          AND current_point.pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
+                          AND current_point.pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION
+                    )
+                ) AS samples
+            ) AS points
+        ) AS intervals
+        WHERE intervals.covered_seconds > 0
+    ) AS weighted
+    WHERE weighted.covered_seconds > 0
+),
+""",
 )
-
 CONTROL_OVERVIEW_STATEMENT: Final[str] = (
     "WITH "
     + _ANGLES
@@ -910,7 +1074,9 @@ final AS (
         NULL::NUMERIC AS value_sum_squares,
         NULL::NUMERIC AS min_value,
         NULL::NUMERIC AS max_value,
-        NULL::BOOLEAN AS present
+        NULL::BOOLEAN AS present,
+        NULL::NUMERIC AS weighted_value,
+        NULL::NUMERIC AS covered_seconds
     FROM guard
     UNION ALL
     SELECT
@@ -929,7 +1095,9 @@ final AS (
         l.value_sum_squares,
         l.min_value,
         l.max_value,
-        l.present
+        l.present,
+        l.weighted_value,
+        l.covered_seconds
     FROM light_merged AS l
     UNION ALL
     SELECT
@@ -948,7 +1116,9 @@ final AS (
         p.value_sum_squares,
         p.min_value,
         p.max_value,
-        p.present
+        p.present,
+        p.weighted_value,
+        p.covered_seconds
     FROM pid_merged AS p
 )
 SELECT
@@ -1003,7 +1173,9 @@ final AS (
         NULL::NUMERIC AS value_sum_squares,
         NULL::NUMERIC AS min_value,
         NULL::NUMERIC AS max_value,
-        NULL::BOOLEAN AS present
+        NULL::BOOLEAN AS present,
+        NULL::NUMERIC AS weighted_value,
+        NULL::NUMERIC AS covered_seconds
     FROM guard
     UNION ALL
     SELECT
@@ -1022,7 +1194,9 @@ final AS (
         merged.value_sum_squares,
         merged.min_value,
         merged.max_value,
-        merged.present
+        merged.present,
+        merged.weighted_value,
+        merged.covered_seconds
     FROM {family}_merged AS merged
 )
 SELECT

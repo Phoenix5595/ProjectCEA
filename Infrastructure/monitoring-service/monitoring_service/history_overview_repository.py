@@ -1,23 +1,22 @@
 """Bounded all-history monitoring overviews with exact source coverage gates.
 
-``HistoryOverviewRepository`` serves the fixed-range all-history sensor and
-control summaries defined by ``history_overview_models``. Each fetch is one
-read-only statement whose own coverage/invalidation/watermark guards share
-the row snapshot; a false guard means the exact 503 message
-``history overview aggregate coverage is unavailable`` and nothing is
-modeled. Contributions merge NUMERIC sufficient statistics across the
-daily/hourly/raw tiers without prorating or double counting, relay durations
-merge integer microseconds so on + off + unknown equals the exact bucket
-elapsed time, and buckets without recorded owner time are honest unknown
-time, never fabricated state.
+``HistoryOverviewRepository`` serves fixed-range sensor and control summaries
+from one read-only statement whose coverage/invalidation/watermark guards share
+the row snapshot. Sensor and light contributions merge NUMERIC sufficient
+statistics across daily/hourly/raw tiers without prorating or double counting.
+Requested PID spans merge time-weighted values by covered seconds rather than
+sample count. Relay durations merge integer microseconds so on + off + unknown
+equals exact bucket elapsed time; buckets without recorded owner time are
+honest unknown time, never fabricated state.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, localcontext
 from typing import Final, Protocol, final
 
 import asyncpg
@@ -61,19 +60,16 @@ from monitoring_service.sensor_models import (
     resolve_room_metadata,
 )
 from monitoring_service.sensor_rows import node_mapping_args, unit_families
+from shared.history_availability import local_history_scope
+from shared.history_summary import SummaryState, decimal, exact_add, float_or_none
 
 _MICROSCALE: Final[Decimal] = Decimal(1_000_000)
 
-
-from shared.history_availability import local_history_scope
-from shared.history_summary import SummaryState, decimal, float_or_none
 
 class _OverviewDatabase(Protocol):
     async def fetch(
         self, query: str, *args: str | int | float | datetime | timedelta
     ) -> list[asyncpg.Record]: ...
-
-
 
 
 @final
@@ -298,14 +294,77 @@ def _sensor_statistics(
     )
 
 
+@dataclass(slots=True)
+class _TimeWeightedState:
+    """Merge disjoint PID spans by their covered time, retaining row counts."""
+
+    count: int = 0
+    weighted_value: Decimal = Decimal(0)
+    covered_seconds: Decimal = Decimal(0)
+    minimum: Decimal | None = None
+    maximum: Decimal | None = None
+
+    def apply(self, record: Mapping[str, object]) -> None:
+        count = record.get("sample_count")
+        if count is not None:
+            if type(count) is not int:
+                raise TypeError("summary sample_count must be an integer")
+            self.count += count
+        weighted_value = record.get("weighted_value")
+        if weighted_value is not None:
+            self.weighted_value = exact_add(self.weighted_value, decimal(weighted_value))
+        covered_seconds = record.get("covered_seconds")
+        if covered_seconds is not None:
+            self.covered_seconds = exact_add(self.covered_seconds, decimal(covered_seconds))
+        minimum = record.get("min_value")
+        if minimum is not None:
+            value = decimal(minimum)
+            self.minimum = value if self.minimum is None else min(self.minimum, value)
+        maximum = record.get("max_value")
+        if maximum is not None:
+            value = decimal(maximum)
+            self.maximum = value if self.maximum is None else max(self.maximum, value)
+
+    @property
+    def average_decimal(self) -> Decimal | None:
+        if self.covered_seconds == 0:
+            return None
+        with localcontext() as context:
+            context.prec = max(
+                28,
+                len(self.weighted_value.as_tuple().digits)
+                + len(self.covered_seconds.as_tuple().digits)
+                + 16,
+            )
+            return self.weighted_value / self.covered_seconds
+
+
+def _time_weighted_overview_point(
+    state: _TimeWeightedState, bound: tuple[datetime, datetime, bool]
+) -> HistoryOverviewPoint:
+    """Materialize one PID overview point from disjoint covered spans."""
+    return HistoryOverviewPoint(
+        start=bound[0],
+        end=bound[1],
+        average=float_or_none(state.average_decimal),
+        minimum=float_or_none(state.minimum),
+        maximum=float_or_none(state.maximum),
+        sample_count=state.count,
+        partial=bound[2],
+    )
+
+
 def _control_series_groups(
     rows: Sequence[asyncpg.Record],
     bounds: Sequence[tuple[datetime, datetime, bool]],
 ) -> tuple[tuple[HistoryOverviewControlSeries, ...], tuple[HistoryOverviewControlSeries, ...]]:
-    """Build the lights and requested_pid series from one merged snapshot."""
-    grouped: defaultdict[tuple[str, str, str, str], defaultdict[int, SummaryState]] = defaultdict(
-        lambda: defaultdict(SummaryState)
-    )
+    """Build lights and requested-PID series from the same merged snapshot."""
+    light_grouped: defaultdict[
+        tuple[str, str, str, str], defaultdict[int, SummaryState]
+    ] = defaultdict(lambda: defaultdict(SummaryState))
+    pid_grouped: defaultdict[
+        tuple[str, str, str, str], defaultdict[int, _TimeWeightedState]
+    ] = defaultdict(lambda: defaultdict(_TimeWeightedState))
     for record in rows:
         identity = (
             record["family"],
@@ -313,22 +372,45 @@ def _control_series_groups(
             record["cluster"],
             record["device_name"],
         )
-        grouped[identity][int(record["idx"])].apply(record)
+        bucket_index = int(record["idx"])
+        if record["family"] == "light":
+            light_grouped[identity][bucket_index].apply(record)
+        else:
+            pid_grouped[identity][bucket_index].apply(record)
+
     lights: list[HistoryOverviewControlSeries] = []
-    requested_pid: list[HistoryOverviewControlSeries] = []
-    for identity in sorted(grouped):
-        family, location, cluster, device_name = identity
+    for identity in sorted(light_grouped):
+        _, location, cluster, device_name = identity
         points = tuple(
-            _overview_point(grouped[identity].get(index, SummaryState()), bound)
+            _overview_point(light_grouped[identity].get(index, SummaryState()), bound)
             for index, bound in enumerate(bounds)
         )
-        series = HistoryOverviewControlSeries(
-            location=location, cluster=cluster, device_name=device_name, points=points
+        lights.append(
+            HistoryOverviewControlSeries(
+                location=location,
+                cluster=cluster,
+                device_name=device_name,
+                points=points,
+            )
         )
-        if family == "light":
-            lights.append(series)
-        else:
-            requested_pid.append(series)
+
+    requested_pid: list[HistoryOverviewControlSeries] = []
+    for identity in sorted(pid_grouped):
+        _, location, cluster, device_name = identity
+        points = tuple(
+            _time_weighted_overview_point(
+                pid_grouped[identity].get(index, _TimeWeightedState()), bound
+            )
+            for index, bound in enumerate(bounds)
+        )
+        requested_pid.append(
+            HistoryOverviewControlSeries(
+                location=location,
+                cluster=cluster,
+                device_name=device_name,
+                points=points,
+            )
+        )
     return tuple(lights), tuple(requested_pid)
 
 

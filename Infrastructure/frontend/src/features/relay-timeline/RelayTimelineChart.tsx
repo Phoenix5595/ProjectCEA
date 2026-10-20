@@ -88,40 +88,19 @@ function localTimestamp(instant: number): string {
   return new Date(instant).toLocaleString(undefined, { timeZone: 'America/Toronto' })
 }
 
-/**
- * Trace one symmetric requested-output bulge for the segment's per-edge
- * amplitudes. The primary curve and the aggregate min/max envelope reuse the
- * exact same geometry: percent -> half-height amplitude around the lane
- * center on both sides.
- */
-function traceRequestedBulge(
+/** Trace one symmetric LOCF step for a segment's requested output. */
+function traceRequestedStep(
   context: CanvasRenderingContext2D,
   left: number,
   right: number,
   centerY: number,
-  startAmplitude: number,
-  endAmplitude: number
+  amplitude: number
 ): void {
-  const controlOffset = (right - left) / 3
   context.moveTo(left, centerY)
-  context.lineTo(left, centerY - startAmplitude)
-  context.bezierCurveTo(
-    left + controlOffset,
-    centerY - startAmplitude,
-    right - controlOffset,
-    centerY - endAmplitude,
-    right,
-    centerY - endAmplitude
-  )
-  context.lineTo(right, centerY + endAmplitude)
-  context.bezierCurveTo(
-    right - controlOffset,
-    centerY + endAmplitude,
-    left + controlOffset,
-    centerY + startAmplitude,
-    left,
-    centerY + startAmplitude
-  )
+  context.lineTo(left, centerY - amplitude)
+  context.lineTo(right, centerY - amplitude)
+  context.lineTo(right, centerY + amplitude)
+  context.lineTo(left, centerY + amplitude)
   context.closePath()
 }
 
@@ -219,8 +198,6 @@ function drawLaneTimeline(plot: uPlot, lanes: readonly RelayTimelineChartLane[])
     for (let index = 0; index < outputs.length; index += 1) {
       const output = outputs[index]
       if (output === undefined) continue
-      const next = outputs[index + 1]
-      const hasNextSample = next !== undefined && output.end === next.start
       const visibleStart = Math.max(output.start, rangeMin * 1000)
       const visibleEnd = Math.min(output.end, rangeMax * 1000)
       const left = xPosition(visibleStart)
@@ -236,37 +213,19 @@ function drawLaneTimeline(plot: uPlot, lanes: readonly RelayTimelineChartLane[])
       if (extrema !== null && extrema.min < extrema.max) {
         ctx.fillStyle = 'rgba(56, 189, 248, 0.18)'
         ctx.beginPath()
-        traceRequestedBulge(
-          ctx,
-          left,
-          right,
-          centerY,
-          maxAmplitude * (extrema.max / 100),
-          maxAmplitude * (extrema.max / 100)
-        )
-        traceRequestedBulge(
-          ctx,
-          left,
-          right,
-          centerY,
-          maxAmplitude * (extrema.min / 100),
-          maxAmplitude * (extrema.min / 100)
-        )
+        traceRequestedStep(ctx, left, right, centerY, maxAmplitude * (extrema.max / 100))
+        traceRequestedStep(ctx, left, right, centerY, maxAmplitude * (extrema.min / 100))
         ctx.fill('evenodd')
       }
 
-      const startPercent =
+      const requestedPercent =
         requestedOutputAt(outputs, visibleStart)?.percent ?? output.requestedPercent
-      const endPercent =
-        requestedOutputAt(outputs, visibleEnd)?.percent ??
-        (hasNextSample ? next.requestedPercent : output.requestedPercent)
-      if (startPercent <= 0 && endPercent <= 0) continue
-      const startAmplitude = maxAmplitude * (startPercent / 100)
-      const endAmplitude = maxAmplitude * (endPercent / 100)
+      if (requestedPercent <= 0) continue
+      const amplitude = maxAmplitude * (requestedPercent / 100)
 
       ctx.fillStyle = output.aggregated ? 'rgba(56, 189, 248, 0.62)' : 'rgba(14, 165, 233, 0.72)'
       ctx.beginPath()
-      traceRequestedBulge(ctx, left, right, centerY, startAmplitude, endAmplitude)
+      traceRequestedStep(ctx, left, right, centerY, amplitude)
       ctx.fill()
     }
 
@@ -573,7 +532,7 @@ export const RelayTimelineChart = forwardRef<RelayTimelineChartHandle, RelayTime
           <span className="text-xs text-text-muted">
             {lanes.some(lane => lane.preview)
               ? 'Illustrative synthetic preview; no relay observations are being shown.'
-              : 'Smooth symmetric curve interpolates requested PID samples; gaps remain broken. Aggregated buckets also show their recorded min/max range. Output is not measured load.'}
+              : 'Requested PID output holds each sample until the next; gaps remain broken. Aggregated buckets also show their recorded min/max range. Output is not measured load.'}
           </span>
         </div>
 
@@ -687,7 +646,7 @@ export const RelayTimelineChart = forwardRef<RelayTimelineChartHandle, RelayTime
                         </span>
                       )}
                       <span className="block text-text-muted">
-                        {selectedOutput.interpolated ? 'Smoothed' : 'Sample'} ·{' '}
+                        {selectedOutput.held ? 'Held' : 'Sample'} ·{' '}
                         {selectedLane.preview
                           ? 'synthetic only'
                           : formatRequestedResolution(selectedOutput.segment)}

@@ -66,10 +66,10 @@ export interface RequestedOutputSegment {
 export interface RequestedOutputAt {
   readonly segment: RequestedOutputSegment
   readonly percent: number
-  readonly interpolated: boolean
+  readonly held: boolean
 }
 
-/** Smoothly interpolate adjacent sampled PID values without bridging data gaps. */
+/** Return the most recent PID sample without bridging data gaps. */
 export function requestedOutputAt(
   segments: readonly RequestedOutputSegment[],
   instant: number
@@ -88,18 +88,10 @@ export function requestedOutputAt(
       low = middle + 1
       continue
     }
-
-    const next = segments[middle + 1]
-    if (next === undefined || segment.end !== next.start || segment.end <= segment.start) {
-      return { segment, percent: segment.requestedPercent, interpolated: false }
-    }
-    const progress = (instant - segment.start) / (segment.end - segment.start)
-    const eased = progress * progress * (3 - 2 * progress)
     return {
       segment,
-      percent:
-        segment.requestedPercent + (next.requestedPercent - segment.requestedPercent) * eased,
-      interpolated: next.requestedPercent !== segment.requestedPercent && progress > 0,
+      percent: segment.requestedPercent,
+      held: instant > segment.start,
     }
   }
   return null

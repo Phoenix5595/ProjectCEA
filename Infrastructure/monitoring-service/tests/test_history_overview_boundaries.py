@@ -1,6 +1,7 @@
 """Consumer-visible display budgets, clipped edges and nullable summary invariants."""
 
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 
@@ -9,6 +10,7 @@ from monitoring_service.history_overview_models import (
     HistoryOverviewPoint,
     MonitoringValidationError,
 )
+from monitoring_service.history_overview_repository import _control_series_groups
 from monitoring_service.history_overview_sql import SENSOR_OVERVIEW_STATEMENT
 
 
@@ -79,3 +81,58 @@ def test_zero_sample_summary_cannot_fabricate_statistics(average, minimum, maxim
             minimum=minimum,
             maximum=maximum,
         )
+
+
+def test_requested_pid_spans_merge_by_covered_seconds_not_sample_count():
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    end = start + timedelta(minutes=1)
+    identity = {
+        "family": "pid",
+        "idx": 0,
+        "location": "Flower Room",
+        "cluster": "main",
+        "device_name": "flower_heater",
+        "value_sum": None,
+        "value_sum_squares": None,
+        "present": True,
+    }
+    rows = [
+        {
+            **identity,
+            "sample_count": 1,
+            "min_value": Decimal("20"),
+            "max_value": Decimal("20"),
+            "weighted_value": Decimal("200"),
+            "covered_seconds": Decimal("10"),
+        },
+        {
+            **identity,
+            "sample_count": 1,
+            "min_value": Decimal("80"),
+            "max_value": Decimal("80"),
+            "weighted_value": Decimal("4000"),
+            "covered_seconds": Decimal("50"),
+        },
+    ]
+
+    lights, requested_pid = _control_series_groups(rows, ((start, end, False),))
+
+    assert lights == ()
+    assert requested_pid[0].points[0].sample_count == 2
+    assert requested_pid[0].points[0].average == 70.0
+    assert requested_pid[0].points[0].minimum == 20.0
+    assert requested_pid[0].points[0].maximum == 80.0
+
+
+def test_single_source_row_can_have_a_predecessor_weighted_average():
+    point = HistoryOverviewPoint(
+        start=datetime(2026, 1, 1, tzinfo=UTC),
+        end=datetime(2026, 1, 1, 0, 1, tzinfo=UTC),
+        sample_count=1,
+        partial=False,
+        average=70,
+        minimum=20,
+        maximum=80,
+    )
+
+    assert point.sample_count == 1

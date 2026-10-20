@@ -265,6 +265,8 @@ FROM effective_setpoints
 GROUP BY bucket, location, cluster, device_name, mode
 WITH NO DATA;
 
+-- For these change-only aggregates, sample_count counts automation_state
+-- rows in the bucket; the field-specific counts count non-NULL observations.
 CREATE MATERIALIZED VIEW IF NOT EXISTS monitoring_automation_state_1min
 WITH (timescaledb.continuous, timescaledb.materialized_only = true) AS
 SELECT

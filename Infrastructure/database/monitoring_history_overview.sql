@@ -1,4 +1,12 @@
 \set ON_ERROR_STOP on
+\if :{?monitoring_requested_pid_time_weighted}
+\else
+    \if :{?monitoring_time_rename_migration}
+        \set monitoring_requested_pid_time_weighted false
+    \else
+        \set monitoring_requested_pid_time_weighted true
+    \endif
+\endif
 -- Standalone operator-only preparation of mergeable hourly/daily summary
 -- SOURCES for the bounded all-history monitoring overviews. Not run by regular
 -- deploys, startup, or any service lifespan. The approved Phase 4 downtime
@@ -21,21 +29,17 @@
 --     materialization; overview readers must cross-check it against native
 --     invalidation/watermark state, including the hourly ancestors of the
 --     daily views.
---   * Six materialized-only continuous aggregates carrying NUMERIC mergeable
---     sufficient statistics (identity first, then counts, sums, squares,
---     minima/maxima, last_observed_at):
---       monitoring_measurement_1hour/1day  grouped by (sensor_id),
---       monitoring_light_intensity_1hour/1day and
---         monitoring_requested_pid_1hour/1day grouped by
---         (location, cluster, device_name).
---     Hour/day buckets are aligned on UTC boundaries (the TIMESTAMPTZ
---     time_bucket default), each daily aggregate rolls up its hourly parent,
---     and summed counts are cast back to BIGINT so counts stay mergeable.
---     The light source applies the exact recorded-light predicate of the
---     detailed light query, and requested samples are normalized exactly like
---     `_requested_percent`: a raw REAL fraction counts iff finite and
---     0 <= pid_output <= 1, contributing pid_output::DOUBLE PRECISION * 100
---     stored as NUMERIC; invalid/NULL values are never requested samples.
+--   * Six materialized-only continuous aggregates grouped by their stable
+--     identity: measurement 1hour/1day, light intensity 1hour/1day, and
+--     requested PID 1hour/1day.
+--     Measurement and light views carry NUMERIC mergeable counts, sums,
+--     squared sums, extrema and last_observed_at. The requested-PID views
+--     retain source-row sample_count, extrema and last_observed_at plus a
+--     Toolkit TimeWeightSummary using LOCF over valid 0..1 PID fractions.
+--     Their daily summary is rollup(hourly.requested_tw), not an average of
+--     hourly averages. Hour/day buckets use UTC boundaries and daily views
+--     roll up their hourly parents. The light source applies the exact
+--     recorded-light predicate of the detailed light query.
 --   * One-bucket transactions per aggregate refresh policy, created PAUSED
 --     (scheduled => false) with max_runtime 60 seconds, max_retries 0,
 --     buckets_per_batch 1. Hourly policies finish pending batches within that
@@ -493,13 +497,54 @@ FROM monitoring_light_intensity_1hour AS hourly
 GROUP BY 1, hourly.location, hourly.cluster, hourly.device_name
 WITH NO DATA;
 
--- Requested PID sources summarize the recorded requested-fraction samples
--- with the exact `_requested_percent` semantics: a raw REAL value counts
--- exactly once iff finite and inside 0..1, its recorded percent is
--- pid_output::DOUBLE PRECISION * 100 stored as NUMERIC statistics, and rows
--- without a valid requested output stay part of sample_count but never
--- contribute requested samples. Relay state, duty or power are never derived
--- from these values.
+-- Requested PID summaries preserve the per-bucket row count, value extrema
+-- and last observation. Phase 5's default uses LOCF time-weight summaries;
+-- Phase 4's in-flight canonical replay keeps the legacy shape until 0008.
+\if :monitoring_requested_pid_time_weighted
+CREATE EXTENSION IF NOT EXISTS timescaledb_toolkit;
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS monitoring_requested_pid_1hour
+WITH (timescaledb.continuous, timescaledb.materialized_only = true) AS
+SELECT
+    time_bucket(INTERVAL '1 hour', "time") AS bucket,
+    location,
+    cluster,
+    device_name,
+    count(*) AS sample_count,
+    time_weight(
+        'LOCF',
+        "time",
+        -- Scale in REAL before Toolkit's DOUBLE PRECISION input conversion.
+        pid_output * 100::REAL
+    ) FILTER (WHERE pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
+              AND pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION) AS requested_tw,
+    min((pid_output::DOUBLE PRECISION * 100.0::DOUBLE PRECISION)::NUMERIC)
+        FILTER (WHERE pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
+                AND pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION) AS requested_min,
+    max((pid_output::DOUBLE PRECISION * 100.0::DOUBLE PRECISION)::NUMERIC)
+        FILTER (WHERE pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
+                AND pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION) AS requested_max,
+    max("time") AS last_observed_at
+FROM automation_state
+GROUP BY bucket, location, cluster, device_name
+WITH NO DATA;
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS monitoring_requested_pid_1day
+WITH (timescaledb.continuous, timescaledb.materialized_only = true) AS
+SELECT
+    time_bucket(INTERVAL '1 day', hourly.bucket) AS bucket,
+    hourly.location,
+    hourly.cluster,
+    hourly.device_name,
+    sum(hourly.sample_count)::BIGINT AS sample_count,
+    rollup(hourly.requested_tw) AS requested_tw,
+    min(hourly.requested_min) AS requested_min,
+    max(hourly.requested_max) AS requested_max,
+    max(hourly.last_observed_at) AS last_observed_at
+FROM monitoring_requested_pid_1hour AS hourly
+GROUP BY 1, hourly.location, hourly.cluster, hourly.device_name
+WITH NO DATA;
+\else
 CREATE MATERIALIZED VIEW IF NOT EXISTS monitoring_requested_pid_1hour
 WITH (timescaledb.continuous, timescaledb.materialized_only = true) AS
 SELECT
@@ -545,6 +590,7 @@ SELECT
 FROM monitoring_requested_pid_1hour AS hourly
 GROUP BY 1, hourly.location, hourly.cluster, hourly.device_name
 WITH NO DATA;
+\endif
 
 -- ------------------------------------------------------------------ §7: exact exported source contracts
 DO $overview_source_columns$
@@ -579,24 +625,50 @@ BEGIN
         ARRAY['timestamp with time zone', 'text', 'text', 'text', 'bigint',
               'numeric', 'numeric', 'numeric', 'numeric', 'timestamp with time zone']::TEXT[]
     );
-    PERFORM monitoring_assert_relation_columns(
-        'monitoring_requested_pid_1hour',
-        ARRAY['bucket', 'location', 'cluster', 'device_name', 'sample_count',
-              'requested_count', 'requested_sum', 'requested_sum_squares',
-              'requested_min', 'requested_max', 'last_observed_at']::TEXT[],
-        ARRAY['timestamp with time zone', 'text', 'text', 'text', 'bigint', 'bigint',
-              'numeric', 'numeric', 'numeric', 'numeric',
-              'timestamp with time zone']::TEXT[]
-    );
-    PERFORM monitoring_assert_relation_columns(
-        'monitoring_requested_pid_1day',
-        ARRAY['bucket', 'location', 'cluster', 'device_name', 'sample_count',
-              'requested_count', 'requested_sum', 'requested_sum_squares',
-              'requested_min', 'requested_max', 'last_observed_at']::TEXT[],
-        ARRAY['timestamp with time zone', 'text', 'text', 'text', 'bigint', 'bigint',
-              'numeric', 'numeric', 'numeric', 'numeric',
-              'timestamp with time zone']::TEXT[]
-    );
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'monitoring_requested_pid_1hour'
+          AND column_name = 'requested_tw'
+    ) THEN
+        PERFORM monitoring_assert_relation_columns(
+            'monitoring_requested_pid_1hour',
+            ARRAY['bucket', 'location', 'cluster', 'device_name', 'sample_count',
+                  'requested_tw', 'requested_min', 'requested_max',
+                  'last_observed_at']::TEXT[],
+            ARRAY['timestamp with time zone', 'text', 'text', 'text', 'bigint',
+                  'USER-DEFINED', 'numeric', 'numeric',
+                  'timestamp with time zone']::TEXT[]
+        );
+        PERFORM monitoring_assert_relation_columns(
+            'monitoring_requested_pid_1day',
+            ARRAY['bucket', 'location', 'cluster', 'device_name', 'sample_count',
+                  'requested_tw', 'requested_min', 'requested_max',
+                  'last_observed_at']::TEXT[],
+            ARRAY['timestamp with time zone', 'text', 'text', 'text', 'bigint',
+                  'USER-DEFINED', 'numeric', 'numeric',
+                  'timestamp with time zone']::TEXT[]
+        );
+    ELSE
+        PERFORM monitoring_assert_relation_columns(
+            'monitoring_requested_pid_1hour',
+            ARRAY['bucket', 'location', 'cluster', 'device_name', 'sample_count',
+                  'requested_count', 'requested_sum', 'requested_sum_squares',
+                  'requested_min', 'requested_max', 'last_observed_at']::TEXT[],
+            ARRAY['timestamp with time zone', 'text', 'text', 'text', 'bigint', 'bigint',
+                  'numeric', 'numeric', 'numeric', 'numeric',
+                  'timestamp with time zone']::TEXT[]
+        );
+        PERFORM monitoring_assert_relation_columns(
+            'monitoring_requested_pid_1day',
+            ARRAY['bucket', 'location', 'cluster', 'device_name', 'sample_count',
+                  'requested_count', 'requested_sum', 'requested_sum_squares',
+                  'requested_min', 'requested_max', 'last_observed_at']::TEXT[],
+            ARRAY['timestamp with time zone', 'text', 'text', 'text', 'bigint', 'bigint',
+                  'numeric', 'numeric', 'numeric', 'numeric',
+                  'timestamp with time zone']::TEXT[]
+        );
+    END IF;
 END
 $overview_source_columns$;
 
@@ -1247,99 +1319,52 @@ BEGIN
                     );
                 ELSE  -- requested_pid
                     v_hour_parity := NOT EXISTS (
-                        (SELECT hour.bucket, hour.location, hour.cluster,
-                                hour.device_name, hour.sample_count,
-                                hour.requested_count, hour.requested_sum,
-                                hour.requested_sum_squares, hour.requested_min,
-                                hour.requested_max, hour.last_observed_at
-                           FROM public.monitoring_requested_pid_1hour AS hour
-                          WHERE hour.bucket >= v_hour_front
-                            AND hour.bucket < v_hour_cand_end
-                         EXCEPT ALL
-                         SELECT hour_raw.bucket, hour_raw.location,
-                                hour_raw.cluster, hour_raw.device_name,
-                                hour_raw.sample_count, hour_raw.requested_count,
-                                hour_raw.requested_sum,
-                                hour_raw.requested_sum_squares,
-                                hour_raw.requested_min, hour_raw.requested_max,
-                                hour_raw.last_observed_at
-                           FROM (
-                               SELECT time_bucket(INTERVAL '1 hour', "time") AS bucket,
-                                      location, cluster, device_name,
-                                      count(*) AS sample_count,
-                                      count(pid_output) FILTER (
-                                          WHERE pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
-                                            AND pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION) AS requested_count,
-                                      sum((pid_output::DOUBLE PRECISION * 100.0::DOUBLE PRECISION)::NUMERIC)
-                                          FILTER (
-                                          WHERE pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
-                                            AND pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION) AS requested_sum,
-                                      sum((pid_output::DOUBLE PRECISION * 100.0::DOUBLE PRECISION)::NUMERIC
-                                          * (pid_output::DOUBLE PRECISION * 100.0::DOUBLE PRECISION)::NUMERIC)
-                                          FILTER (
-                                          WHERE pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
-                                            AND pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION) AS requested_sum_squares,
-                                      min((pid_output::DOUBLE PRECISION * 100.0::DOUBLE PRECISION)::NUMERIC)
-                                          FILTER (
-                                          WHERE pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
-                                            AND pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION) AS requested_min,
-                                      max((pid_output::DOUBLE PRECISION * 100.0::DOUBLE PRECISION)::NUMERIC)
-                                          FILTER (
-                                          WHERE pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
-                                            AND pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION) AS requested_max,
-                                      max("time") AS last_observed_at
-                                 FROM public.automation_state
-                                WHERE "time" >= v_hour_front
-                                  AND "time" < v_hour_cand_end
-                                GROUP BY 1, 2, 3, 4
-                           ) AS hour_raw)
-                        UNION ALL
-                        (SELECT hour_raw.bucket, hour_raw.location,
-                                hour_raw.cluster, hour_raw.device_name,
-                                hour_raw.sample_count, hour_raw.requested_count,
-                                hour_raw.requested_sum,
-                                hour_raw.requested_sum_squares,
-                                hour_raw.requested_min, hour_raw.requested_max,
-                                hour_raw.last_observed_at
-                           FROM (
-                               SELECT time_bucket(INTERVAL '1 hour', "time") AS bucket,
-                                      location, cluster, device_name,
-                                      count(*) AS sample_count,
-                                      count(pid_output) FILTER (
-                                          WHERE pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
-                                            AND pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION) AS requested_count,
-                                      sum((pid_output::DOUBLE PRECISION * 100.0::DOUBLE PRECISION)::NUMERIC)
-                                          FILTER (
-                                          WHERE pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
-                                            AND pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION) AS requested_sum,
-                                      sum((pid_output::DOUBLE PRECISION * 100.0::DOUBLE PRECISION)::NUMERIC
-                                          * (pid_output::DOUBLE PRECISION * 100.0::DOUBLE PRECISION)::NUMERIC)
-                                          FILTER (
-                                          WHERE pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
-                                            AND pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION) AS requested_sum_squares,
-                                      min((pid_output::DOUBLE PRECISION * 100.0::DOUBLE PRECISION)::NUMERIC)
-                                          FILTER (
-                                          WHERE pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
-                                            AND pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION) AS requested_min,
-                                      max((pid_output::DOUBLE PRECISION * 100.0::DOUBLE PRECISION)::NUMERIC)
-                                          FILTER (
-                                          WHERE pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
-                                            AND pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION) AS requested_max,
-                                      max("time") AS last_observed_at
-                                 FROM public.automation_state
-                                WHERE "time" >= v_hour_front
-                                  AND "time" < v_hour_cand_end
-                                GROUP BY 1, 2, 3, 4
-                           ) AS hour_raw
-                         EXCEPT ALL
-                         SELECT hour.bucket, hour.location, hour.cluster,
-                                hour.device_name, hour.sample_count,
-                                hour.requested_count, hour.requested_sum,
-                                hour.requested_sum_squares, hour.requested_min,
-                                hour.requested_max, hour.last_observed_at
-                           FROM public.monitoring_requested_pid_1hour AS hour
-                          WHERE hour.bucket >= v_hour_front
-                            AND hour.bucket < v_hour_cand_end)
+                        WITH hour_raw AS (
+                            SELECT time_bucket(INTERVAL '1 hour', "time") AS bucket,
+                                   location, cluster, device_name,
+                                   count(*)::BIGINT AS sample_count,
+                                   min((pid_output::DOUBLE PRECISION
+                                        * 100.0::DOUBLE PRECISION)::NUMERIC)
+                                       FILTER (WHERE pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
+                                               AND pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION) AS requested_min,
+                                   max((pid_output::DOUBLE PRECISION
+                                        * 100.0::DOUBLE PRECISION)::NUMERIC)
+                                       FILTER (WHERE pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
+                                               AND pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION) AS requested_max,
+                                   max("time") AS last_observed_at
+                              FROM public.automation_state
+                             WHERE "time" >= v_hour_front
+                               AND "time" < v_hour_cand_end
+                             GROUP BY 1, 2, 3, 4
+                        ),
+                        differences AS (
+                            (SELECT hour.bucket, hour.location, hour.cluster,
+                                    hour.device_name, hour.sample_count,
+                                    hour.requested_min, hour.requested_max,
+                                    hour.last_observed_at
+                               FROM public.monitoring_requested_pid_1hour AS hour
+                              WHERE hour.bucket >= v_hour_front
+                                AND hour.bucket < v_hour_cand_end
+                             EXCEPT ALL
+                             SELECT bucket, location, cluster, device_name,
+                                    sample_count, requested_min, requested_max,
+                                    last_observed_at
+                               FROM hour_raw)
+                            UNION ALL
+                            (SELECT bucket, location, cluster, device_name,
+                                    sample_count, requested_min, requested_max,
+                                    last_observed_at
+                               FROM hour_raw
+                             EXCEPT ALL
+                             SELECT hour.bucket, hour.location, hour.cluster,
+                                    hour.device_name, hour.sample_count,
+                                    hour.requested_min, hour.requested_max,
+                                    hour.last_observed_at
+                               FROM public.monitoring_requested_pid_1hour AS hour
+                              WHERE hour.bucket >= v_hour_front
+                                AND hour.bucket < v_hour_cand_end)
+                        )
+                        SELECT 1 FROM differences
                     );
                 END IF;
 
@@ -1525,78 +1550,51 @@ BEGIN
                     );
                 ELSE  -- requested_pid
                     v_day_parity := NOT EXISTS (
-                        (SELECT time_bucket(INTERVAL '1 day', day.bucket) AS bucket,
-                                day.location, day.cluster, day.device_name,
-                                sum(day.sample_count)::BIGINT,
-                                sum(day.requested_count)::BIGINT,
-                                sum(day.requested_sum),
-                                sum(day.requested_sum_squares),
-                                min(day.requested_min), max(day.requested_max),
-                                max(day.last_observed_at)
-                           FROM public.monitoring_requested_pid_1day AS day
-                          WHERE day.bucket >= v_day_front
-                            AND day.bucket < v_day_cand_end
-                          GROUP BY 1, 2, 3, 4
-                         EXCEPT ALL
-                         SELECT hour.bucket, hour.location, hour.cluster,
-                                hour.device_name,
-                                sum(hour.sample_count)::BIGINT,
-                                sum(hour.requested_count)::BIGINT,
-                                sum(hour.requested_sum),
-                                sum(hour.requested_sum_squares),
-                                min(hour.requested_min), max(hour.requested_max),
-                                max(hour.last_observed_at)
-                           FROM (
-                               SELECT time_bucket(INTERVAL '1 day', hourly.bucket) AS bucket,
-                                      hourly.location, hourly.cluster,
-                                      hourly.device_name, hourly.sample_count,
-                                      hourly.requested_count,
-                                      hourly.requested_sum,
-                                      hourly.requested_sum_squares,
-                                      hourly.requested_min,
-                                      hourly.requested_max,
-                                      hourly.last_observed_at
-                                 FROM public.monitoring_requested_pid_1hour AS hourly
-                                WHERE hourly.bucket >= v_day_front
-                                  AND hourly.bucket < v_day_cand_end
-                           ) AS hour GROUP BY 1, 2, 3, 4)
-                        UNION ALL
-                        (SELECT hour.bucket, hour.location, hour.cluster,
-                                hour.device_name,
-                                sum(hour.sample_count)::BIGINT,
-                                sum(hour.requested_count)::BIGINT,
-                                sum(hour.requested_sum),
-                                sum(hour.requested_sum_squares),
-                                min(hour.requested_min), max(hour.requested_max),
-                                max(hour.last_observed_at)
-                           FROM (
-                               SELECT time_bucket(INTERVAL '1 day', hourly.bucket) AS bucket,
-                                      hourly.location, hourly.cluster,
-                                      hourly.device_name, hourly.sample_count,
-                                      hourly.requested_count,
-                                      hourly.requested_sum,
-                                      hourly.requested_sum_squares,
-                                      hourly.requested_min,
-                                      hourly.requested_max,
-                                      hourly.last_observed_at
-                                 FROM public.monitoring_requested_pid_1hour AS hourly
-                                WHERE hourly.bucket >= v_day_front
-                                  AND hourly.bucket < v_day_cand_end
-                           ) AS hour
-                          GROUP BY 1, 2, 3, 4
-                         EXCEPT ALL
-                         SELECT time_bucket(INTERVAL '1 day', day.bucket) AS bucket,
-                                day.location, day.cluster, day.device_name,
-                                sum(day.sample_count)::BIGINT,
-                                sum(day.requested_count)::BIGINT,
-                                sum(day.requested_sum),
-                                sum(day.requested_sum_squares),
-                                min(day.requested_min), max(day.requested_max),
-                                max(day.last_observed_at)
-                           FROM public.monitoring_requested_pid_1day AS day
-                          WHERE day.bucket >= v_day_front
-                            AND day.bucket < v_day_cand_end
-                          GROUP BY 1, 2, 3, 4)
+                        WITH hourly_rollup AS (
+                            SELECT time_bucket(INTERVAL '1 day', hourly.bucket) AS bucket,
+                                   hourly.location, hourly.cluster, hourly.device_name,
+                                   sum(hourly.sample_count)::BIGINT AS sample_count,
+                                   min(hourly.requested_min) AS requested_min,
+                                   max(hourly.requested_max) AS requested_max,
+                                   max(hourly.last_observed_at) AS last_observed_at
+                              FROM public.monitoring_requested_pid_1hour AS hourly
+                             WHERE hourly.bucket >= v_day_front
+                               AND hourly.bucket < v_day_cand_end
+                             GROUP BY 1, 2, 3, 4
+                        ),
+                        differences AS (
+                            (SELECT time_bucket(INTERVAL '1 day', day.bucket) AS bucket,
+                                    day.location, day.cluster, day.device_name,
+                                    sum(day.sample_count)::BIGINT AS sample_count,
+                                    min(day.requested_min) AS requested_min,
+                                    max(day.requested_max) AS requested_max,
+                                    max(day.last_observed_at) AS last_observed_at
+                               FROM public.monitoring_requested_pid_1day AS day
+                              WHERE day.bucket >= v_day_front
+                                AND day.bucket < v_day_cand_end
+                              GROUP BY 1, 2, 3, 4
+                             EXCEPT ALL
+                             SELECT bucket, location, cluster, device_name,
+                                    sample_count, requested_min, requested_max,
+                                    last_observed_at
+                               FROM hourly_rollup)
+                            UNION ALL
+                            (SELECT bucket, location, cluster, device_name,
+                                    sample_count, requested_min, requested_max,
+                                    last_observed_at
+                               FROM hourly_rollup
+                             EXCEPT ALL
+                             SELECT time_bucket(INTERVAL '1 day', day.bucket) AS bucket,
+                                    day.location, day.cluster, day.device_name,
+                                    sum(day.sample_count)::BIGINT,
+                                    min(day.requested_min), max(day.requested_max),
+                                    max(day.last_observed_at)
+                               FROM public.monitoring_requested_pid_1day AS day
+                              WHERE day.bucket >= v_day_front
+                                AND day.bucket < v_day_cand_end
+                              GROUP BY 1, 2, 3, 4)
+                        )
+                        SELECT 1 FROM differences
                     );
                 END IF;
 

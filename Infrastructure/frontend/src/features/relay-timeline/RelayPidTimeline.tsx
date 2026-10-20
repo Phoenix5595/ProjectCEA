@@ -564,8 +564,8 @@ function RelayTimelineDetail({
           Relay observations &amp; requested PID output
         </h2>
         <p className="mt-1 text-xs text-text-subtle">
-          Sample-time GPIO facts show physical ON/OFF duration. The centered PID curve smoothly
-          interpolates requested-output samples; it is not measured physical load.
+          Sample-time GPIO facts show physical ON/OFF duration. Requested PID output steps hold
+          each sample until the next; it is not measured physical load.
         </p>
       </div>
       <TimeRangeToolbar

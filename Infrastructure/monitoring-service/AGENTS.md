@@ -48,10 +48,14 @@ deletion are recorded in `archive_availability`; these reads return 409 with
 dataset IDs. Expired nongrow ranges return 410. Current Redis publications
 and latest/predecessor control snapshots never load archives.
 
-Native and archive overview readers share `shared.history_summary.SummaryState`.
-Merge NUMERIC count/sum/squared-sum/extrema before final float presentation;
-never average averages or round source contributions through Python floats.
-The zero-sample nullable and one-sample zero-deviation contracts are unchanged.
+Native and archive overview readers merge NUMERIC count/sum/squared-sum/extrema
+before final float presentation; never average averages or round source
+contributions through Python floats. Requested PID overview spans instead merge
+LOCF weighted values by covered seconds (sum of average × seconds divided by
+total covered seconds); `sample_count` remains the count of source rows.
+Sensor statistics retain zero-sample-nullable and one-sample-zero-deviation
+contracts. A PID point may have one source row and a different LOCF average
+because its carried predecessor can cover part of the bucket.
 
 ## Local checks
 

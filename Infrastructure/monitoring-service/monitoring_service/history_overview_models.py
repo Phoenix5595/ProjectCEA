@@ -134,7 +134,7 @@ class HistoryOverviewRange(FrozenMonitoringModel):
 
 
 class HistoryOverviewPoint(FrozenMonitoringModel):
-    """One aligned overview bucket with nullable sampled statistics."""
+    """One aligned bucket with nullable sampled or time-weighted statistics."""
 
     start: AwareDatetime
     end: AwareDatetime
@@ -167,10 +167,8 @@ class HistoryOverviewPoint(FrozenMonitoringModel):
             raise MonitoringValidationError(
                 "overview point minimum, average and maximum must be ordered"
             )
-        if self.sample_count == 1 and not (self.minimum == self.average == self.maximum):
-            raise MonitoringValidationError(
-                "single-sample overview points must set average, minimum and maximum equally"
-            )
+        # A time-weighted PID average can include a carried predecessor even
+        # when only one source row lies inside this request bucket.
         return self
 
 

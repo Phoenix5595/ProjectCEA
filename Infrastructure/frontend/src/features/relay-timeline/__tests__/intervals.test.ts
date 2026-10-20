@@ -488,7 +488,7 @@ describe('requested PID output step segments', () => {
     })
   })
 
-  it('smoothly connects adjacent samples and preserves the sample values at boundaries', () => {
+  it('renders PID samples step-after and preserves changes at sample boundaries', () => {
     const segments = [
       { start: 0, end: 10, requestedPercent: 20, aggregated: false, intervalSeconds: 10 },
       { start: 10, end: 20, requestedPercent: 80, aggregated: false, intervalSeconds: 10 },
@@ -496,15 +496,15 @@ describe('requested PID output step segments', () => {
 
     expect(requestedOutputAt(segments, 0)).toMatchObject({
       percent: 20,
-      interpolated: false,
+      held: false,
     })
     expect(requestedOutputAt(segments, 5)).toMatchObject({
-      percent: 50,
-      interpolated: true,
+      percent: 20,
+      held: true,
     })
     expect(requestedOutputAt(segments, 10)).toMatchObject({
       percent: 80,
-      interpolated: false,
+      held: false,
     })
   })
 
@@ -516,12 +516,12 @@ describe('requested PID output step segments', () => {
 
     expect(requestedOutputAt(segments, 5)).toMatchObject({
       percent: 25,
-      interpolated: false,
+      held: true,
     })
     expect(requestedOutputAt(segments, 15)).toBeNull()
     expect(requestedOutputAt(segments, 25)).toMatchObject({
       percent: 75,
-      interpolated: false,
+      held: true,
     })
   })
 })
