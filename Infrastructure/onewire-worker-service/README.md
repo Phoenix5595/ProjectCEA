@@ -27,9 +27,9 @@ cat /sys/bus/w1/devices/28-*/temperature
 
 The value is millidegrees Celsius (for example, `23500` = 23.5 °C).
 
-## Configuration
+`onewire_config.yaml` maps each `28-*` device ID shown by `ls /sys/bus/w1/devices/28-*` to a logical sensor name such as `lab_temp` or `water_temperature`. Logical names must match backend/frontend expectations.
 
-Edit `onewire_config.yaml`. Map each `28-*` device ID shown by `ls /sys/bus/w1/devices/28-*` to a logical sensor name such as `lab_temp` or `water_temperature`. Logical names must match the backend/frontend expectations. The file also sets the polling interval.
+Edit `poll_interval_seconds` in Sensor Settings (`GET /api/settings`, `PUT /api/settings/onewire`). The YAML `polling.interval_seconds` remains the fallback when neither the database nor settings cache has a value. Database changes take effect on the next polling loop iteration.
 
 ## Running
 

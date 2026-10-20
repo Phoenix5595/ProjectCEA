@@ -43,6 +43,11 @@ import type {
   ConfigUpdateRequest,
   ConfigUpdateResponse,
   RestartServiceResponse,
+  SettingsResponse,
+  SettingsServiceName,
+  SettingsServiceValues,
+  SettingsUpdateRequest,
+  ServiceSettings,
 } from '../types/systemConfig'
 import { normalizeCalendarEvent } from '../utils/normalizeCalendarEvent'
 
@@ -549,6 +554,19 @@ class ApiClient implements ApiClientCore {
 
   async putConfig(update: ConfigUpdateRequest): Promise<ConfigUpdateResponse> {
     const response = await this.automationClient.put('/api/config', update)
+    return response.data
+  }
+
+  async getSettings(): Promise<SettingsResponse> {
+    const response = await this.automationClient.get('/api/settings')
+    return response.data
+  }
+
+  async putSettings<T extends SettingsServiceName>(
+    service: T,
+    update: SettingsUpdateRequest<T>
+  ): Promise<ServiceSettings<SettingsServiceValues[T]>> {
+    const response = await this.automationClient.put(`/api/settings/${service}`, update)
     return response.data
   }
 

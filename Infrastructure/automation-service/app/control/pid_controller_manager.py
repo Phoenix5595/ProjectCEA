@@ -18,16 +18,15 @@ logger = get_logger(__name__)
 class PIDControllerManager:
     """Manages PID controllers for device control."""
 
-    def __init__(self, database_manager, event_policy: DecisionEventPolicy):
-        """Initialize PID controller manager.
-
-        Args:
-            database_manager: Database manager for PID parameter storage
-        """
+    def __init__(
+        self, database_manager, event_policy: DecisionEventPolicy, config: Any | None = None
+    ):
+        """Initialize PID controller manager."""
         self.database = database_manager
+        self.config = config
         self._pid_controllers: dict[tuple[str, str, str, str], Any] = {}
-        self._autotuners: dict[str, Any] = {}  # Auto-tuner instances per device type
-        # StateManager for fast in-memory PID param access (<1ms reads)
+        self._settings_default_controllers: set[tuple[str, str, str, str]] = set()
+        self._autotuners: dict[str, Any] = {}
         self._state: StateManager = get_state_manager()
         self._event_policy = event_policy
 
@@ -48,14 +47,48 @@ class PIDControllerManager:
         key = (location, cluster, device_name, device_type)
 
         if key not in self._pid_controllers:
-            # Try to create PID controller
             controller = await self._create_pid_controller(
                 location, cluster, device_name, device_type
             )
             if controller:
                 self._pid_controllers[key] = controller
+        controller = self._pid_controllers.get(key)
+        if controller is not None and key in self._settings_default_controllers:
+            pid_params = await self._get_cached_pid_parameters(location, cluster, device_type)
+            if pid_params and pid_params.get("source") != "settings_default":
+                self._settings_default_controllers.discard(key)
+                controller.update_gains(
+                    pid_params.get("kp", 1.0),
+                    pid_params.get("ki", 0.0),
+                    pid_params.get("kd", 0.0),
+                )
+            else:
+                self._refresh_settings_default_controller(controller, device_type)
+        return controller
 
-        return self._pid_controllers.get(key)
+    def _service_pid_defaults(self, device_type: str) -> dict[str, float] | None:
+        get_defaults = getattr(self.config, "get_pid_params_for_device", None)
+        if not callable(get_defaults):
+            return None
+        return get_defaults(device_type)
+
+    def _apply_service_pid_defaults(
+        self, pid_params: dict[str, Any], device_type: str
+    ) -> dict[str, Any]:
+        source = pid_params.get("source")
+        if source != "settings_default" and not (
+            source == "default" and pid_params.get("updated_at") is None
+        ):
+            return pid_params
+        defaults = self._service_pid_defaults(device_type)
+        if defaults is None:
+            return pid_params
+        return {**pid_params, **defaults, "source": "settings_default"}
+
+    def _refresh_settings_default_controller(self, controller: Any, device_type: str) -> None:
+        defaults = self._service_pid_defaults(device_type)
+        if defaults is not None:
+            controller.update_gains(defaults["kp"], defaults["ki"], defaults["kd"])
 
     # Control mode integration
     async def get_control_mode_info(
@@ -220,6 +253,10 @@ class PIDControllerManager:
             if not pid_params:
                 logger.debug(f"No PID parameters found for device_type {device_type}")
                 return None
+            if pid_params.get("source") == "settings_default":
+                self._settings_default_controllers.add(
+                    (location, cluster, device_name, device_type)
+                )
 
             kp = pid_params.get("kp", 1.0)
             ki = pid_params.get("ki", 0.0)
@@ -251,7 +288,7 @@ class PIDControllerManager:
             logger.debug(
                 f"StateManager cache hit for PID params: {location}/{cluster}/{device_type}"
             )
-            return pid_params
+            return self._apply_service_pid_defaults(dict(pid_params), device_type)
 
         # Cache miss - fetch from database
         try:
@@ -259,7 +296,7 @@ class PIDControllerManager:
                 location, cluster, device_type
             )
             if pid_params:
-                # Populate StateManager cache for future reads
+                pid_params = self._apply_service_pid_defaults(pid_params, device_type)
                 await self._state.set_pid_params(
                     location,
                     cluster,
@@ -268,7 +305,7 @@ class PIDControllerManager:
                     pid_params.get("ki", 0.0),
                     pid_params.get("kd", 0.0),
                     binary_hysteresis=pid_params.get("binary_hysteresis"),
-                    source="database",
+                    source=pid_params.get("source", "database"),
                 )
                 logger.debug(
                     f"Populated StateManager cache for PID params: {location}/{cluster}/{device_type}"

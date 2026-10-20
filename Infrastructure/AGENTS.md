@@ -7,7 +7,7 @@
 | cea-backend | 8000 | cea-backend.service | Sensor API, WebSocket |
 | automation-service | 8001 | automation-service.service | Control loop, registry, SPA host |
 | soil-sensor-service | 8002 | soil-sensor-service.service | Modbus soil sensors |
-| weather-service | 8003 | weather-service.service | YUL weather data |
+| weather-service | 8003 | weather-service.service | DB/cache-backed METAR weather data |
 | onewire-worker | 8004 | onewire-worker.service | 1-Wire temperatures |
 | monitoring-service | 8005 | monitoring-service.service | Read-only monitoring API |
 | grow-archive-service | 8006 | grow-archive-service.service | Grow archive storage/lifecycle API |
@@ -63,6 +63,14 @@ automation-service.service
 ```
 
 Source: [`services.yaml`](services.yaml) `start_order`.
+
+## Editable Service Settings
+
+Editable service values are managed through automation-service: inspect them with `GET /api/settings` and update a service with `PUT /api/settings/{service}`.
+
+- Soil polling and discovery intervals (`poll_interval_seconds`, `discovery_interval_seconds`) use the soil sensor service's YAML intervals only as DB/cache fallbacks.
+- The 1-Wire polling interval (`poll_interval_seconds`) is managed there; `onewire_config.yaml` retains the device-ID-to-sensor-name mapping and polling fallback.
+- Weather station (`station_icao`), polling interval (`poll_interval_seconds`), and API URL (`api_url`) are sourced only from DB/cache settings. The weather room/device names are also DB/cache-backed and read-only; weather has no YAML settings file.
 
 ## Child Guidance
 

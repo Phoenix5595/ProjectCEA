@@ -6,12 +6,16 @@ import asyncio
 from contextlib import asynccontextmanager
 from typing import Any
 
+import asyncpg
+
 from fastapi import FastAPI, Response
 from fastapi import status as http_status
 
 from shared.health import all_ok, check_redis_async_client
 from shared.infra_logging import setup_structured_logging
 from shared.lifespan import notify_started, notify_stopping
+from shared.db import create_pool, db_config_from_env
+from shared.service_settings import ServiceSettings
 
 from .background_tasks import BackgroundTasks
 from .config import ConfigLoader
@@ -25,17 +29,30 @@ logger = setup_structured_logging(
 config: ConfigLoader | None = None
 redis_client: RedisClient | None = None
 background_tasks: BackgroundTasks | None = None
+settings_pool: asyncpg.Pool | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global config, redis_client, background_tasks
+    global config, redis_client, background_tasks, settings_pool
     logger.info("Starting onewire-worker...")
     try:
         config = ConfigLoader()
+        settings_pool = await create_pool(
+            db_config_from_env(),
+            application_name="onewire_worker",
+            min_size=0,
+            max_size=2,
+            max_retries=1,
+        )
+        loaded_settings = await ServiceSettings.load(
+            settings_pool, "onewire", fallback=config.get_service_settings_fallback()
+        )
+        config.apply_service_settings(loaded_settings)
+
         redis_client = RedisClient()
         await redis_client.connect()
-        background_tasks = BackgroundTasks(config, redis_client)
+        background_tasks = BackgroundTasks(config, redis_client, settings_pool)
         await background_tasks.start()
         notify_started("onewire-worker", logger)
         yield
@@ -45,6 +62,8 @@ async def lifespan(app: FastAPI):
             await background_tasks.stop()
         if redis_client:
             await redis_client.close()
+        if settings_pool:
+            await settings_pool.close()
         logger.info("onewire-worker stopped")
 
 

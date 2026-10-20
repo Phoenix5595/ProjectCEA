@@ -18,6 +18,11 @@ DEGRADED_TTL_SECONDS = 15
 class ControlLoopMixin:
     """Mixin for the main control loop and failure tracking."""
 
+    def _current_control_interval(self) -> int:
+        config = getattr(self.control_engine, "config", None)
+        get_interval = getattr(config, "get_update_interval", None)
+        return int(get_interval()) if callable(get_interval) else self.update_interval
+
     async def _control_loop(self) -> None:
         """Main control loop - refactored as a worker pattern with fixed-rate scheduling."""
         retry_delay = 1.0
@@ -46,8 +51,8 @@ class ControlLoopMixin:
                         retry_delay = min(retry_delay * 2, max_retry_delay)
                         continue
 
-                # Fixed-rate scheduling: record deadline before execution
-                deadline = time.monotonic() + self.update_interval
+                tick_started = time.monotonic()
+                interval = self._current_control_interval()
 
                 # Run control loop (worker pattern execution)
                 await self.control_engine.run_control_loop()
@@ -58,6 +63,8 @@ class ControlLoopMixin:
                 retry_delay = 1.0
 
                 # Sleep until deadline, or skip if we already exceeded it (tick overrun handling)
+                interval = self._current_control_interval()
+                deadline = tick_started + interval
                 remaining = deadline - time.monotonic()
                 if remaining > 0:
                     await asyncio.sleep(remaining)
@@ -65,18 +72,19 @@ class ControlLoopMixin:
                     # Tick exceeded interval — log warning and catch up immediately
                     logger.warning(
                         f"Control loop tick exceeded interval by {-remaining * 1000:.1f}ms "
-                        f"(interval={self.update_interval}s), skipping sleep to catch up"
+                        f"(interval={interval}s), skipping sleep to catch up"
                     )
 
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 await self._record_control_failure(str(e))
+                interval = self._current_control_interval()
                 # Adaptive backoff: track error time, cap iteration rate at 1/s
                 now = time.monotonic()
                 if (
                     self._last_control_error_time > 0
-                    and now - self._last_control_error_time < self.update_interval
+                    and now - self._last_control_error_time < interval
                 ):
                     # Second+ consecutive error: rate-limit logging
                     self._consecutive_control_errors += 1
@@ -88,9 +96,8 @@ class ControlLoopMixin:
                     # First error or after reset: log at ERROR
                     self._consecutive_control_errors = 1
                     logger.error(f"Error in control loop: {e}", exc_info=True)
-                self._last_control_error_time = now
-                # Prevent tight spin: sleep for update_interval before retry
-                await asyncio.sleep(self.update_interval)
+                # Prevent tight spin using the current live control interval.
+                await asyncio.sleep(interval)
                 continue
 
     async def _record_control_failure(self, reason: str) -> None:

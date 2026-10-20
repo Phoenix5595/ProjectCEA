@@ -131,9 +131,7 @@ async def _update_pid_parameters(
     kd = update.kd if update.kd is not None else (existing["kd"] if existing else None)
 
     # Validate parameters
-    is_valid, error_message, validated = validate_pid_parameters(
-        kp, ki, kd, device_type, config._config
-    )
+    is_valid, error_message, validated = validate_pid_parameters(kp, ki, kd, device_type, config)
 
     if not is_valid:
         raise HTTPException(status_code=400, detail=error_message)

@@ -9,7 +9,6 @@ Sensor data API on port 8000. Serves live values from Redis, historical data fro
 | `/api/sensors/{location}/{cluster}` | `routes/sensors.py` | Historical sensor data |
 | `/api/sensors/{location}/{cluster}/live` | `routes/sensors.py` | Current Redis values |
 | `/api/live/all` | `routes/live.py` | All current sensor values |
-| `/api/config/locations` | `routes/config.py` | Available locations |
 | `/ws/{location}` | `websocket.py` | Real-time sensor stream |
 | `/api/sensors/monitoring/*` | monitoring-service `:8005` | Native monitoring data; separate read-only process and pool |
 

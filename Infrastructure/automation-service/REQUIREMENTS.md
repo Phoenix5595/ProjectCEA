@@ -8,8 +8,9 @@ Local verification runs the automation pure tests against fakes for database, Re
 
 ## Control Loop
 
-- The configured control tick is 1 s (`automation_config.yaml` `control.update_interval`). Startup validation accepts 1–5 s.
+- Control cadence reads the `automation.update_interval` service setting each tick (1–5 s); DB > `/var/lib/projectcea/settings-cache/automation.json` > YAML fallback, with live updates.
 - Each tick captures the current `RuntimeDeviceSnapshot` exactly once.
+- `/api/settings` exposes shared settings/schema and `/api/settings/{service}` persists live updates. `/api/config` and restart metadata are hardware-only.
 - The empty registry is a valid state: startup installs a ready empty snapshot and emits no relay-ON or nonzero DFR command.
 
 ## Device Registry

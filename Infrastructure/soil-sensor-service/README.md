@@ -35,14 +35,14 @@ in `/boot/firmware/config.txt`, then reboot.
 
 ## Configuration
 
-Edit `soil_sensor_config.yaml`:
+Edit `soil_sensor_config.yaml` for hardware-only RS-485 settings:
 
 - `rs485.port` — default `/dev/ttyUSB0`; use `/dev/serial0` for the GPIO UART
 - `rs485.baudrate` — default 9600
-- `polling.interval_seconds` — default 5
-- `polling.discovery_interval_seconds` — default 30
 
-The service auto-discovers sensors on the bus and registers them in the database. Manual entries in the `sensors:` list are optional.
+The polling intervals are editable in Sensor Settings (`GET /api/settings`, `PUT /api/settings/soil`). The YAML `polling.interval_seconds` and `polling.discovery_interval_seconds` values remain fallbacks for when neither the database nor settings cache has a value. Database changes take effect on the next polling or discovery loop iteration.
+
+The service discovers sensors on the bus and registers them in the database. Sensor assignments live in the `sensor_registry` table, not in YAML.
 
 ## Running
 

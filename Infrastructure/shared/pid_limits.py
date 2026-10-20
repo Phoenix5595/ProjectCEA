@@ -24,17 +24,17 @@ class PidLimits(RootModel[dict[str, Any]]):
                 max_key = f"{parameter}_max"
                 min_value = limits.get(min_key)
                 max_value = limits.get(max_key)
-                if isinstance(min_value, (int, float)) and min_value < 0:
+                if isinstance(min_value, int | float) and min_value < 0:
                     raise ValueError(
                         f"control.pid_limits.{device_type}.{min_key} must be non-negative"
                     )
-                if isinstance(max_value, (int, float)) and max_value < 0:
+                if isinstance(max_value, int | float) and max_value < 0:
                     raise ValueError(
                         f"control.pid_limits.{device_type}.{max_key} must be non-negative"
                     )
                 if (
-                    isinstance(min_value, (int, float))
-                    and isinstance(max_value, (int, float))
+                    isinstance(min_value, int | float)
+                    and isinstance(max_value, int | float)
                     and min_value > max_value
                 ):
                     raise ValueError(

@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-from app.config import ConfigLoader
 from app.database import DatabaseManager
-from app.repositories.config_repository import ConfigRepository
 from app.repositories.sensor_registry_repository import SensorRegistryRepository
 from app.repositories.sensor_repository import SensorRepository
 
 _db_manager: DatabaseManager | None = None
-_config_loader: ConfigLoader | None = None
 _sensor_repository: SensorRepository | None = None
-_config_repository: ConfigRepository | None = None
 _sensor_registry_repository: SensorRegistryRepository | None = None
 
 
@@ -22,26 +18,11 @@ def get_db_manager() -> DatabaseManager:
     return _db_manager
 
 
-def get_config_loader() -> ConfigLoader:
-    global _config_loader
-    if _config_loader is None:
-        _config_loader = ConfigLoader()
-    return _config_loader
-
-
 def get_sensor_repository() -> SensorRepository:
     global _sensor_repository
     if _sensor_repository is None:
         _sensor_repository = SensorRepository(db_manager=get_db_manager())
     return _sensor_repository
-
-
-def get_config_repository() -> ConfigRepository:
-    global _config_repository
-    if _config_repository is None:
-        loader = get_config_loader()
-        _config_repository = ConfigRepository(config_path=loader.config_path)
-    return _config_repository
 
 
 def get_sensor_registry_repository() -> SensorRegistryRepository:
@@ -55,11 +36,10 @@ def get_sensor_registry_repository() -> SensorRegistryRepository:
 async def close_database_resources() -> None:
     """Lifespan shutdown adapter: close the existing DB manager if any.
 
-    Closes only a manager that was already created (no getter-based
-    shutdown initialization) and clears the cached manager and repository
-    globals in ``finally`` so a later ``get_db_manager()`` on a fresh loop
-    constructs a new manager instead of reusing the closed one. Unrelated
-    config dependencies are not touched.
+    Closes only a manager that was already created (no getter-based shutdown
+    initialization) and clears the cached manager and repository globals in
+    ``finally`` so a later ``get_db_manager()`` on a fresh loop constructs a
+    new manager instead of reusing the closed one.
     """
     global _db_manager, _sensor_repository, _sensor_registry_repository
     try:

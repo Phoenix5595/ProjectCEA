@@ -1,6 +1,6 @@
 # PID Tuning Guide
 
-This guide covers tuning the PID controllers used by the automation service. PID parameters live in PostgreSQL (written through the `pid_parameters` table and `pid_control_modes` table) and are cached in Redis for the 1-second control loop.
+This guide covers tuning the automation service PID controllers. Global gains are the `automation.pid_defaults` service setting; per-room gains and modes remain in PostgreSQL `pid_parameters` and `pid_control_modes`, with Redis caching. The control loop uses the live configured cadence.
 
 ## What supports PID today
 
@@ -51,7 +51,7 @@ Restart the service after changing YAML-owned limits or defaults; runtime PID ga
 
 ## Basic tuning approach
 
-1. Start with the defaults from `automation_config.yaml`.
+1. Start with the current `automation.pid_defaults` service settings; `automation_config.yaml` provides the fallback values.
 2. Set Ki and Kd to 0. Raise Kp until the process responds quickly without sustained oscillation, then reduce Kp by about 20–30%.
 3. Add Ki in small steps (for heaters, try 0.01–0.05) to remove steady-state offset. Stop if oscillation appears.
 4. Add Kd only if overshoot remains. Most thermal processes do not need Kd because thermal mass already damps the response.
@@ -68,8 +68,8 @@ Restart the service after changing YAML-owned limits or defaults; runtime PID ga
 
 ## Safety context
 
-- The control loop runs every `control.update_interval` second (`automation_config.yaml` sets 1 s; valid range is 1–5 s).
-- Safety limits (`safety_limits` in `automation_config.yaml`) are enforced separately from PID tuning.
+- The control loop reads `automation.update_interval` live (1–5 s); YAML is used only when DB/cache settings are unavailable.
+- Safety limits (`automation.safety_limits`) are DB-backed and apply live, with YAML fallback.
 - The global heating↔exhaust interlock is currently removed; any safety rules must be configured explicitly.
 
 See `REQUIREMENTS.md` for the climate control contract and `app/control/AGENTS.md` for the control-loop rules.

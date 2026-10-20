@@ -12,6 +12,7 @@ from app.database import DatabaseManager
 from app.redis_client import RedisClient
 from app.routes import sensors, status
 from shared.infra_logging import setup_structured_logging
+from shared.service_settings import ServiceSettings
 from shared.lifespan import notify_started, notify_stopping
 
 # Configure structured logging
@@ -43,6 +44,10 @@ async def lifespan(app: FastAPI):
         logger.info("Initializing database...")
         database = DatabaseManager()
         await database.initialize()
+        pool = await database._get_pool()
+        fallback = config.get_service_settings_fallback()
+        settings = await ServiceSettings.load(pool, "soil", fallback=fallback)
+        config.apply_service_settings(settings)
 
         # 3. Initialize Redis client
         logger.info("Initializing Redis client...")

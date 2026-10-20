@@ -1,12 +1,12 @@
 # Automation Service
 
-Core control service on port 8001: device registry, 1-second control loop, PID/VPD climate logic, schedules, and light control. Also serves the React SPA via Caddy at `:8080`.
+Core control service on port 8001: device registry, live-configured 1–5-second control loop, PID/VPD climate logic, schedules, and light control. Also serves the React SPA via Caddy at `:8080`.
 
 ## Startup and container boundaries
 
 `app/main.py` builds the FastAPI app; `app/container.py` wires dependencies. `app/models/config_schema.py` validates `automation_config.yaml` at startup, and invalid config fails launch. Key config facts:
 
-- `control.update_interval`: 1 s (validated range 1–5 s).
+- `automation` service settings are resolved DB > `/var/lib/projectcea/settings-cache/automation.json` > YAML fallback; updates apply live without a restart.
 - MCP23017 relays: I2C bus 0, address 39 decimal (`0x27`).
 - DFR0971 dimmers: I2C bus 1, decimal 88/89/90 (`0x58/0x59/0x5A`).
 
@@ -30,7 +30,7 @@ An empty registry is valid: it installs a ready empty snapshot and emits no rela
 
 ## Control cadence and safety
 
-The control loop runs every 1 s. VPD is the master climate controller; PID is used for heating, cooling, and CO2 only. The global heating-failure↔exhaust interlock is **not currently configured**; it was removed per `automation_config.yaml` line 77.
+The control cadence is the live `automation.update_interval` service setting (1–5 s), with YAML fallback. VPD is the master climate controller; PID is used for heating, cooling, and CO2 only. The global heating-failure↔exhaust interlock is **not currently configured**; the removal is recorded in `automation_config.yaml`.
 
 `GET /api/devices/control-snapshot` joins the registry snapshot, relay observation, assigned-device command state, and DFR commanded/acknowledged intensity into one read model.
 
@@ -38,6 +38,7 @@ The control loop runs every 1 s. VPD is the master climate controller; PID is us
 
 The history writer records PID gains only for the standard PID controller used by a device. There is currently no producer for `active_rule_ids`, `active_schedule_ids`, or `schedule_*`; those fields remain empty or `NULL` and do not indicate active rules or schedules.
 
+`GET /api/settings` reports shared service settings and schema; `PUT /api/settings/{service}` validates and persists changes live. `/api/config` remains hardware-only and its restart metadata tracks hardware changes.
 
 ## Operational event log
 

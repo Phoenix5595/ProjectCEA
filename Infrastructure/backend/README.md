@@ -15,7 +15,7 @@ pip install -r requirements.txt
 
 ## Configuration
 
-The service loads `Infrastructure/backend/config.yaml`. The loader also searches legacy fallback paths if they exist, but the canonical path is the only one used in current deployments. Database credentials come from environment variables; the password is read from a systemd credential file if available, otherwise from `POSTGRES_PASSWORD` (`shared/db_credentials.py`).
+Backend configuration is supplied through environment variables. The database password is read from a systemd credential file if available, otherwise from `POSTGRES_PASSWORD` (`shared/db_credentials.py`).
 
 Environment variables used:
 
@@ -58,7 +58,6 @@ Backend
 - `GET /api/sensors/{location}/{cluster}` — historical sensor data
 - `GET /api/sensors/{location}/{cluster}/live` — current Redis values
 - `GET /api/live/all` — all live sensor values
-- `GET /api/config/locations` — available locations
 - `WS /ws/{location}` — real-time sensor stream
 
 Cluster names are validated against `shared/cluster_topology.py`.

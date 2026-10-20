@@ -8,7 +8,7 @@ from shared.pid_limits import PidLimits
 
 
 class AppConfig(BaseModel):
-    """Validate YAML-owned hardware, control, and sensor metadata only."""
+    """Validate YAML hardware, service-setting fallbacks, and sensor metadata."""
 
     hardware: dict[str, Any] | None = None
     automation: dict[str, Any] | None = None

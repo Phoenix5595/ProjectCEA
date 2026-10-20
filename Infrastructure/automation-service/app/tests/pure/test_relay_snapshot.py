@@ -141,6 +141,7 @@ async def test_control_tick_samples_in_finally_for_a_noop_tick() -> None:
     scheduler = SnapshotBinding()
     board_state = TickBoardState()
     control_engine: Any = object.__new__(ControlEngine)
+    control_engine.config = None
     control_engine.runtime_device_registry = SnapshotBinding()
     control_engine.relay_manager = relay_manager
     control_engine.scheduler = scheduler

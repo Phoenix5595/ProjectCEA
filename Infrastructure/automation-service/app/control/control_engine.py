@@ -110,7 +110,9 @@ class ControlEngine:
         self._last_tick_rooms: set[tuple[str, str]] | None = None
 
         # Initialize extracted components
-        self.pid_controller_manager = PIDControllerManager(database, event_policy=event_policy)
+        self.pid_controller_manager = PIDControllerManager(
+            database, event_policy=event_policy, config=config
+        )
         control_cfg = config.get_control_config() if config is not None else {}
         self.device_controller = DeviceController(
             relay_manager=relay_manager,
@@ -440,6 +442,9 @@ class ControlEngine:
 
     async def run_control_loop(self) -> None:
         """Run one iteration of the control loop with performance profiling."""
+        get_binary_hysteresis = getattr(self.config, "get_binary_hysteresis", None)
+        if callable(get_binary_hysteresis):
+            self.device_controller.binary_hysteresis = float(get_binary_hysteresis())
         snapshot = self.runtime_device_registry.snapshot
         snapshot_token = self.relay_manager.bind_snapshot(snapshot)
         scheduler_snapshot_token = self.scheduler.bind_snapshot(snapshot)

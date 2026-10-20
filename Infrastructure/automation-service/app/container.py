@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from typing import Any
 
 from app.alarm_manager import AlarmManager
@@ -133,6 +134,7 @@ class ServiceContainer:
 
         # Background tasks
         self.background_tasks: BackgroundTasks | None = None
+        self._service_settings_refresh_task: asyncio.Task | None = None
 
         # Activation/schedule owner services
         self.room_schedule_service: RoomScheduleService | None = None
@@ -174,6 +176,11 @@ class ServiceContainer:
             self.database = DatabaseManager()
             await self.database.initialize()
             logger.info("Database initialized")
+            if self.database.pool is not None:
+                await self.config.load_service_settings(self.database.pool)
+                self._service_settings_refresh_task = asyncio.create_task(
+                    self.config.run_service_settings_refresh()
+                )
 
             # Get automation redis from database
             self.automation_redis = self.database._automation_redis
@@ -499,6 +506,11 @@ class ServiceContainer:
                 logger.info("Background tasks stopped")
             except Exception as e:
                 logger.error(f"Error stopping background tasks: {e}")
+        if self._service_settings_refresh_task is not None:
+            self._service_settings_refresh_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._service_settings_refresh_task
+            self._service_settings_refresh_task = None
         if self.relay_observation_recorder is not None:
             try:
                 await self.relay_observation_recorder.stop()
@@ -547,7 +559,7 @@ class ServiceContainer:
             except Exception as e:
                 logger.critical(f"Shutdown force-off proof failed: {e}")
 
-        # Close database connection
+        # Close the database connection after settings polling stops.
         if self.database:
             try:
                 await self.database.close()
@@ -706,17 +718,7 @@ class ServiceContainer:
 
         assert self.config is not None
         raw = self.config._config
-        control = raw.get("control") or {}
-        restart_subset = {
-            "hardware": raw.get("hardware", {}),
-            "control": {
-                "safety_limits": control.get("safety_limits", {}),
-                "update_interval": control.get("update_interval"),
-                "last_good_hold_period": control.get("last_good_hold_period"),
-                "binary_hysteresis": control.get("binary_hysteresis"),
-                "pid_limits": control.get("pid_limits", {}),
-            },
-        }
+        restart_subset = {"hardware": raw.get("hardware", {})}
         try:
             canonical = json.dumps(restart_subset, sort_keys=True, separators=(",", ":"))
         except TypeError as e:

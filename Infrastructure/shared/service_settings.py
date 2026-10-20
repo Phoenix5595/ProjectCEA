@@ -87,7 +87,7 @@ def _require_service(service: str) -> dict[str, SettingSpec]:
 
 
 def _is_number(value: Any) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+    return isinstance(value, int | float) and not isinstance(value, bool) and math.isfinite(value)
 
 
 def _validate_basic(key: str, value: Any, spec: SettingSpec) -> None:

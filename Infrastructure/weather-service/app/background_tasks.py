@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 from shared.infra_logging import get_logger
 
-from .config import ConfigLoader
 from .database import DatabaseManager
 from .weather_client import WeatherClient
 
@@ -17,16 +17,16 @@ class BackgroundTasks:
     """Manages background polling tasks for weather data."""
 
     def __init__(
-        self, config: ConfigLoader, database: DatabaseManager, weather_client: WeatherClient
+        self, settings: dict[str, Any], database: DatabaseManager, weather_client: WeatherClient
     ):
         """Initialize background tasks.
 
         Args:
-            config: Configuration loader
+            settings: DB/cache-backed weather settings snapshot
             database: Database manager
             weather_client: Weather API client
         """
-        self.config = config
+        self.settings = settings
         self.database = database
         self.weather_client = weather_client
         self.running = False
@@ -40,10 +40,8 @@ class BackgroundTasks:
             logger.warning("Background tasks already running")
             return
 
-        # Get configuration
-        room_config = self.config.get_room_config()
-        room_name = room_config["name"]
-        device_name = room_config["device_name"]
+        room_name = self.settings["room_name"]
+        device_name = self.settings["device_name"]
 
         # Ensure database hierarchy exists
         room_id, device_id = await self.database.ensure_hierarchy(room_name, device_name)
@@ -73,24 +71,20 @@ class BackgroundTasks:
         logger.info("Background weather polling task stopped")
 
     async def _polling_loop(self) -> None:
-        """Main polling loop."""
-        weather_config = self.config.get_weather_config()
-        interval = weather_config.get("poll_interval", 900)  # Default 15 minutes
-
-        # Poll immediately on start
-        await self._poll_weather()
-
+        """Poll immediately, using current DB-backed settings on every cycle."""
         while self.running:
+            interval = self.settings["poll_interval_seconds"]
             try:
-                await asyncio.sleep(interval)
-                if self.running:
-                    await self._poll_weather()
+                self.weather_client.update_settings(
+                    api_url=self.settings["api_url"],
+                    station_icao=self.settings["station_icao"],
+                )
+                await self._poll_weather()
             except asyncio.CancelledError:
-                break
+                raise
             except Exception as e:
                 logger.error(f"Error in polling loop: {e}", exc_info=True)
-                # Continue running even on error
-                await asyncio.sleep(interval)
+            await asyncio.sleep(interval)
 
     async def _poll_weather(self) -> None:
         """Poll weather API and store data."""

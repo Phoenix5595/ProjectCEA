@@ -58,28 +58,25 @@ devices:
 
 # Control Parameters
 control:
-  # PID Controller Tuning
-  # Adjust these values based on your system response
-  pid:
-    # Heater PID parameters (temperature control)
-    heater_kp: 25.0      # Proportional gain (higher = faster response, but may overshoot)
-    heater_ki: 0.02      # Integral gain (eliminates steady-state error)
-    heater_kd: 0.0       # Derivative gain (reduces overshoot, usually 0 for heaters)
-    
-    # Fan PID parameters (temperature cooling control)
-    fan_kp: 25.0         # Proportional gain (same as heater for temperature control)
-    fan_ki: 0.02         # Integral gain
-    fan_kd: 0.0          # Derivative gain
-    
-    # CO2 PID parameters
-    co2_kp: 10.0
-    co2_ki: 0.01
-    co2_kd: 0.0
-    
-    # Default PID parameters (used if device-specific not set)
-    default_kp: 10.0
-    default_ki: 0.01
-    default_kd: 0.0
+  # Shared database settings override these YAML fallback values at runtime.
+  # PID defaults used when no room-specific gains are stored.
+  pid_defaults:
+    heater:
+      kp: 25.0
+      ki: 0.02
+      kd: 0.0
+    fan:
+      kp: 25.0
+      ki: 0.02
+      kd: 0.0
+    co2:
+      kp: 10.0
+      ki: 0.01
+      kd: 0.0
+    default:
+      kp: 10.0
+      ki: 0.01
+      kd: 0.0
   
   # Safety Limits (emergency shutoff)
   # These are hard limits that will prevent devices from operating
@@ -90,30 +87,16 @@ control:
     min_humidity: 30.0       # % - Dehumidifier will not turn on below this
     max_co2: 2000.0         # ppm - CO2 system will not turn on above this
     min_co2: 400.0          # ppm - CO2 system will not turn on below this
-  
-  # Default Setpoints (target values for automatic control)
-  # These can be changed via API, but these are the initial values
-  default_setpoints:
-    "Flower Room":
-      front:
-        heating_setpoint: 25.0    # °C target temperature for heating
-        cooling_setpoint: null    # °C target temperature for cooling (optional)
-        humidity: 65.0            # % target humidity
-        co2: 1200.0               # ppm target CO2
-      back:
-        heating_setpoint: 25.0
-        cooling_setpoint: null
-        humidity: 65.0
-        co2: 1200.0
-    "Veg Room":
-      main:
-        heating_setpoint: 22.0
-        cooling_setpoint: null
-        humidity: 70.0
-        co2: 1000.0
+
+  # PID gain limits used when validating room-specific PID changes.
+  pid_limits:
+    heater: {kp_min: 0.0, kp_max: 100.0, ki_min: 0.0, ki_max: 1.0, kd_min: 0.0, kd_max: 10.0}
+    fan: {kp_min: 0.0, kp_max: 100.0, ki_min: 0.0, ki_max: 1.0, kd_min: 0.0, kd_max: 10.0}
+    co2: {kp_min: 0.0, kp_max: 50.0, ki_min: 0.0, ki_max: 0.5, kd_min: 0.0, kd_max: 5.0}
   
   # Control Loop Settings
   update_interval: 2       # seconds - How often control runs (1-5 max, non-negotiable)
+  last_good_hold_period: 30
 
   # Binary-device hysteresis band. Devices that are currently OFF only transition
   # ON when the control output > 0.5 + binary_hysteresis, and devices currently ON

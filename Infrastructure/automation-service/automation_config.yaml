@@ -16,19 +16,23 @@ hardware:
     i2c_address: 90
     name: Chilled Light Board
 control:
-  pid:
-    heater_kp: 25.0
-    heater_ki: 0.02
-    heater_kd: 0.0
-    fan_kp: 25.0
-    fan_ki: 0.02
-    fan_kd: 0.0
-    co2_kp: 10.0
-    co2_ki: 0.01
-    co2_kd: 0.0
-    default_kp: 10.0
-    default_ki: 0.01
-    default_kd: 0.0
+  pid_defaults:
+    heater:
+      kp: 25.0
+      ki: 0.02
+      kd: 0.0
+    fan:
+      kp: 25.0
+      ki: 0.02
+      kd: 0.0
+    co2:
+      kp: 10.0
+      ki: 0.01
+      kd: 0.0
+    default:
+      kp: 10.0
+      ki: 0.01
+      kd: 0.0
   safety_limits:
     max_temperature: 35.0
     min_temperature: 10.0
@@ -36,19 +40,6 @@ control:
     min_humidity: 30.0
     max_co2: 2000.0
     min_co2: 400.0
-  default_setpoints:
-    Flower Room:
-      main:
-        heating_setpoint: 25.0
-        cooling_setpoint: null
-        humidity: 65.0
-        co2: 1200.0
-    Veg Room:
-      main:
-        heating_setpoint: 25.0
-        cooling_setpoint: null
-        humidity: 68.0
-        co2: 1000.0
   update_interval: 1
   last_good_hold_period: 30
   binary_hysteresis: 0.1

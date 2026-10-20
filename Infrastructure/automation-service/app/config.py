@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from app.repositories.devices import DeviceRepository
+from shared.service_settings import ServiceSettings
 
 if TYPE_CHECKING:
     from app.control.runtime_device_registry import RuntimeDeviceRegistry
@@ -41,19 +42,22 @@ def _load_yaml_file(path: Path) -> dict[str, Any]:
 
 
 class ConfigLoader:
-    """Loads and parses YAML configuration files."""
+    """Loads YAML configuration and overlays live service settings."""
 
-    def __init__(self, config_path: str | None = None):
+    def __init__(
+        self,
+        config_path: str | None = None,
+        *,
+        settings_cache_path: str | Path | None = None,
+    ):
         """Initialize config loader.
 
         Args:
             config_path: Path to automation_config.yaml. If None, searches in common locations.
+            settings_cache_path: Optional settings-cache path override for focused tests.
         """
         if config_path is None:
-            # Try common locations
-            possible_paths = [
-                Path(__file__).parent.parent / "automation_config.yaml",
-            ]
+            possible_paths = [Path(__file__).parent.parent / "automation_config.yaml"]
             for path in possible_paths:
                 if path.exists():
                     config_path = str(path)
@@ -71,6 +75,11 @@ class ConfigLoader:
         self._config_lock = threading.Lock()
         self._device_repo: DeviceRepository | None = None
         self._runtime_device_registry: RuntimeDeviceRegistry | None = None
+        self._settings_cache_path = settings_cache_path
+        self._settings_pool: Any | None = None
+        self._service_settings_loaded = False
+        self._settings_fallback_values: dict[str, Any] = {}
+        self._effective_settings: dict[str, Any] = {}
         from app.control.engine_config_cache import EngineConfigCache
 
         self._device_cache = EngineConfigCache(ttl_seconds=30.0)
@@ -85,28 +94,28 @@ class ConfigLoader:
         self._runtime_device_registry = registry
 
     def load(self) -> None:
-        """Load configuration from YAML files."""
-        # Load main config
+        """Load YAML configuration and preserve the effective service settings."""
         self._config = _load_yaml_file(self.config_path)
+        control = self._config.get("control")
+        if isinstance(control, dict):
+            control.pop("default_setpoints", None)
         self._validate_config()
 
-        # Load schedules if exists
         schedules_data = _load_yaml_file(self.schedules_path)
         if schedules_data:
             self._schedules = schedules_data.get("schedules", [])
-        else:
-            # Check if schedules are in main config
-            if "schedules" in self._config:
-                self._schedules = self._config["schedules"]
+        elif "schedules" in self._config:
+            self._schedules = self._config["schedules"]
 
-        # Load rules if exists
         rules_data = _load_yaml_file(self.rules_path)
         if rules_data:
             self._rules = rules_data.get("rules", [])
-        else:
-            # Check if rules are in main config
-            if "rules" in self._config:
-                self._rules = self._config["rules"]
+        elif "rules" in self._config:
+            self._rules = self._config["rules"]
+
+        self._settings_fallback_values = self._settings_from_yaml()
+        if not self._service_settings_loaded:
+            self._effective_settings = dict(self._settings_fallback_values)
 
         logger.info(f"Loaded config from {self.config_path}")
         if self._schedules:
@@ -114,13 +123,91 @@ class ConfigLoader:
         if self._rules:
             logger.info(f"Loaded {len(self._rules)} rules")
 
+    async def load_service_settings(self, pool: Any) -> None:
+        """Hydrate automation settings from DB, cache, then YAML fallback."""
+        self._settings_pool = pool
+        settings = await ServiceSettings.load(
+            pool,
+            "automation",
+            cache_path=self._settings_cache_path,
+            fallback=self._settings_fallback_values,
+        )
+        self.apply_service_settings(settings)
+        self._service_settings_loaded = True
+
+    async def refresh_service_settings(self) -> None:
+        """Reload effective settings through the shared DB/cache/YAML resolver."""
+        if self._settings_pool is None:
+            raise RuntimeError("Service settings pool is not configured")
+        await self.load_service_settings(self._settings_pool)
+
+    async def run_service_settings_refresh(self) -> None:
+        """Poll for settings updates and atomically install changed values."""
+        if self._settings_pool is None:
+            raise RuntimeError("Service settings pool is not configured")
+        await ServiceSettings.run_refresh(
+            self._settings_pool,
+            "automation",
+            self.apply_service_settings,
+            cache_path=self._settings_cache_path,
+            fallback=self._settings_fallback_values,
+        )
+
+    def apply_service_settings(self, settings: dict[str, Any]) -> None:
+        """Install one resolved settings snapshot for synchronous runtime reads."""
+        effective = dict(self._settings_fallback_values)
+        effective.update(settings)
+        self._effective_settings = effective
+        self._service_settings_loaded = True
+
+    def service_settings_fallback(self) -> dict[str, Any]:
+        """Return the YAML-derived fallback values for API cross-setting checks."""
+        return dict(self._settings_fallback_values)
+
+    def _settings_from_yaml(self) -> dict[str, Any]:
+        control = self._config.get("control") or {}
+        settings = {
+            key: control[key]
+            for key in (
+                "update_interval",
+                "last_good_hold_period",
+                "binary_hysteresis",
+                "pid_limits",
+                "safety_limits",
+            )
+            if key in control
+        }
+
+        if "pid_defaults" in control:
+            settings["pid_defaults"] = control["pid_defaults"]
+        else:
+            pid = control.get("pid") or {}
+            defaults: dict[str, dict[str, Any]] = {}
+            for device_type in ("heater", "fan", "co2", "default"):
+                gains = {
+                    gain: pid[key]
+                    for gain in ("kp", "ki", "kd")
+                    if (key := f"{device_type}_{gain}") in pid
+                }
+                if gains:
+                    defaults[device_type] = gains
+            if defaults:
+                settings["pid_defaults"] = defaults
+        return settings
+
     def get(self, key: str, default: Any = None) -> Any:
-        """Get configuration value using dot notation (e.g., 'hardware.i2c_bus')."""
+        """Get configuration with live service settings via dot notation."""
         keys = key.split(".")
-        value = self._config
-        for k in keys:
+        if keys[0] == "control":
+            value: Any = self.get_control_config()
+            keys = keys[1:]
+            if not keys:
+                return value
+        else:
+            value = self._config
+        for part in keys:
             if isinstance(value, dict):
-                value = value.get(k)
+                value = value.get(part)
                 if value is None:
                     return default
             else:
@@ -142,35 +229,77 @@ class ConfigLoader:
         return await self._device_cache.get_device_hierarchy(self._device_repo.get_all_as_hierarchy)
 
     def get_control_config(self) -> dict[str, Any]:
-        """Get control configuration."""
-        return self._config.get("control", {})
+        """Get YAML control config overlaid with effective service settings."""
+        control = dict(self._config.get("control", {}))
+        control.pop("default_setpoints", None)
+        control.update(self._effective_settings)
+        control["pid"] = self.get_pid_config()
+        return control
 
     def get_pid_config(self) -> dict[str, Any]:
-        """Get PID configuration."""
-        return self._config.get("control", {}).get("pid", {})
+        """Get PID settings in the legacy flattened shape used by callers."""
+        pid = dict(self._config.get("control", {}).get("pid", {}))
+        defaults = self._effective_settings.get("pid_defaults", {})
+        if isinstance(defaults, dict):
+            for device_type, gains in defaults.items():
+                if isinstance(gains, dict):
+                    for gain, value in gains.items():
+                        pid[f"{device_type}_{gain}"] = value
+        return pid
+
+    def get_pid_limits(self) -> dict[str, Any]:
+        """Get current DB/cache/YAML PID limits."""
+        return self._effective_settings.get(
+            "pid_limits", self._config.get("control", {}).get("pid_limits", {})
+        )
+
+    def get_pid_defaults(self) -> dict[str, Any]:
+        """Get current DB/cache/YAML PID defaults."""
+        return self._effective_settings.get("pid_defaults", {})
 
     def get_safety_limits(self) -> dict[str, float]:
-        """Get safety limits."""
-        return self._config.get("control", {}).get("safety_limits", {})
-
-    def get_default_setpoints(self) -> dict[str, Any]:
-        """Get default setpoints."""
-        return self._config.get("control", {}).get("default_setpoints", {})
+        """Get effective safety limits."""
+        return self._effective_settings.get(
+            "safety_limits", self._config.get("control", {}).get("safety_limits", {})
+        )
 
     def get_sensor_mapping(self) -> dict[str, Any]:
         """Get sensor mapping."""
         return self._config.get("sensors", {})
 
-    CONTROL_LOOP_INTERVAL_MAX = 5  # seconds, non-negotiable
+    CONTROL_LOOP_INTERVAL_MAX = 5
 
     def get_update_interval(self) -> int:
-        """Get control loop update interval in seconds (1–5, enforced)."""
-        raw = self._config.get("control", {}).get("update_interval", 1)
+        """Get current control loop interval in seconds (1–5, enforced)."""
+        raw = self._effective_settings.get(
+            "update_interval", self._config.get("control", {}).get("update_interval", 1)
+        )
         try:
             val = int(raw) if raw is not None else 1
         except (TypeError, ValueError):
             val = 1
         return max(1, min(self.CONTROL_LOOP_INTERVAL_MAX, val))
+
+    def get_last_good_hold_period(self) -> int:
+        """Get the effective last-good hold period."""
+        raw = self._effective_settings.get(
+            "last_good_hold_period",
+            self._config.get("control", {}).get("last_good_hold_period", 30),
+        )
+        try:
+            return max(0, int(raw))
+        except (TypeError, ValueError):
+            return 30
+
+    def get_binary_hysteresis(self) -> float:
+        """Get the effective global binary hysteresis band."""
+        raw = self._effective_settings.get(
+            "binary_hysteresis", self._config.get("control", {}).get("binary_hysteresis", 0.1)
+        )
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return 0.1
 
     def get_schedules(self) -> list[dict[str, Any]]:
         """Get schedules."""
@@ -185,26 +314,18 @@ class ConfigLoader:
         return self._config.get("interlocks", [])
 
     def get_pid_params_for_device(self, device_type: str) -> dict[str, float]:
-        """Get PID parameters for a device type.
-
-        Args:
-            device_type: Device type (e.g., 'heater', 'co2')
-
-        Returns:
-            Dict with 'kp', 'ki', 'kd' values
-        """
-        pid_config = self.get_pid_config()
-
-        # Try device-specific params first
-        kp_key = f"{device_type}_kp"
-        ki_key = f"{device_type}_ki"
-        kd_key = f"{device_type}_kd"
-
-        kp = pid_config.get(kp_key, pid_config.get("default_kp", 10.0))
-        ki = pid_config.get(ki_key, pid_config.get("default_ki", 0.01))
-        kd = pid_config.get(kd_key, pid_config.get("default_kd", 0.0))
-
-        return {"kp": kp, "ki": ki, "kd": kd}
+        """Get effective PID gains for a device type."""
+        settings_name = {
+            "heating": "heater",
+            "cooling": "fan",
+        }.get(device_type, device_type)
+        defaults = self.get_pid_defaults()
+        gains = defaults.get(settings_name) or defaults.get("default") or {}
+        return {
+            "kp": gains.get("kp", 10.0),
+            "ki": gains.get("ki", 0.01),
+            "kd": gains.get("kd", 0.0),
+        }
 
     async def get_pid_setpoints_for_device(
         self, location: str, cluster: str, device_name: str, device_type: str

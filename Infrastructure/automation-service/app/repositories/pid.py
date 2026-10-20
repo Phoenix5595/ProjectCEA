@@ -161,16 +161,14 @@ class PIDRepository(BaseRepository):
                         source,
                         updated_by,
                     )
-                    # Invalidate PID parameter caches on write
-                    try:
-                        state = get_state_manager()
-                        if state is not None:
-                            await state.delete(
-                                pid_key_with_location(location, cluster, device_type)
-                            )
-                            await state.delete(pid_all_parameters_key())
-                    except Exception as e:
-                        logger.debug(f"PID cache invalidation failed for {device_type}: {e}")
+                # Invalidate PID parameter caches on every successful write.
+                try:
+                    state = get_state_manager()
+                    if state is not None:
+                        await state.delete(pid_key_with_location(location, cluster, device_type))
+                        await state.delete(pid_all_parameters_key())
+                except Exception as e:
+                    logger.debug(f"PID cache invalidation failed for {device_type}: {e}")
                 return True
         except Exception as e:
             logger.error(f"Failed to set PID parameters: {e}")

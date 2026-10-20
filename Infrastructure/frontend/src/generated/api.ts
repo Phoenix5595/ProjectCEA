@@ -746,7 +746,7 @@ export interface paths {
         };
         /**
          * Get System Config
-         * @description Read raw YAML from disk and return hardware + control fields + pending changes + hashes.
+         * @description Read hardware config with pending hardware restart changes and hashes.
          */
         get: operations["get_api_config"];
         /**
@@ -1974,6 +1974,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Service Settings
+         * @description Return effective settings and schema metadata for all registered services.
+         */
+        get: operations["get_api_settings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/{service}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Service Settings
+         * @description Validate and atomically persist a partial service settings update.
+         */
+        put: operations["put_api_settings_{service}"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/status": {
         parameters: {
             query?: never;
@@ -2636,12 +2676,10 @@ export interface components {
         };
         /**
          * ConfigUpdateRequest
-         * @description Request model for system config update.
+         * @description Request model for hardware-only system config updates.
          */
         ConfigUpdateRequest: {
             hardware?: components["schemas"]["HardwareGroup"] | null;
-            safety_limits?: components["schemas"]["SafetyLimitsGroup"] | null;
-            tuning?: components["schemas"]["TuningGroup"] | null;
         };
         /** ControlPayload */
         ControlPayload: {
@@ -3951,33 +3989,6 @@ export interface components {
              */
             time: string;
         };
-        /**
-         * PidLimitsGroup
-         * @description PID limits for all device types.
-         */
-        PidLimitsGroup: {
-            co2?: components["schemas"]["PidLimitsPair"] | null;
-            fan?: components["schemas"]["PidLimitsPair"] | null;
-            heater?: components["schemas"]["PidLimitsPair"] | null;
-        };
-        /**
-         * PidLimitsPair
-         * @description PID limit pair for a single device type.
-         */
-        PidLimitsPair: {
-            /** Kd Max */
-            kd_max: number;
-            /** Kd Min */
-            kd_min: number;
-            /** Ki Max */
-            ki_max: number;
-            /** Ki Min */
-            ki_min: number;
-            /** Kp Max */
-            kp_max: number;
-            /** Kp Min */
-            kp_min: number;
-        };
         /** RampPayload */
         RampPayload: {
             /** Duration Seconds */
@@ -4220,24 +4231,6 @@ export interface components {
             ramp_down_duration?: number | null;
             /** Ramp Up Duration */
             ramp_up_duration?: number | null;
-        };
-        /**
-         * SafetyLimitsGroup
-         * @description Safety limits group with min/max validators.
-         */
-        SafetyLimitsGroup: {
-            /** Max Co2 */
-            max_co2?: number | null;
-            /** Max Humidity */
-            max_humidity?: number | null;
-            /** Max Temperature */
-            max_temperature?: number | null;
-            /** Min Co2 */
-            min_co2?: number | null;
-            /** Min Humidity */
-            min_humidity?: number | null;
-            /** Min Temperature */
-            min_temperature?: number | null;
         };
         /**
          * ScheduleCreate
@@ -4698,19 +4691,6 @@ export interface components {
             code: string;
             /** Detail */
             detail: string;
-        };
-        /**
-         * TuningGroup
-         * @description Control tuning parameters.
-         */
-        TuningGroup: {
-            /** Binary Hysteresis */
-            binary_hysteresis?: number | null;
-            /** Last Good Hold Period */
-            last_good_hold_period?: number | null;
-            pid_limits?: components["schemas"]["PidLimitsGroup"] | null;
-            /** Update Interval */
-            update_interval?: number | null;
         };
         /**
          * UnavailableTrajectorySegment
@@ -8396,6 +8376,61 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_api_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    "put_api_settings_{service}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": unknown;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

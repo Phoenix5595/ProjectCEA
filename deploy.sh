@@ -671,6 +671,8 @@ if [[ "$DEPLOY_SKIP_STAGING" != "1" ]]; then
   echo "[5/7] Ensuring data directories..."
   NOTES_DIR="${NOTES_DATA_DIR:-/var/lib/projectcea/notes}"
   sudo mkdir -p "$NOTES_DIR"
+  sudo mkdir -p /var/lib/projectcea/settings-cache
+  sudo chown antoine:antoine /var/lib/projectcea/settings-cache
   sudo chown -R "${NOTES_USER:-antoine}:${NOTES_GROUP:-antoine}" "$NOTES_DIR" 2>/dev/null || true
 
   echo "[5b/7] Ensuring sudoers rule for cea user..."

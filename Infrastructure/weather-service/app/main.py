@@ -2,60 +2,91 @@
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI
 
 from app.background_tasks import BackgroundTasks
-from app.config import ConfigLoader
 from app.database import DatabaseManager
 from app.routes import status, weather
 from app.weather_client import WeatherClient
 from shared.infra_logging import setup_structured_logging
 from shared.lifespan import notify_started, notify_stopping
+from shared.service_settings import ServiceSettings
 
 # Configure structured logging
 logger = setup_structured_logging(
     service_name="weather-service", log_level="INFO", console_output=True, json_format=True
 )
 
-# Global instances (will be initialized in lifespan)
-config: ConfigLoader | None = None
+settings: dict[str, Any] | None = None
 database: DatabaseManager | None = None
 weather_client: WeatherClient | None = None
 background_tasks: BackgroundTasks | None = None
+settings_refresh_task: asyncio.Task[None] | None = None
+
+
+WEATHER_SETTING_KEYS = frozenset(
+    {"station_icao", "poll_interval_seconds", "api_url", "room_name", "device_name"}
+)
+
+
+def _has_usable_weather_settings(values: dict[str, Any]) -> bool:
+    return WEATHER_SETTING_KEYS.issubset(values)
+
+
+async def _load_weather_settings(
+    database_manager: DatabaseManager,
+) -> tuple[Any, dict[str, Any]]:
+    """Wait for a complete DB/cache snapshot; weather has no local defaults."""
+    while True:
+        try:
+            pool = await database_manager._get_pool()
+            values = await ServiceSettings.load(pool, "weather")
+        except Exception as e:
+            logger.warning(f"Unable to load weather settings: {e}")
+        else:
+            if _has_usable_weather_settings(values):
+                return pool, values
+            logger.warning(
+                "Weather settings are incomplete; retrying until a usable snapshot loads"
+            )
+        await asyncio.sleep(10.0)
+
+
+def _apply_weather_settings(values: dict[str, Any]) -> None:
+    if settings is None or not _has_usable_weather_settings(values):
+        logger.warning("Ignoring incomplete weather settings refresh")
+        return
+    settings.clear()
+    settings.update(values)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
-    global config, database, weather_client, background_tasks
+    global settings, database, weather_client, background_tasks, settings_refresh_task
 
-    # Startup
     logger.info("Starting weather service...")
-
     try:
-        # 1. Load configuration
-        logger.info("Loading configuration...")
-        config = ConfigLoader()
-
-        # 2. Initialize database
         logger.info("Initializing database...")
-        db_config = config.get_database_config()
-        database = DatabaseManager(db_config)
+        database = DatabaseManager()
         await database.initialize()
 
-        # 3. Initialize weather client
+        pool, settings = await _load_weather_settings(database)
         logger.info("Initializing weather client...")
-        weather_config = config.get_weather_config()
         weather_client = WeatherClient(
-            api_url=weather_config["api_url"], station_icao=weather_config["station_icao"]
+            api_url=settings["api_url"], station_icao=settings["station_icao"]
         )
 
-        # 4. Initialize background tasks
         logger.info("Initializing background tasks...")
-        background_tasks = BackgroundTasks(config, database, weather_client)
+        background_tasks = BackgroundTasks(settings, database, weather_client)
         await background_tasks.start()
+        settings_refresh_task = asyncio.create_task(
+            ServiceSettings.run_refresh(pool, "weather", _apply_weather_settings)
+        )
 
         logger.info("Weather service started successfully")
         notify_started("weather-service", logger)
@@ -66,11 +97,17 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to start weather service: {e}", exc_info=True)
         raise
     finally:
-        # Shutdown
         notify_stopping("weather-service", logger)
 
         if background_tasks:
             await background_tasks.stop()
+
+        if settings_refresh_task:
+            settings_refresh_task.cancel()
+            try:
+                await settings_refresh_task
+            except asyncio.CancelledError:
+                pass
 
         if weather_client:
             await weather_client.close()
@@ -86,7 +123,7 @@ from shared.fastapi_helpers import docs_kwargs  # noqa: E402
 # Create FastAPI app
 app = FastAPI(
     title="Weather Service",
-    description="Weather data service for CEA system - YUL Airport",
+    description="METAR weather data service for CEA system",
     version="1.0.0",
     lifespan=lifespan,
     **docs_kwargs(),  # ENV=production closes /docs, /redoc, /openapi.json.
@@ -102,11 +139,6 @@ app.add_middleware(APIKeyAuthMiddleware)
 
 
 # Dependency injection functions
-def get_config() -> ConfigLoader:
-    """Get config loader."""
-    if config is None:
-        raise RuntimeError("Config not initialized")
-    return config
 
 
 def get_database() -> DatabaseManager:

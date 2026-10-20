@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse
 # Third-party imports
 import uvicorn
 
-from app.routes import config, live, sensor_data, sensor_registry, sensors
+from app.routes import live, sensor_data, sensor_registry, sensors
 from app.websocket import websocket_manager
 
 # Local imports
@@ -223,10 +223,6 @@ app = FastAPI(
             "description": "Sensor data retrieval and management",
         },
         {
-            "name": "config",
-            "description": "System configuration endpoints",
-        },
-        {
             "name": "live",
             "description": "Live data and real-time monitoring",
         },
@@ -281,7 +277,6 @@ app.add_middleware(APIKeyAuthMiddleware)
 # /{location}/{cluster} catch-all in sensors.router.
 app.include_router(sensor_registry.router)
 app.include_router(sensors.router)
-app.include_router(config.router)
 app.include_router(live.router)
 app.include_router(sensor_data.router)
 

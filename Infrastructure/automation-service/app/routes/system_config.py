@@ -31,14 +31,6 @@ logger = get_logger(__name__)
 
 router = APIRouter()
 
-RESTART_REQUIRED_CONTROL_KEYS = (
-    "safety_limits",
-    "update_interval",
-    "last_good_hold_period",
-    "binary_hysteresis",
-    "pid_limits",
-)
-
 
 def get_config() -> ConfigLoader:
     """Get config loader."""
@@ -52,18 +44,8 @@ def _restart_hash_sidecar_path(config: ConfigLoader) -> Path:
 
 
 def _extract_restart_subset(raw_config: dict[str, Any]) -> dict[str, Any]:
-    """Extract the restart-required subset from raw config."""
-    control = raw_config.get("control") or {}
-    return {
-        "hardware": raw_config.get("hardware", {}),
-        "control": {
-            "safety_limits": control.get("safety_limits", {}),
-            "update_interval": control.get("update_interval"),
-            "last_good_hold_period": control.get("last_good_hold_period"),
-            "binary_hysteresis": control.get("binary_hysteresis"),
-            "pid_limits": control.get("pid_limits", {}),
-        },
-    }
+    """Extract hardware-only restart-required settings from raw config."""
+    return {"hardware": raw_config.get("hardware", {})}
 
 
 def _compute_restart_hash(raw_config: dict[str, Any]) -> str:
@@ -128,11 +110,10 @@ def _pending_changes_from_inputs(
     raw: dict[str, Any],
     sidecar: dict[str, Any] | None,
 ) -> list[str]:
-    """Compare the restart-required subset against the already-read sidecar."""
+    """Compare hardware restart settings against the already-read sidecar."""
     if sidecar is None:
-        # No sidecar or old format — assume clean state
         return []
-    previous_subset = sidecar.get("subset", {})
+    previous_subset = _extract_restart_subset(sidecar.get("subset", {}))
     return _deep_diff(_extract_restart_subset(raw), previous_subset)
 
 
@@ -149,46 +130,22 @@ def _merge_update(raw: dict[str, Any], update: ConfigUpdateRequest) -> dict[str,
         merged["hardware"] = merged.get("hardware") or {}
         hw = update.hardware.model_dump(exclude_none=True)
         merged["hardware"].update(hw)
-    if update.safety_limits is not None:
-        merged["control"] = merged.get("control") or {}
-        sl = update.safety_limits.model_dump(exclude_none=True)
-        merged["control"]["safety_limits"] = merged["control"].get("safety_limits") or {}
-        merged["control"]["safety_limits"].update(sl)
-    if update.tuning is not None:
-        merged["control"] = merged.get("control") or {}
-        tuning = update.tuning.model_dump(exclude_none=True)
-        for key, value in tuning.items():
-            if key == "pid_limits" and value is not None:
-                merged["control"]["pid_limits"] = merged["control"].get("pid_limits") or {}
-                for device_type, limits in value.items():
-                    if limits is not None:
-                        merged["control"]["pid_limits"][device_type] = limits
-            else:
-                merged["control"][key] = value
     return merged
 
 
 @router.get("/api/config")
 async def get_system_config(config: ConfigLoader = Depends(get_config)) -> dict[str, Any]:
-    """Read raw YAML from disk and return hardware + control fields + pending changes + hashes."""
+    """Read hardware config with pending hardware restart changes and hashes."""
     with open(config.config_path) as f:
         raw = yaml.safe_load(f) or {}
 
     hardware = raw.get("hardware", {})
-    control = raw.get("control", {})
     current_hash = _compute_restart_hash(raw)
     sidecar = _read_sidecar(config)
     pending_changes = _pending_changes_from_inputs(raw, sidecar)
 
     return {
         "hardware": hardware,
-        "safety_limits": control.get("safety_limits", {}),
-        "tuning": {
-            "update_interval": control.get("update_interval"),
-            "last_good_hold_period": control.get("last_good_hold_period"),
-            "binary_hysteresis": control.get("binary_hysteresis"),
-        },
-        "pid_limits": control.get("pid_limits", {}),
         "pending_restart_required_changes": pending_changes,
         "restart_hashes": {
             "current": current_hash,

@@ -1047,6 +1047,7 @@ async def test_lifecycle_flush_stops_logger_before_database_close() -> None:
     container.__dict__["_operational_event_redis"] = None
     container.__dict__["_operational_event_pool"] = None
     container.__dict__["relay_observation_recorder"] = None
+    container.__dict__["_service_settings_refresh_task"] = None
     container.mcp23017 = None
     container.dfr0971_manager = None
     container._initialized = True

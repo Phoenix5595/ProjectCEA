@@ -17,7 +17,7 @@ from app.routes import pid, system_config
 from app.routes.climate_periods import save_climate_periods
 from app.schemas.climate_periods import PeriodInput, PeriodsSaveRequest
 from app.schemas.pid import PIDModeUpdate, PIDParameterUpdate
-from app.schemas.system_config import ConfigUpdateRequest, TuningGroup
+from app.schemas.system_config import ConfigUpdateRequest, HardwareGroup
 from app.services import climate_timeline_apply as climate_apply_module
 from shared.redis_keys import climate_period_cache_key
 
@@ -292,13 +292,13 @@ class _ConfigLoader:
 async def test_system_config_noop_does_not_emit_or_rewrite(tmp_path: Path) -> None:
     # Given: a persisted configuration equal to the requested update.
     config_path = tmp_path / "automation_config.yaml"
-    config_path.write_text("control:\n  update_interval: 2\nhardware: {}\n")
+    config_path.write_text("hardware:\n  i2c_bus: 1\ncontrol:\n  update_interval: 2\n")
     config = _ConfigLoader(config_path)
     sink = _RecordingSink()
 
     # When: the same update is submitted.
     await system_config.update_system_config(
-        ConfigUpdateRequest(tuning=TuningGroup(update_interval=2)),
+        ConfigUpdateRequest(hardware=HardwareGroup(i2c_bus=1)),
         config,
         MutationRequestContext(UUID("7552d5f1-0a9a-43e8-a63b-26a60d126c2e")),
         sink,

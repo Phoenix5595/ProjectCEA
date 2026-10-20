@@ -218,6 +218,12 @@ class _FakeConfigLoader:
     def get_update_interval(self) -> int:
         return 1
 
+    async def load_service_settings(self, _pool: Any) -> None:
+        return None
+
+    async def run_service_settings_refresh(self) -> None:
+        return None
+
     async def get_devices(self) -> dict[str, dict[str, dict[str, dict[str, Any]]]]:
         assert self._runtime_device_registry is not None
         return dict(self._runtime_device_registry.snapshot.hierarchy)

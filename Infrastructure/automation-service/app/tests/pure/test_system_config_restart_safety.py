@@ -98,13 +98,6 @@ async def test_authorized_restart_persists_before_one_deferred_action(boundary, 
     assert delay == 1.0
     assert json.loads(boundary.sidecar.read_text())["subset"] == {
         "hardware": {"i2c_bus": 1},
-        "control": {
-            "update_interval": 2,
-            "safety_limits": {},
-            "pid_limits": {},
-            "last_good_hold_period": None,
-            "binary_hysteresis": None,
-        },
     }
     boundary.processes.Popen.assert_not_called()
     callback(*args)

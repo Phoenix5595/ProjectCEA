@@ -46,6 +46,11 @@ class WeatherClient:
         self.station_icao = station_icao
         self.client = httpx.AsyncClient(timeout=30.0)
 
+    def update_settings(self, *, api_url: str, station_icao: str) -> None:
+        """Apply the current settings without replacing the reusable HTTP client."""
+        self.api_url = api_url
+        self.station_icao = station_icao
+
     async def close(self) -> None:
         """Close HTTP client."""
         await self.client.aclose()

@@ -69,7 +69,7 @@ async def run_load_test():
     # Initialize components with the real MCP23017 driver; hardware I2C
     # is replaced with _FakeSMBus via unittest.mock.patch below.
     config = ConfigLoader("Infrastructure/automation-service/automation_config.yaml")
-    config._config["control"]["update_interval"] = 1
+    config.apply_service_settings({"update_interval": 1})
     device_hierarchy = {
         "Flower Room": {
             "main": {

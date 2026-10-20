@@ -23,6 +23,7 @@ from app.routes import (
     redis_state,
     room_modes,
     schedules,
+    service_settings,
     status,
     system_config,
     websocket,
@@ -58,6 +59,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(redis_state.router, tags=["redis-state"])
     app.include_router(debug.router, tags=["debug"])
     app.include_router(system_config.router, tags=["system-config"])
+    app.include_router(service_settings.router, tags=["settings"])
     app.include_router(operational_events.router, tags=["operational-events"])
     # Health (with hardware.mcp) is served by status.router GET /health
 
@@ -155,5 +157,7 @@ def setup_dependency_overrides(app: FastAPI, container) -> None:
 
     # Override dependencies in system_config module
     app.dependency_overrides[system_config.get_config] = container.get_config
+    app.dependency_overrides[service_settings.get_config] = container.get_config
+    app.dependency_overrides[service_settings.get_database] = container.get_database
 
     logger.info("Dependency overrides configured")

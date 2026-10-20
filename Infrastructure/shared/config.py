@@ -1,16 +1,14 @@
 """Base class for service YAML config loaders.
 
-Lifted out of four byte-similar implementations:
-
-  - ``onewire-worker-service/app/config.py``
-  - ``weather-service/app/config.py``
-  - ``soil-sensor-service/app/config.py``
-  - ``backend/app/config.py``
+Lifted out of byte-similar implementations; the remaining subclasses are
+``onewire-worker-service/app/config.py`` and ``soil-sensor-service/app/config.py``
+(weather-service and backend configuration moved to DB-backed service
+settings or environment variables in Phase 6).
 
 Each service still owns a thin ``ConfigLoader`` subclass that supplies
 its candidate search paths and exposes typed accessor helpers
-(``get_weather_config()``, ``get_sensors()``, etc.). The shared base
-provides only the mechanics that were duplicated four times:
+(``get_devices()``, ``get_polling_config()``, etc.). The shared base
+provides only the mechanics that were duplicated:
 
   1. Search-path resolution with a ``FileNotFoundError`` if nothing matches.
   2. ``yaml.safe_load`` of the chosen path with empty-file tolerance.
@@ -19,10 +17,10 @@ provides only the mechanics that were duplicated four times:
 
 Deliberately *not* in scope here:
 
-- The ``automation-service`` config loader (520 lines, Pydantic validation,
-  device-type alias canonicalization). Its shape is genuinely different and
-  pulling it into the same hierarchy would force every other service to
-  carry weight it doesn't need.
+- The ``automation-service`` config loader (Pydantic validation,
+  device-type alias canonicalization, DB-backed service settings). Its shape
+  is genuinely different and pulling it into the same hierarchy would force
+  every other service to carry weight it doesn't need.
 - Environment-variable overrides (e.g. injecting ``POSTGRES_PASSWORD`` from
   the env at ``get_database_config`` time). Those are *behavioral* choices
   per service and remain owned by the subclass — the base class only loads

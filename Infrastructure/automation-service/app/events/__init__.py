@@ -47,6 +47,7 @@ class ConfigEventType(Enum):
     PID_PARAMS_CHANGED = "pid_params_changed"
     SCHEDULE_CHANGED = "schedule_changed"
     MODE_CHANGED = "mode_changed"
+    SERVICE_SETTINGS_CHANGED = "service_settings_changed"
 
 
 @dataclass

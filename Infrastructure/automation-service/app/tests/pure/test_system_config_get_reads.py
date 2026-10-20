@@ -30,14 +30,7 @@ def _run(awaitable):
 
 
 def _compute_fixture_hash() -> str:
-    raw = {
-        "hardware": {"i2c_bus": 1},
-        "control": {
-            "safety_limits": {"min_temperature": 5},
-            "update_interval": 3,
-        },
-    }
-    return system_config._compute_restart_hash(raw)
+    return system_config._compute_restart_hash({"hardware": {"i2c_bus": 2}})
 
 
 def write_yaml(tmp_path, text: str = BASE_YAML):
@@ -65,35 +58,48 @@ async def read_config(config_path) -> dict[str, Any]:
 
 
 def test_get_reports_exact_changed_fields_for_new_format_sidecar(tmp_path) -> None:
-    """Exact response/hashes/diff ordering when the restart subset changed."""
+    """Hardware changes affect restart hashes; service settings do not."""
     write_yaml(tmp_path)
-    # Sidecar snapshot taken BEFORE the update: update_interval differs (2 -> 3).
     write_new_format_sidecar(
         tmp_path,
         {
-            "hardware": {"i2c_bus": 1},
-            "control": {"safety_limits": {"min_temperature": 5}, "update_interval": 2},
+            "hardware": {"i2c_bus": 0},
+            "control": {"update_interval": 2, "safety_limits": {"min_temperature": 5}},
         },
     )
-    # Apply the "user change" on disk: bump update_interval.
     (tmp_path / "automation_config.yaml").write_text(
-        BASE_YAML.replace("update_interval: 2", "update_interval: 3")
+        BASE_YAML.replace("i2c_bus: 1", "i2c_bus: 2")
     )
 
     response = _run(read_config(tmp_path / "automation_config.yaml"))
 
     assert response == {
-        "hardware": {"i2c_bus": 1},
-        "safety_limits": {"min_temperature": 5},
-        "tuning": {
-            "update_interval": 3,
-            "last_good_hold_period": None,
-            "binary_hysteresis": None,
-        },
-        "pid_limits": {},
-        "pending_restart_required_changes": ["control.update_interval"],
+        "hardware": {"i2c_bus": 2},
+        "pending_restart_required_changes": ["hardware.i2c_bus"],
         "restart_hashes": {"current": _compute_fixture_hash(), "sidecar": "previous-hash"},
     }
+
+
+def test_control_setting_changes_do_not_require_restart(tmp_path) -> None:
+    write_yaml(tmp_path)
+    sidecar_path(tmp_path).write_text(
+        json.dumps(
+            {
+                "hash": "previous-hash",
+                "subset": {
+                    "hardware": {"i2c_bus": 1},
+                    "control": {"update_interval": 1},
+                },
+            }
+        )
+    )
+
+    response = _run(read_config(tmp_path / "automation_config.yaml"))
+
+    assert response["pending_restart_required_changes"] == []
+    assert response["restart_hashes"]["current"] == system_config._compute_restart_hash(
+        {"hardware": {"i2c_bus": 1}, "control": {"update_interval": 2}}
+    )
 
 
 def test_get_reports_empty_pending_for_missing_sidecar(tmp_path) -> None:

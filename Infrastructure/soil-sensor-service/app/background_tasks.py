@@ -17,6 +17,7 @@ from datetime import datetime
 from typing import Any, cast
 
 from shared.infra_logging import get_logger
+from shared.service_settings import ServiceSettings
 
 from .config import ConfigLoader
 from .database import DatabaseManager
@@ -43,6 +44,7 @@ class BackgroundTasks:
         self.redis_client = redis_client
         self.running = False
         self.task: asyncio.Task[None] | None = None
+        self.settings_task: asyncio.Task[None] | None = None
         self.discovery_task: asyncio.Task[None] | None = None
         self.sensor_readers: dict[str, SoilSensorReader] = {}
         self.discovered_modbus_ids: set[int] = set()  # Track discovered Modbus IDs
@@ -72,6 +74,15 @@ class BackgroundTasks:
             # Continue anyway, will retry in polling loop
 
         self.running = True
+        pool = await self.database._get_pool()
+        self.settings_task = asyncio.create_task(
+            ServiceSettings.run_refresh(
+                pool,
+                "soil",
+                self.config.apply_service_settings,
+                fallback=self.config.get_service_settings_fallback(),
+            )
+        )
         self.discovery_task = asyncio.create_task(self._discovery_loop())
         self.task = asyncio.create_task(self._polling_loop())
         logger.info("Background polling and discovery tasks started")
@@ -87,6 +98,10 @@ class BackgroundTasks:
             self.task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self.task
+        if self.settings_task:
+            self.settings_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self.settings_task
 
         for reader in self.sensor_readers.values():
             try:
@@ -139,17 +154,16 @@ class BackgroundTasks:
                 logger.error(f"Failed to load sensor Modbus ID {modbus_id}: {e}")
 
     async def _discovery_loop(self) -> None:
-        """Periodically scan the bus, register new probes, refresh assignments."""
-        polling_config = self.config.get_polling_config()
-        discovery_interval = polling_config.get(
-            "discovery_interval_seconds", 30
-        )  # Default 30 seconds
+        """Periodically scan the bus, register new probes, and refresh assignments."""
         scan_range_start = 1
         scan_range_end = 254
 
-        logger.info(f"Starting sensor discovery loop (scanning every {discovery_interval} seconds)")
+        logger.info("Starting sensor discovery loop")
 
         while self.running:
+            discovery_interval = self.config.get_polling_config().get(
+                "discovery_interval_seconds", 30
+            )
             try:
                 await self._scan_bus_for_sensors(scan_range_start, scan_range_end)
             except Exception as e:
@@ -226,7 +240,9 @@ class BackgroundTasks:
             registry_id = await self.database.upsert_unassigned_probe(modbus_id)
             await self._wire_probe(modbus_id, registry_id, bed_name=None)
 
-            logger.info(f"Auto-registered sensor: {probe_name} (Modbus ID: {modbus_id}, unassigned)")
+            logger.info(
+                f"Auto-registered sensor: {probe_name} (Modbus ID: {modbus_id}, unassigned)"
+            )
             return True
 
         except Exception as e:
@@ -239,10 +255,8 @@ class BackgroundTasks:
 
     async def _polling_loop(self) -> None:
         """Poll all wired sensors at the configured interval."""
-        polling_config = self.config.get_polling_config()
-        interval = polling_config.get("interval_seconds", 5)
-
         while self.running:
+            interval = self.config.get_polling_config().get("interval_seconds", 5)
             try:
                 await self._poll_all_sensors()
             except Exception as e:
