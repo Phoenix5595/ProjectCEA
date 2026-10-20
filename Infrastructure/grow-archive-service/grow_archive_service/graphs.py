@@ -41,7 +41,7 @@ from monitoring_service.history_buckets import (
 from monitoring_service.history_overview_models import (
     HistoryOverviewControlSeries,
     HistoryOverviewMetadata,
-    HistoryOverviewPoint,
+    HistoryOverviewSamplePoint,
     HistoryOverviewRange,
     HistoryOverviewSensorResponse,
     HistoryOverviewSensorSeries,
@@ -881,7 +881,7 @@ class ArchiveGraphReader:
                             state.absorb(contribution)
                     if state.count:
                         points.append(
-                            HistoryOverviewPoint(
+                            HistoryOverviewSamplePoint(
                                 start=bound[0],
                                 end=bound[1],
                                 average=float_or_none(state.average_decimal),
@@ -1032,7 +1032,7 @@ class ArchiveGraphReader:
             for index, (left, right, partial) in enumerate(bounds):
                 state = states.get(("light", series_id, index))
                 points.append(
-                    HistoryOverviewPoint(
+                    HistoryOverviewSamplePoint(
                         start=left,
                         end=right,
                         average=None if state is None else float_or_none(state.average_decimal),
