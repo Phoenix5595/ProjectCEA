@@ -17,8 +17,10 @@ from app.sensor_registry_models import (
     SOIL_HISTORY_MAX_POINTS,
     SOIL_HISTORY_MIN_POINTS,
     CanAssignmentRequest,
+    IdentityRequest,
     Rs485AssignmentRequest,
     SensorRegistryListResponse,
+    SensorRegistryRecord,
     SoilHistoryResponse,
     SoilLiveResponse,
 )
@@ -45,6 +47,16 @@ async def assign_sensor_registry(
 ):
     """Assign a physical sensor unit to a room position (CAN) or Flower bed (RS-485)."""
     return await repository.assign(registry_id, body)
+
+
+@router.post("/registry/{registry_id}/identity", response_model=SensorRegistryRecord)
+async def resolve_sensor_registry_identity(
+    registry_id: int,
+    body: Annotated[IdentityRequest, Body(discriminator="decision")],
+    repository: Annotated[SensorRegistryRepository, Depends(get_sensor_registry_repository)],
+) -> SensorRegistryRecord:
+    """Confirm whether a newly observed address belongs to an older identity."""
+    return await repository.resolve_identity(registry_id, body)
 
 
 @router.get("/soil/live", response_model=SoilLiveResponse)

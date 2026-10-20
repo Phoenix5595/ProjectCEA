@@ -17,6 +17,7 @@ import {
   extractSoilApiError,
   soilApi,
   type AssignmentRequest,
+  type IdentityRequest,
   type Rs485Bed,
   type SensorRegistryRecord,
 } from '../../features/soil'
@@ -24,6 +25,9 @@ import { logger } from '../../utils/logger'
 
 const BED_CAPACITY = 4
 const STALE_THRESHOLD_MS = 60_000
+
+// Match the services' ten-minute identity-absence threshold.
+const IDENTITY_ABSENCE_MS = 10 * 60 * 1000
 
 const POSITION_LABELS: Record<string, string> = {
   front: 'Front',
@@ -71,7 +75,7 @@ function formatInstant(date: Date): string {
 function freshnessText(record: SensorRegistryRecord, nowMs: number): string | null {
   const stale = nowMs - record.last_seen.getTime() > STALE_THRESHOLD_MS
   if (!stale) return null
-  return record.status === 'unassigned' ? 'Stale' : 'Stale'
+  return 'Stale'
 }
 
 export default function SensorSettingsPanel({
@@ -85,6 +89,7 @@ export default function SensorSettingsPanel({
   const [drafts, setDrafts] = useState<Record<number, Draft>>({})
   const [rowErrors, setRowErrors] = useState<Record<number, string>>({})
   const [savingIds, setSavingIds] = useState<Set<number>>(new Set())
+  const [identityTargets, setIdentityTargets] = useState<Record<number, number>>({})
 
   const refresh = useCallback(async () => {
     try {
@@ -186,11 +191,50 @@ export default function SensorSettingsPanel({
     [drafts, refresh]
   )
 
+
+  const resolveIdentity = useCallback(
+    async (record: SensorRegistryRecord, body: IdentityRequest) => {
+      setSavingIds(previous => new Set(previous).add(record.registry_id))
+      setRowErrors(previous => {
+        const next = { ...previous }
+        delete next[record.registry_id]
+        return next
+      })
+      try {
+        await soilApi.resolveIdentity(record.registry_id, body)
+        toast.success(
+          body.decision === 'new' ? 'Confirmed as a new sensor' : 'Sensor identity confirmed'
+        )
+        await refresh()
+      } catch (error) {
+        const detail = extractSoilApiError(error)
+        logger.error(`Failed identity confirmation for registry ${record.registry_id}`, error)
+        setRowErrors(previous => ({
+          ...previous,
+          [record.registry_id]: detail.errorCode
+            ? `${detail.errorCode}: ${detail.message}`
+            : detail.message,
+        }))
+      } finally {
+        setSavingIds(previous => {
+          const next = new Set(previous)
+          next.delete(record.registry_id)
+          return next
+        })
+      }
+    },
+    [refresh]
+  )
   const sortedRecords = useMemo(() => {
     if (records === null) return null
-    const unassigned = records.filter(item => item.status === 'unassigned')
-    const assigned = records.filter(item => item.status === 'assigned')
-    return [...unassigned, ...assigned]
+    const pending = records.filter(item => item.identity_status === 'pending')
+    const unassigned = records.filter(
+      item => item.identity_status !== 'pending' && item.status === 'unassigned'
+    )
+    const assigned = records.filter(
+      item => item.identity_status !== 'pending' && item.status === 'assigned'
+    )
+    return [...pending, ...unassigned, ...assigned]
   }, [records])
 
   if (records === null) {
@@ -199,7 +243,10 @@ export default function SensorSettingsPanel({
 
   const nowMs = Date.now()
   const visibleRecords = (sortedRecords ?? []).filter(
-    record => !unassignedOnly || record.status === 'unassigned'
+    record =>
+      !unassignedOnly ||
+      record.identity_status === 'pending' ||
+      record.status === 'unassigned'
   )
 
   return (
@@ -238,6 +285,22 @@ export default function SensorSettingsPanel({
         {visibleRecords.map(record => {
           const draft = drafts[record.registry_id] ?? draftFor(record)
           const isCan = record.bus === 'can'
+          const eligibleTargets = records.filter(
+            candidate =>
+              candidate.registry_id !== record.registry_id &&
+              candidate.bus === record.bus &&
+              (candidate.identity_status === 'detached' ||
+                (candidate.identity_status === 'confirmed' &&
+                  nowMs - candidate.last_seen.getTime() > IDENTITY_ABSENCE_MS))
+          )
+          const selectedTarget =
+            eligibleTargets.find(
+              candidate => candidate.registry_id === identityTargets[record.registry_id]
+            ) ??
+            eligibleTargets.find(
+              candidate => candidate.registry_id === record.pending_candidate_registry_id
+            ) ??
+            eligibleTargets[0]
           return (
             <div
               key={record.registry_id}
@@ -248,10 +311,12 @@ export default function SensorSettingsPanel({
                   {isCan ? 'CAN' : 'RS-485'}
                 </span>
                 <span className="font-mono text-sm text-text-input">
-                  #{record.hardware_address}
+                  {record.hardware_address === null
+                    ? 'No current address'
+                    : `#${record.hardware_address}`}
                 </span>
                 <span className="text-sm font-medium text-text-input">
-                  Soil probe #{record.hardware_address}
+                  {record.display_name}
                 </span>
                 <span
                   className={
@@ -262,6 +327,12 @@ export default function SensorSettingsPanel({
                 >
                   {record.status}
                 </span>
+
+                {record.identity_status !== 'confirmed' && (
+                  <span className="rounded border border-status-warning/70 bg-status-warning-bg/30 px-2 py-0.5 text-xs font-semibold text-status-warning-text">
+                    {record.identity_status === 'pending' ? 'Identity pending' : 'Detached'}
+                  </span>
+                )}
                 {freshnessText(record, nowMs) !== null && (
                   <span className="text-xs font-semibold uppercase tracking-wide text-status-warning-text">
                     Stale
@@ -273,7 +344,74 @@ export default function SensorSettingsPanel({
                 </span>
               </div>
 
-              {isCan ? (
+              {record.identity_status === 'pending' ? (
+                <div className="flex flex-wrap items-end gap-3">
+                  {eligibleTargets.length > 0 ? (
+                    <>
+                      <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-text-muted">
+                        Same sensor as
+                        <select
+                          aria-label={`Previous identity for ${record.display_name}`}
+                          className="rounded border border-border-subtle bg-surface-secondary px-2 py-1.5 text-sm normal-case tracking-normal text-text-input"
+                          value={selectedTarget?.registry_id ?? ''}
+                          onChange={event =>
+                            setIdentityTargets(previous => ({
+                              ...previous,
+                              [record.registry_id]: Number(event.target.value),
+                            }))
+                          }
+                        >
+                          {eligibleTargets.map(candidate => (
+                            <option key={candidate.registry_id} value={candidate.registry_id}>
+                              #{candidate.registry_id} · {candidate.display_name} ·{' '}
+                              {candidate.hardware_address === null
+                                ? 'detached'
+                                : `address ${candidate.hardware_address}`}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <button
+                        type="button"
+                        disabled={savingIds.has(record.registry_id) || selectedTarget === undefined}
+                        onClick={() => {
+                          if (selectedTarget !== undefined) {
+                            void resolveIdentity(record, {
+                              decision: 'same',
+                              target_registry_id: selectedTarget.registry_id,
+                            })
+                          }
+                        }}
+                        className="rounded border border-btn-primary-light bg-btn-primary-light/20 px-3 py-1.5 text-sm font-semibold text-btn-primary-text disabled:opacity-50"
+                      >
+                        Same sensor as {selectedTarget?.display_name ?? 'selected identity'}
+                      </button>
+                    </>
+                  ) : (
+                    <p className="text-sm text-text-muted">
+                      No older identity is eligible to merge. Confirm this as a new sensor if it
+                      is a replacement.
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    disabled={savingIds.has(record.registry_id)}
+                    onClick={() =>
+                      void resolveIdentity(record, {
+                        decision: 'new',
+                      })
+                    }
+                    className="rounded border border-border-subtle bg-surface-secondary px-3 py-1.5 text-sm font-semibold text-text-input disabled:opacity-50"
+                  >
+                    New sensor
+                  </button>
+                </div>
+              ) : record.identity_status === 'detached' ? (
+                <p className="text-sm text-text-muted">
+                  This identity has no current hardware address and can only be selected when
+                  confirming a pending sensor.
+                </p>
+              ) : isCan ? (
                 <div className="flex flex-wrap items-end gap-3">
                   <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-text-muted">
                     Room
@@ -361,14 +499,16 @@ export default function SensorSettingsPanel({
               )}
 
               <div className="flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  disabled={savingIds.has(record.registry_id)}
-                  onClick={() => void save(record)}
-                  className="rounded border border-btn-primary-light bg-btn-primary-light/20 px-3 py-1.5 text-sm font-semibold text-btn-primary-text disabled:opacity-50"
-                >
-                  {savingIds.has(record.registry_id) ? 'Saving…' : 'Save assignment'}
-                </button>
+                {record.identity_status === 'confirmed' && (
+                  <button
+                    type="button"
+                    disabled={savingIds.has(record.registry_id)}
+                    onClick={() => void save(record)}
+                    className="rounded border border-btn-primary-light bg-btn-primary-light/20 px-3 py-1.5 text-sm font-semibold text-btn-primary-text disabled:opacity-50"
+                  >
+                    {savingIds.has(record.registry_id) ? 'Saving…' : 'Save assignment'}
+                  </button>
+                )}
                 {rowErrors[record.registry_id] !== undefined && (
                   <span role="alert" className="text-sm text-status-danger-text">
                     {rowErrors[record.registry_id]}

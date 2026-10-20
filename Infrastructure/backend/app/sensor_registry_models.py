@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Annotated, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -58,6 +59,21 @@ AssignmentRequest = Annotated[
 ]
 
 
+class SameIdentityRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["same"]
+    target_registry_id: int = Field(gt=0)
+
+
+class NewIdentityRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["new"]
+
+
+IdentityRequest = SameIdentityRequest | NewIdentityRequest
+
 # ---------------------------------------------------------------------------
 # Assignment snapshots returned inside registry records
 # ---------------------------------------------------------------------------
@@ -88,7 +104,11 @@ class SensorRegistryRecord(BaseModel):
 
     registry_id: int
     bus: RegistryBus
-    hardware_address: int
+    hardware_address: int | None
+    sensor_uid: UUID
+    identity_status: Literal["confirmed", "pending", "detached"]
+    pending_candidate_registry_id: int | None
+    pending_since: datetime | None
     display_name: str
     status: Literal["assigned", "unassigned"]
     first_seen: datetime

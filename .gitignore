@@ -52,6 +52,12 @@ test_*.py
 !Infrastructure/automation-service/app/tests/pure/test_monitoring_routes.py
 !Infrastructure/automation-service/app/tests/pure/test_event_dispatcher_autodrain.py
 
+# Sensor identity tests contain only disposable fixtures and must be tracked.
+!Infrastructure/backend/app/tests/sensor_registry/test_sensor_identity.py
+!Infrastructure/can-processor-service/tests/test_sensor_identity.py
+!Infrastructure/soil-sensor-service/tests/test_sensor_identity.py
+!Infrastructure/database/tests/test_sensor_identity_db.py
+
 # Accidentally committed key files (legacy filenames in this repo)
 /ssh-keygen -t ed25519 -C "antoine.olivier.dion@gmail.com"
 /ssh-keygen -t ed25519 -C "antoine.olivier.dion@gmail.com".pub

@@ -11,6 +11,7 @@ Sensor data API on port 8000. Serves live values from Redis, historical data fro
 | `/api/live/all` | `routes/live.py` | All current sensor values |
 | `/ws/{location}` | `websocket.py` | Real-time sensor stream |
 | `/api/sensors/monitoring/*` | monitoring-service `:8005` | Native monitoring data; separate read-only process and pool |
+| `/api/sensors/registry*` | `routes/sensor_registry.py` | Permanent sensor identity listing, placement, and operator confirmation |
 
 ## Topology validation
 
@@ -45,6 +46,12 @@ verified archive deletion are recorded in `archive_availability` and return
 409 `archive_selection_required`; expired nongrow ranges return 410
 `history_expired`. Closure alone does not block retained source rows. Live
 Redis and operational latest/predecessor reads never load archives.
+
+`POST /api/sensors/registry/{registry_id}/identity` confirms a pending address
+as the same stale/detached identity or as a new sensor. Same-identity merges
+run transactionally, decompress overlapping measurement chunks, and return
+409 `identity_range_archived` if archive deletion has removed any part of the
+pending measurement range.
 
 ## Native monitoring ownership
 

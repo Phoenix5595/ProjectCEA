@@ -42,7 +42,7 @@ Queue capacity is 10,000 messages. The stream `sensor:raw` caps at 100,000 entri
 | Never | Reason |
 |---|---|
 | Skip Redis Stream writes | Recent-data queries and the control loop depend on them |
-| Query DB from the CAN processor | Writer is write-only on the hot path |
+| Create CAN devices by address/name in the writer | Resolve each measurement through `sensor_registry.device_id`; the metadata worker creates registry-owned devices with `SENSOR-<sensor_uid>` serials |
 | Revive legacy cluster labels | Breaks backend sensor-name filtering |
 
 See `Infrastructure/can-processor-service/README.md` for operator setup and `ARCHITECTURE.md` for service boundaries.

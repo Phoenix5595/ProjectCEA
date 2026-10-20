@@ -44,10 +44,17 @@ export const RegistryAssignment = z.discriminatedUnion('kind', [
 ])
 export type RegistryAssignment = z.infer<typeof RegistryAssignment>
 
+export const IdentityStatus = z.enum(['confirmed', 'pending', 'detached'])
+export type IdentityStatus = z.infer<typeof IdentityStatus>
+
 export const SensorRegistryRecord = z.object({
   registry_id: z.number().int(),
   bus: RegistryBus,
-  hardware_address: z.number().int().positive(),
+  hardware_address: z.number().int().positive().nullable(),
+  sensor_uid: z.string().uuid(),
+  identity_status: IdentityStatus,
+  pending_candidate_registry_id: z.number().int().nullable(),
+  pending_since: awareDate.nullable(),
   display_name: z.string(),
   status: z.enum(['assigned', 'unassigned']),
   first_seen: awareDate,
@@ -152,6 +159,20 @@ export const Rs485AssignmentRequest = z.object({
 export type Rs485AssignmentRequest = z.infer<typeof Rs485AssignmentRequest>
 
 export type AssignmentRequest = CanAssignmentRequest | Rs485AssignmentRequest
+
+
+export const SameIdentityRequest = z.object({
+  decision: z.literal('same'),
+  target_registry_id: z.number().int().positive(),
+})
+export const NewIdentityRequest = z.object({
+  decision: z.literal('new'),
+})
+export const IdentityRequest = z.discriminatedUnion('decision', [
+  SameIdentityRequest,
+  NewIdentityRequest,
+])
+export type IdentityRequest = z.infer<typeof IdentityRequest>
 
 /** Operator-facing metric labels used across the soil surfaces. */
 export const SOIL_METRIC_LABELS: Record<SoilMetricName, string> = {

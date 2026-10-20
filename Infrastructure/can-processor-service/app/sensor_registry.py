@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import timedelta
 import os
 import queue
 import threading
@@ -26,6 +27,10 @@ from shared.db_credentials import load_postgres_password
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
+
+# Ten minutes lets short CAN outages recover without mistaking a replacement
+# for the same physical identity.
+ABSENCE = timedelta(minutes=10)
 
 ASSIGNMENT_REFRESH_INTERVAL_SEC = 5.0
 LAST_SEEN_REFRESH_INTERVAL_SEC = 30.0
@@ -158,20 +163,19 @@ class MetadataWorker:
         )
         connection.autocommit = True
         cursor = connection.cursor()
-        cursor.execute(
-            f"SET statement_timeout = '{METADATA_STATEMENT_TIMEOUT_MS * 1000}'"
-        )
+        cursor.execute(f"SET statement_timeout = '{METADATA_STATEMENT_TIMEOUT_MS * 1000}'")
         cursor.close()
         return connection
 
     def _drain_observations(self, connection: psycopg2.extensions.connection) -> None:
         seen: set[int] = set()
+        identity_changed = False
         for _ in range(DISCOVERY_DRAIN_LIMIT):
             try:
                 node_id = self._observations.get_nowait()
             except queue.Empty:
                 break
-            self._upsert_node(connection, node_id)
+            identity_changed = self._upsert_node(connection, node_id) or identity_changed
             seen.add(node_id)
 
         # Seed the refresh map only for first-time observations: re-seeding
@@ -179,20 +183,181 @@ class MetadataWorker:
         now = time.monotonic()
         for node_id in seen:
             self._last_seen_refreshed_at.setdefault(node_id, now)
+        if identity_changed and self._on_change is not None:
+            self._on_change()
 
-    def _upsert_node(
-        self, connection: psycopg2.extensions.connection, node_id: int
-    ) -> None:
-        cursor = connection.cursor()
+    def _ensure_registry_device(self, cursor: Any, registry_id: int, node_id: int) -> bool:
         cursor.execute(
             """
-            INSERT INTO sensor_registry (bus, hardware_address, display_name)
-            VALUES ('can', %s, %s)
-            ON CONFLICT (bus, hardware_address) DO NOTHING
+            SELECT sr.device_id, sr.sensor_uid, sr.display_name, target.rack_id
+            FROM sensor_registry sr
+            LEFT JOIN rack target
+              ON target.room_id = sr.room_id
+             AND target.name = CASE sr.location_in_room
+                   WHEN 'front' THEN 'Front'
+                   WHEN 'back' THEN 'Back'
+                   WHEN 'main' THEN 'Main'
+                 END
+            WHERE sr.registry_id = %s
+            FOR UPDATE OF sr
             """,
-            (node_id, f"Node {node_id}"),
+            (registry_id,),
         )
-        cursor.close()
+        row = cursor.fetchone()
+        if row is None:
+            raise RuntimeError(f"CAN registry record {registry_id} disappeared")
+        device_id, sensor_uid, display_name, rack_id = row
+        if device_id is not None:
+            return False
+
+        cursor.execute(
+            """
+            INSERT INTO device (rack_id, name, type, serial_number)
+            VALUES (%s, %s, 'sensor-node', 'SENSOR-' || %s::text)
+            RETURNING device_id
+            """,
+            (rack_id, display_name or f"Node {node_id}", sensor_uid),
+        )
+        device_id = cursor.fetchone()[0]
+        cursor.execute(
+            """
+            UPDATE sensor_registry
+            SET device_id = %s, updated_at = clock_timestamp()
+            WHERE registry_id = %s AND device_id IS NULL
+            """,
+            (device_id, registry_id),
+        )
+        return True
+
+    def _insert_registry_row(
+        self,
+        cursor: Any,
+        node_id: int,
+        observed_at: Any,
+        identity_status: str,
+        candidate_id: int | None,
+        pending_since: Any,
+    ) -> int:
+        cursor.execute(
+            """
+            INSERT INTO sensor_registry (
+                bus, hardware_address, display_name, identity_status,
+                pending_candidate_registry_id, pending_since,
+                first_seen, last_seen, updated_at
+            )
+            VALUES ('can', %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING registry_id
+            """,
+            (
+                node_id,
+                f"Node {node_id}",
+                identity_status,
+                candidate_id,
+                pending_since,
+                observed_at,
+                observed_at,
+                observed_at,
+            ),
+        )
+        registry_id = int(cursor.fetchone()[0])
+        cursor.execute(
+            """
+            INSERT INTO sensor_address_history (registry_id, bus, hardware_address, valid_from)
+            VALUES (%s, 'can', %s, %s)
+            """,
+            (registry_id, node_id, observed_at),
+        )
+        self._ensure_registry_device(cursor, registry_id, node_id)
+        return registry_id
+
+    def _upsert_node(self, connection: psycopg2.extensions.connection, node_id: int) -> bool:
+        """Upsert one observed address and detach a confirmed stale identity."""
+        previous_autocommit = connection.autocommit
+        connection.autocommit = False
+        cursor = None
+        changed = False
+        try:
+            cursor = connection.cursor()
+            cursor.execute("SELECT clock_timestamp()")
+            observed_at = cursor.fetchone()[0]
+            cursor.execute(
+                """
+                SELECT registry_id, identity_status, last_seen
+                FROM sensor_registry
+                WHERE bus = 'can' AND hardware_address = %s
+                FOR UPDATE
+                """,
+                (node_id,),
+            )
+            current = cursor.fetchone()
+
+            if current is not None:
+                registry_id, identity_status, last_seen = current
+                if identity_status == "confirmed" and last_seen < observed_at - ABSENCE:
+                    self._ensure_registry_device(cursor, int(registry_id), node_id)
+                    cursor.execute(
+                        """
+                        UPDATE sensor_address_history
+                        SET valid_to = %s
+                        WHERE registry_id = %s AND valid_to IS NULL
+                        """,
+                        (observed_at, registry_id),
+                    )
+                    cursor.execute(
+                        """
+                        UPDATE sensor_registry
+                        SET hardware_address = NULL, identity_status = 'detached',
+                            pending_candidate_registry_id = NULL, pending_since = NULL,
+                            updated_at = %s
+                        WHERE registry_id = %s
+                        """,
+                        (observed_at, registry_id),
+                    )
+                    self._insert_registry_row(
+                        cursor,
+                        node_id,
+                        observed_at,
+                        "pending",
+                        int(registry_id),
+                        observed_at,
+                    )
+                    changed = True
+                else:
+                    changed = self._ensure_registry_device(cursor, int(registry_id), node_id)
+            else:
+                cursor.execute(
+                    """
+                    SELECT registry_id
+                    FROM sensor_registry
+                    WHERE bus = 'can' AND device_id IS NOT NULL
+                      AND identity_status IN ('confirmed', 'detached')
+                      AND last_seen < %s::timestamptz - %s::interval
+                    ORDER BY registry_id
+                    """,
+                    (observed_at, ABSENCE),
+                )
+                stale = cursor.fetchall()
+                identity_status = "pending" if stale else "confirmed"
+                candidate_id = int(stale[0][0]) if len(stale) == 1 else None
+                self._insert_registry_row(
+                    cursor,
+                    node_id,
+                    observed_at,
+                    identity_status,
+                    candidate_id,
+                    observed_at if stale else None,
+                )
+                changed = True
+
+            connection.commit()
+            return changed
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            if cursor is not None:
+                cursor.close()
+            connection.autocommit = previous_autocommit
 
     def _refresh_last_seen(self, connection: psycopg2.extensions.connection) -> None:
         now = time.monotonic()
@@ -219,7 +384,7 @@ class MetadataWorker:
             SELECT sr.registry_id, sr.hardware_address, sr.location_in_room, r.name AS room_name
             FROM sensor_registry sr
             LEFT JOIN room r ON r.room_id = sr.room_id
-            WHERE sr.bus = 'can'
+            WHERE sr.bus = 'can' AND sr.hardware_address IS NOT NULL
             """
         )
         rows = cursor.fetchall()

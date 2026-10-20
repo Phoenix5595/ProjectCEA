@@ -14,6 +14,7 @@ import { apiClient } from '../../../services/api'
 
 import {
   type AssignmentRequest,
+  type IdentityRequest,
   SensorRegistryList,
   SensorRegistryRecord,
   SoilHistoryResponse,
@@ -79,6 +80,17 @@ export const soilApi = {
   async assign(registryId: number, body: AssignmentRequest): Promise<SensorRegistryRecord> {
     const response = await apiClient.backendClient.put(
       `/api/sensors/registry/${registryId}/assignment`,
+      body
+    )
+    return SensorRegistryRecord.parse(response.data)
+  },
+
+  async resolveIdentity(
+    registryId: number,
+    body: IdentityRequest
+  ): Promise<SensorRegistryRecord> {
+    const response = await apiClient.backendClient.post(
+      `/api/sensors/registry/${registryId}/identity`,
       body
     )
     return SensorRegistryRecord.parse(response.data)

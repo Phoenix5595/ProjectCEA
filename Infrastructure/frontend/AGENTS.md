@@ -41,6 +41,12 @@ exact `/remote.php/dav/` URL (no redirects), a `Culture` calendar, Files access.
 Test/Save errors map `detail.code` to plain messages and a highlighted guide step
 via `components/calendar/nextcloudConnectionErrors.ts`; keep that table in sync with
 the automation calendar routes' error codes. Use placeholders, never a real tailnet name.
+
+Physical sensor rows have a permanent identity separate from their CAN/RS-485
+address. Pending rows are listed first in Sensor Settings; the operator confirms
+them as an existing eligible identity or as a new sensor. The Flower Soil page
+surfaces a pending-identity badge. Registry wire contracts live in
+`features/soil/api/contracts.ts`; do not hand-edit generated OpenAPI files.
 - `src/config/clusterTopology.ts` mirrors `Infrastructure/shared/cluster_topology.py`: device cluster is always `main`; Flower Room has sensor sub-clusters `front` and `back`; unsplit rooms reuse `main` as a sensor URL sentinel.
 - Operational event SSE uses `fetch` with `Accept: text/event-stream` and `X-API-Key`. Native `EventSource` and query-token keys are not used.
 

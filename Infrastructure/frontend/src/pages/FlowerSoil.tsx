@@ -199,9 +199,16 @@ export default function FlowerSoil() {
     return () => window.clearInterval(intervalId)
   }, [poll, seenUnassignedRef])
 
+  const pendingRecords = useMemo(() => {
+    if (registry === null) return []
+    return registry.filter(record => record.identity_status === 'pending')
+  }, [registry])
+
   const unassignedRecords = useMemo(() => {
     if (registry === null) return []
-    return registry.filter(record => record.status === 'unassigned')
+    return registry.filter(
+      record => record.identity_status !== 'pending' && record.status === 'unassigned'
+    )
   }, [registry])
 
   const isLive = range.kind === 'live'
@@ -297,6 +304,17 @@ export default function FlowerSoil() {
         <button type="button" onClick={goToSensorSettings} className="mon-banner mon-banner--error">
           {unassignedRecords.length} unassigned sensor
           {unassignedRecords.length === 1 ? '' : 's'} — open Sensor Settings
+        </button>
+      )}
+
+      {pendingRecords.length > 0 && (
+        <button
+          type="button"
+          onClick={goToSensorSettings}
+          className="mon-banner mon-banner--error"
+        >
+          {pendingRecords.length} sensor {pendingRecords.length === 1 ? 'identity needs' : 'identities need'}{' '}
+          confirmation — open Sensor Settings
         </button>
       )}
 

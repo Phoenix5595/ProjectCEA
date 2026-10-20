@@ -15,7 +15,7 @@ import psycopg2.extras
 import redis
 import redis.exceptions
 
-from app.sensor_registry import AssignmentCache, MetadataWorker, SensorAssignment
+from app.sensor_registry import ABSENCE, AssignmentCache, MetadataWorker, SensorAssignment
 from shared.db_batch_writer import BatchQueue
 from shared.db_credentials import load_postgres_password
 from shared.infra_logging import get_logger
@@ -110,8 +110,8 @@ class DataWriter:
         self.db_enabled = False
         self.redis_enabled = False
 
-        # Cache for device and sensor lookups (avoid repeated queries)
-        self.device_cache: dict[str, int] = {}  # {device_name: device_id}
+        # CAN addresses resolve only through sensor_registry.device_id.
+        self.device_cache: dict[int, int] = {}  # {hardware_address: device_id}
         self.sensor_cache: dict[tuple[int, str], int] = {}  # {(device_id, sensor_name): sensor_id}
 
         self._db_write_lock = threading.Lock()
@@ -141,9 +141,9 @@ class DataWriter:
         self._metadata_worker.offer(node_id)
 
     def _on_assignments_changed(self) -> None:
-        # Metric channel names change on assignment; stale (device, name)
-        # cache entries would point at renamed rows, so drop them. Device
-        # lookups keyed by `Node N` names stay valid.
+        # Placement changes rename channels; identity changes can replace the
+        # device linked to an address. Both invalidate these cached mappings.
+        self.device_cache.clear()
         self.sensor_cache.clear()
 
     def connect_db(self) -> bool:
@@ -173,30 +173,30 @@ class DataWriter:
             self.db_enabled = False
             return False
 
-    def _prefetch_device_ids(self, cursor: Any, device_names: set[str]) -> None:
-        """Load missing device_id rows in one query per batch (avoids N+1 SELECTs)."""
-        missing = [n for n in device_names if n not in self.device_cache]
-        if not missing:
+    def _prefetch_registry_device_ids(self, cursor: Any, node_ids: set[int]) -> None:
+        """Resolve only current, non-stale addresses to their registry devices."""
+        for node_id in node_ids:
+            self.device_cache.pop(node_id, None)
+        if not node_ids:
             return
         cursor.execute(
-            "SELECT device_id, name FROM device WHERE name = ANY(%s::text[])",
-            (missing,),
+            """
+            SELECT hardware_address, device_id
+            FROM sensor_registry
+            WHERE bus = 'can' AND hardware_address = ANY(%s::int[])
+              AND device_id IS NOT NULL
+              AND (
+                  identity_status = 'pending'
+                  OR (
+                      identity_status = 'confirmed'
+                      AND last_seen >= clock_timestamp() - %s
+                  )
+              )
+            """,
+            (list(node_ids), ABSENCE),
         )
-        for device_id, name in cursor.fetchall():
-            self.device_cache[str(name)] = int(device_id)
-
-    def _ensure_devices(self, cursor: Any, device_names: set[str]) -> None:
-        """Create missing `Node N` device rows so unassigned nodes keep storing."""
-        missing = [n for n in device_names if n not in self.device_cache]
-        for name in missing:
-            cursor.execute(
-                """
-                INSERT INTO device (name, type)
-                SELECT %s, 'sensor-node'
-                WHERE NOT EXISTS (SELECT 1 FROM device WHERE name = %s)
-                """,
-                (name, name),
-            )
+        for hardware_address, device_id in cursor.fetchall():
+            self.device_cache[int(hardware_address)] = int(device_id)
 
     def _ensure_channels(self, cursor: Any, by_device: dict[int, set[str]]) -> None:
         """Create observed metric channels instead of silently dropping them."""
@@ -243,30 +243,21 @@ class DataWriter:
                 raise RuntimeError("db connection is None; dropping batch")
             try:
                 cursor = self.db_conn.cursor()
-                device_names: set[str] = set()
-                for item in items:
-                    node_id = item.decoded.get("node_id")
-                    if not node_id:
-                        continue
-                    device_names.add(f"Node {node_id}")
-
-                # Unassigned/unknown nodes create their `Node N` device row;
-                # observed metric channels are created rather than dropped.
-                self._ensure_devices(cursor, device_names)
-                self._prefetch_device_ids(cursor, device_names)
+                node_ids = {
+                    int(item.decoded["node_id"]) for item in items if item.decoded.get("node_id")
+                }
+                self._prefetch_registry_device_ids(cursor, node_ids)
 
                 by_device: dict[int, set[str]] = {}
                 for item in items:
                     node_id = item.decoded.get("node_id")
                     if not node_id:
                         continue
-                    device_name = f"Node {node_id}"
-                    if device_name not in self.device_cache:
+                    device_id = self.device_cache.get(int(node_id))
+                    if device_id is None:
                         continue
-                    device_id = self.device_cache[device_name]
                     for sensor_name, _value, _unit in item.sensors:
-                        cache_key = (device_id, sensor_name)
-                        if cache_key not in self.sensor_cache:
+                        if (device_id, sensor_name) not in self.sensor_cache:
                             by_device.setdefault(device_id, set()).add(sensor_name)
                 self._ensure_channels(cursor, by_device)
                 self._prefetch_sensor_ids(cursor, by_device)
@@ -276,17 +267,14 @@ class DataWriter:
                     node_id = item.decoded.get("node_id")
                     if not node_id:
                         continue
-                    device_name = f"Node {node_id}"
-                    if device_name not in self.device_cache:
+                    device_id = self.device_cache.get(int(node_id))
+                    if device_id is None:
                         continue
-                    device_id = self.device_cache[device_name]
                     for sensor_name, value, _unit in item.sensors:
-                        cache_key = (device_id, sensor_name)
-                        if cache_key not in self.sensor_cache:
+                        sensor_id = self.sensor_cache.get((device_id, sensor_name))
+                        if sensor_id is None:
                             continue
-                        measurements.append(
-                            (item.timestamp, self.sensor_cache[cache_key], value, None)
-                        )
+                        measurements.append((item.timestamp, sensor_id, value, None))
                 if measurements:
                     psycopg2.extras.execute_batch(
                         cursor,

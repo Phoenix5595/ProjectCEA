@@ -31,6 +31,8 @@ Schema changes ship as `migrations/NNNN_name.sql` files applied by `Infrastructu
 - Phase 5 migration `0008_requested_pid_time_weighted` stores hourly `time_weight('LOCF', "time", round((pid_output::DOUBLE PRECISION * 100::DOUBLE PRECISION)::NUMERIC, 13)::DOUBLE PRECISION)` summaries and rolls them into daily summaries with Toolkit `rollup`; that same rounded numeric percentage is used for extrema, raw PID spans, and parity checks so a constant source value has identical average/min/max. `sample_count` remains the source-row count, while invalid/NULL PID outputs contribute no weighted value. The available `timescaledb_toolkit` 1.26.0 is trusted on the deployed PostgreSQL 15 / TimescaleDB 2.28.3, so a database owner can install it.
 - The 0008 migration reuses the Phase 4 oldest-first, one-UTC-day backfill job after rebuilding the two requested-PID aggregates. Before DDL, it durably snapshots and unschedules the requested-PID refresh/compression policies, overview jobs, and backfill job, then waits for their live workers; down uses the same restartable bounded gate. `test-time-rename-migration.sh` covers apply/down/apply, the 70.0 synthetic average, constant-value extrema parity, and quiescence timeout recovery.
 
+- SQL migration `0010_sensor_identity` assigns each registry row a permanent `sensor_uid`, tracks current and historical bus addresses, and links only exact unambiguous legacy device matches. A confirmed address seen again after ten minutes is detached and re-created as pending; the operator chooses `same` or `new` through the backend registry API. Same-identity merges decompress affected `measurement` chunks and reject ranges already removed by archive deletion.
+
 Historical note (2026-10-18): retired Grafana-only SQL migrations, views and verification scripts were removed: `grafana_performance_migration.sql`, `grafana_optimized_views.sql`, `grow_history_guards.sql`, `migrate_get_sensor_routing_1min_through_6h.sql`, `verify_get_sensor_routing.sql`, `verify_performance.sql`, `timescaledb_continuous_aggregates.sql`, and `timescaledb_compression.sql`. `latest_sensor_values` remains defined but has no in-repo consumer.
 
 ## Completed one-off operations (2026-10-19)
@@ -201,6 +203,8 @@ bash Infrastructure/database/tests/test-grow-data-lifecycle.sh --case schema
 ```
 
 Run these locally against a disposable Postgres instance, never against production.
+
+The permanent identity schema and re-address/same/new/transient-absence proof is `bash Infrastructure/database/tests/test-sensor-identity.sh` (guarded `monitoring_test_*` database).
 
 ---
 

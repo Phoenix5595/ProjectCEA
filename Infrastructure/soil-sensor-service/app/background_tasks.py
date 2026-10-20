@@ -2,11 +2,10 @@
 
 Discovery and polling authority is the `sensor_registry` table (bus
 'rs485'), never YAML and never round-robin bed alternation. Startup loads
-known addresses, discovery upserts unknown Modbus IDs as unassigned, and
-polling refreshes assignments on the existing discovery cadence. All
-probes keep storing measurements and writing the raw stream before they
-are commissioned; assigned bed metadata is included when present and the
-service never chooses a bed.
+known addresses, creates permanent devices, and treats a ten-minute absence as
+possible address reassignment requiring operator confirmation. Polling refreshes
+assignments from the registry and records freshness only after successful reads.
+The service never chooses a bed.
 """
 
 from __future__ import annotations
@@ -114,24 +113,32 @@ class BackgroundTasks:
     def _probe_name(self, modbus_id: int) -> str:
         return f"soil_sensor_{modbus_id}"
 
-    async def _wire_probe(
-        self, modbus_id: int, registry_id: int | None, bed_name: str | None
-    ) -> None:
-        """Wire one probe into the polling loop with its registry metadata."""
+    async def _wire_probe(self, modbus_id: int, registry_id: int, bed_name: str | None) -> None:
+        """Wire one current registry identity into the polling loop."""
         probe_name = self._probe_name(modbus_id)
         reader = SoilSensorReader(cast(str, self.rs485_port), modbus_id, self.rs485_baudrate)
         reader.connect()
 
-        serial_number = f"MODBUS-{modbus_id}"
-        _device_id, sensor_ids = await self.database.register_sensor_device(
-            serial_number, probe_name
-        )
+        _device_id, sensor_ids = await self.database.register_sensor_device(registry_id, probe_name)
 
         self.sensor_readers[probe_name] = reader
         self.sensor_ids[probe_name] = sensor_ids
-        if registry_id is not None:
-            self.registry_ids[modbus_id] = registry_id
+        self.registry_ids[modbus_id] = registry_id
         self.sensor_configs[probe_name] = {"modbus_id": modbus_id, "bed_name": bed_name}
+
+    async def _apply_registry_entry(self, modbus_id: int, entry: dict[str, Any]) -> None:
+        """Follow address-to-device changes made by discovery or operator confirmation."""
+        probe_name = self._probe_name(modbus_id)
+        registry_id = int(entry["registry_id"])
+        if self.registry_ids.get(modbus_id) != registry_id:
+            _device_id, sensor_ids = await self.database.register_sensor_device(
+                registry_id, probe_name
+            )
+            self.sensor_ids[probe_name] = sensor_ids
+        self.registry_ids[modbus_id] = registry_id
+        config = self.sensor_configs.get(probe_name)
+        if config is not None:
+            config["bed_name"] = entry["bed_name"]
 
     async def _load_registry_sensors(self) -> None:
         """Wire every probe known to sensor_registry into polling.
@@ -172,12 +179,7 @@ class BackgroundTasks:
             await asyncio.sleep(discovery_interval)
 
     async def _scan_bus_for_sensors(self, start_id: int, end_id: int) -> None:
-        """Scan the bus for new sensors and upsert unknown addresses as
-        unassigned registry rows. Polling metadata refreshes here on the
-        existing discovery cadence."""
-        # Registry metadata refresh happens before bus work so freshness and
-        # bed assignment still follow the registry when the serial adapter is
-        # absent or the scan fails.
+        """Scan for responders and update identity only after a real response."""
         await self._refresh_assignments()
         try:
             temp_modbus = ModbusRTU(cast(str, self.rs485_port), self.rs485_baudrate, timeout=0.5)
@@ -188,69 +190,53 @@ class BackgroundTasks:
                     registers = await asyncio.to_thread(
                         temp_modbus.read_holding_registers, modbus_id, 0x0000, 1
                     )
-                    if registers is not None and modbus_id not in self.discovered_modbus_ids:
+                    if registers is None:
+                        continue
+                    if modbus_id not in self.discovered_modbus_ids:
                         logger.info(f"Discovered new sensor at Modbus ID {modbus_id}")
-                        # Discovery never assigns a bed: the probe joins
-                        # polling unassigned and stays there until it is
-                        # commissioned through Sensor Settings.
                         if await self._auto_register_sensor(modbus_id):
                             self.discovered_modbus_ids.add(modbus_id)
+                        continue
+
+                    entry = await self.database.observe_probe(modbus_id)
+                    previous_registry_id = self.registry_ids.get(modbus_id)
+                    if previous_registry_id != int(entry["registry_id"]):
+                        old_reader = self.sensor_readers.get(self._probe_name(modbus_id))
+                        if old_reader is not None:
+                            old_reader.disconnect()
+                        await self._wire_probe(
+                            modbus_id, int(entry["registry_id"]), entry["bed_name"]
+                        )
+                    else:
+                        await self._apply_registry_entry(modbus_id, entry)
                 except Exception as e:
-                    # Probe of a slot with no device is the common case here -
-                    # debug-level so a tail -f can confirm the scan is running
-                    # without flooding journal at INFO.
                     logger.debug(f"Modbus probe id={modbus_id} no response ({type(e).__name__})")
 
             temp_modbus.disconnect()
         except Exception as e:
             logger.error(f"Error scanning bus: {e}")
-            # Don't raise, keep trying
 
     async def _refresh_assignments(self) -> None:
-        """Refresh bed metadata for wired probes from sensor_registry."""
-        registry_rows = await self.database.load_registry_sensors()
-        wired_ids = [
-            entry["hardware_address"]
-            for entry in registry_rows
-            if self._probe_name(entry["hardware_address"]) in self.sensor_configs
-        ]
-        await self.database.touch_last_seen(wired_ids)
-        for entry in registry_rows:
+        """Refresh bed metadata and identity links from sensor_registry."""
+        for entry in await self.database.load_registry_sensors():
             modbus_id = entry["hardware_address"]
             probe_name = self._probe_name(modbus_id)
-            if registry_id := entry["registry_id"]:
-                self.registry_ids[modbus_id] = int(registry_id)
-            config = self.sensor_configs.get(probe_name)
-            if config is not None:
-                config["bed_name"] = entry["bed_name"]
+            if probe_name in self.sensor_configs:
+                await self._apply_registry_entry(modbus_id, entry)
 
     async def _auto_register_sensor(self, modbus_id: int) -> bool:
-        """Upsert a discovered Modbus address (unassigned) and wire it into
-        the polling loop.
-
-        Returns True on success (sensor is now wired into the polling loop),
-        False on any failure (caller must NOT mark the modbus_id as discovered
-        so the next scan retries)."""
+        """Create or identify a responding address, then wire its owned device."""
         probe_name = self._probe_name(modbus_id)
-        reader = SoilSensorReader(cast(str, self.rs485_port), modbus_id, self.rs485_baudrate)
-
         try:
-            reader.connect()
-
-            registry_id = await self.database.upsert_unassigned_probe(modbus_id)
-            await self._wire_probe(modbus_id, registry_id, bed_name=None)
-
+            entry = await self.database.observe_probe(modbus_id)
+            await self._wire_probe(modbus_id, int(entry["registry_id"]), entry["bed_name"])
             logger.info(
-                f"Auto-registered sensor: {probe_name} (Modbus ID: {modbus_id}, unassigned)"
+                f"Registered sensor: {probe_name} (Modbus ID: {modbus_id}, "
+                f"identity={entry['identity_status']})"
             )
             return True
-
         except Exception as e:
-            logger.error(f"Failed to auto-register sensor Modbus ID {modbus_id}: {e}")
-            try:
-                reader.disconnect()
-            except Exception as disc_err:
-                logger.warning(f"Error disconnecting reader: {disc_err}")
+            logger.error(f"Failed to register sensor Modbus ID {modbus_id}: {e}")
             return False
 
     async def _polling_loop(self) -> None:
@@ -285,7 +271,11 @@ class BackgroundTasks:
                 readings = await asyncio.to_thread(reader.read_all_parameters)
 
                 if readings:
-                    # Store in database (also before assignment)
+                    # Resolve identity before storing a reading. A stale same-
+                    # address response becomes pending before it gets a device.
+                    entry = await self.database.observe_probe(int(config["modbus_id"]))
+                    await self._apply_registry_entry(int(config["modbus_id"]), entry)
+                    bed_name = config["bed_name"]
                     sensor_ids = self.sensor_ids.get(probe_name, {})
                     await self.database.store_measurements(sensor_ids, readings, timestamp)
 

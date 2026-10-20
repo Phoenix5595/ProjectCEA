@@ -43,6 +43,7 @@ Edit `soil_sensor_config.yaml` for hardware-only RS-485 settings:
 The polling intervals are editable in Sensor Settings (`GET /api/settings`, `PUT /api/settings/soil`). The YAML `polling.interval_seconds` and `polling.discovery_interval_seconds` values remain fallbacks for when neither the database nor settings cache has a value. Database changes take effect on the next polling or discovery loop iteration.
 
 The service discovers sensors on the bus and registers them in the database. Sensor assignments live in the `sensor_registry` table, not in YAML.
+The `sensor_registry` table owns permanent probe identities and bed assignment. A ten-minute absence followed by a response creates a pending identity for operator confirmation in Devices → Sensor Settings. Readings use the registry row's linked device; newly created devices use `SENSOR-<sensor_uid>` serials. There is no sensor list in YAML.
 
 ## Running
 

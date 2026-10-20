@@ -35,6 +35,10 @@ const REGISTRY_RESPONSE = {
       registry_id: 4,
       bus: 'rs485' as const,
       hardware_address: 226,
+      sensor_uid: '00000000-0000-4000-8000-000000000004',
+      identity_status: 'confirmed' as const,
+      pending_candidate_registry_id: null,
+      pending_since: null,
       display_name: 'soil_sensor_226',
       status: 'assigned' as const,
       first_seen: new Date('2026-09-21T09:00:00Z'),
@@ -180,6 +184,29 @@ describe('soil page', () => {
       .map(term => (term.textContent ?? '').replace(/\s+/g, ' ').trim())
     expect(metricLabels).toEqual(['Water content No reading', 'EC Stale', 'pH', 'Temperature'])
     expect(within(card).getByText('—')).toBeInTheDocument()
+  })
+
+  it('shows a persistent settings badge for pending sensor identities', async () => {
+    const record = REGISTRY_RESPONSE.records[0]
+    if (record === undefined) throw new Error('soil registry fixture record missing')
+    vi.mocked(soilApi.listRegistry).mockResolvedValue({
+      ...REGISTRY_RESPONSE,
+      records: [
+        {
+          ...record,
+          status: 'unassigned',
+          assignment: null,
+          identity_status: 'pending',
+          pending_candidate_registry_id: null,
+          pending_since: new Date('2026-09-21T12:00:00Z'),
+        },
+      ],
+    })
+
+    renderSoil()
+    expect(
+      await screen.findByRole('button', { name: /sensor identity needs confirmation/i })
+    ).toBeInTheDocument()
   })
 })
 
