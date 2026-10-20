@@ -190,6 +190,17 @@ describe('historyOverviewSensorContract', () => {
     expect(touching.series).toHaveLength(1)
   })
 
+  it('keeps single-row sensor points equal while requested PID may be predecessor-weighted', () => {
+    const sensorContract = historyOverviewSensorContract(SENSOR_REQUEST)
+    expect(() =>
+      sensorContract.parse(
+        sensorPayload({
+          series: [sensorSeries([bucketPoint(0, { sample_count: 1 })])],
+        })
+      )
+    ).toThrow()
+  })
+
   it('enforces zero-count and single-sample boundaries', () => {
     const contract = historyOverviewSensorContract(SENSOR_REQUEST)
     expect(() =>
@@ -352,6 +363,71 @@ describe('historyOverviewControlContract', () => {
     expect(parsed.relays[0]?.channel).toBe(3)
     expect(parsed.lights[0]?.device_name).toBe('light_f_1')
   })
+  it('accepts a single-row requested PID point whose LOCF average includes its predecessor', () => {
+    const contract = historyOverviewControlContract(CONTROL_REQUEST)
+    const payload = controlPayload()
+    const requestedSeries = (
+      payload.requested_pid as Array<{ points: Array<Record<string, unknown>> }>
+    )[0]
+    const point = requestedSeries?.points[0]
+    if (!requestedSeries || !point) throw new Error('requested PID fixture point is missing')
+    requestedSeries.points[0] = {
+      ...point,
+      sample_count: 1,
+      average: 15,
+      minimum: 10,
+      maximum: 20,
+    }
+
+    const parsed = contract.parse(payload)
+    expect(parsed.requested_pid[0]?.points[0]).toMatchObject({
+      sample_count: 1,
+      average: 15,
+      minimum: 10,
+      maximum: 20,
+    })
+
+    const invalidLightPayload = controlPayload()
+    const lightSeries = (
+      invalidLightPayload.lights as Array<{ points: Array<Record<string, unknown>> }>
+    )[0]
+    const lightPoint = lightSeries?.points[0]
+    if (!lightSeries || !lightPoint) throw new Error('light fixture point is missing')
+    lightSeries.points[0] = {
+      ...lightPoint,
+      sample_count: 1,
+      average: 15,
+      minimum: 10,
+      maximum: 20,
+    }
+    expect(() => contract.parse(invalidLightPayload)).toThrow()
+  })
+
+  it('accepts a predecessor-covered requested PID point with zero in-span rows', () => {
+    const contract = historyOverviewControlContract(CONTROL_REQUEST)
+    const payload = controlPayload()
+    const requestedSeries = (
+      payload.requested_pid as Array<{ points: Array<Record<string, unknown>> }>
+    )[0]
+    const point = requestedSeries?.points[0]
+    if (!requestedSeries || !point) throw new Error('requested PID fixture point is missing')
+    requestedSeries.points[0] = {
+      ...point,
+      sample_count: 0,
+      average: 15,
+      minimum: 10,
+      maximum: 20,
+    }
+
+    const parsed = contract.parse(payload)
+    expect(parsed.requested_pid[0]?.points[0]).toMatchObject({
+      sample_count: 0,
+      average: 15,
+      minimum: 10,
+      maximum: 20,
+    })
+  })
+
 
   it('rejects control ranges shorter than five minutes', () => {
     const short = historyOverviewControlContract({

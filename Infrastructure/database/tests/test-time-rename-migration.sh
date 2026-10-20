@@ -80,6 +80,337 @@ assert_positive() {
   fi
 }
 
+assert_requested_pid_time_weighted_shape() {
+  assert_equal "$(query_db "$DATABASE_NAME" \
+    "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name = ANY (ARRAY['monitoring_requested_pid_1hour','monitoring_requested_pid_1day']) AND column_name='requested_tw'")" \
+    '2' 'hour/day PID CAGGs use time-weight summaries'
+  assert_equal "$(query_db "$DATABASE_NAME" \
+    "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name = ANY (ARRAY['monitoring_requested_pid_1hour','monitoring_requested_pid_1day']) AND column_name IN ('requested_count','requested_sum','requested_sum_squares')")" \
+    '0' 'obsolete PID arithmetic sufficient statistics are removed'
+  assert_equal "$(query_db "$DATABASE_NAME" \
+    "SELECT v.trusted FROM pg_extension e JOIN pg_available_extension_versions v ON v.name=e.extname AND v.version=e.extversion WHERE e.extname='timescaledb_toolkit'")" \
+    't' 'installed toolkit version is trusted for non-superuser migrations'
+  assert_equal "$(query_db "$DATABASE_NAME" \
+    "SELECT count(*) FROM timescaledb_information.continuous_aggregates WHERE view_schema='public' AND view_name = ANY (ARRAY['monitoring_requested_pid_1hour','monitoring_requested_pid_1day']) AND compression_enabled")" \
+    '2' 'both PID time-weight aggregates remain compression-enabled'
+  assert_equal "$(query_db "$DATABASE_NAME" \
+    "SELECT count(*) FROM public.monitoring_job_snapshot_0008 WHERE proc_schema='public' AND proc_name IN ('monitoring_backfill_aggregates','monitoring_refresh_overview_incremental','monitoring_rebuild_relay_overview')")" \
+    '5' 'the Phase 5 snapshot retains backfill and overview job schedules'
+}
+
+assert_requested_pid_legacy_shape() {
+  assert_equal "$(query_db "$DATABASE_NAME" \
+    "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name = ANY (ARRAY['monitoring_requested_pid_1hour','monitoring_requested_pid_1day']) AND column_name='requested_sum'")" \
+    '2' 'rollback restores legacy PID summaries'
+  assert_equal "$(query_db "$DATABASE_NAME" \
+    "SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name = ANY (ARRAY['monitoring_requested_pid_1hour','monitoring_requested_pid_1day']) AND column_name='requested_tw'")" \
+    '0' 'rollback removes PID time-weight summaries'
+  assert_equal "$(query_db "$DATABASE_NAME" \
+    "SELECT count(*) FROM pg_extension WHERE extname='timescaledb_toolkit'")" \
+    '0' 'rollback removes the Toolkit extension only when 0008 installed it'
+  assert_equal "$(query_db "$DATABASE_NAME" \
+    "SELECT to_regclass('public.monitoring_toolkit_snapshot_0008') IS NULL")" \
+    't' 'rollback removes the Toolkit installation snapshot'
+}
+
+seed_requested_pid_time_weighted_rows() {
+  psql_as_postgres --dbname="$DATABASE_NAME" <<'SQL' >/dev/null
+DO $seed_requested_pid_time_weighted$
+DECLARE
+    minute_start TIMESTAMPTZ :=
+        (date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')
+        - INTERVAL '2 days' + INTERVAL '12 hours';
+BEGIN
+    INSERT INTO public.automation_state (
+        "timestamp", location, cluster, device_name, device_state, device_mode, pid_output)
+    VALUES
+        (minute_start, 'Phase5 PID Proof Room', 'main',
+         'pid_time_weighted_proof', 0, 'auto', 0.2),
+        (minute_start + INTERVAL '10 seconds', 'Phase5 PID Proof Room', 'main',
+         'pid_time_weighted_proof', 0, 'auto', 0.8),
+        (minute_start, 'Phase5 PID Constant Room', 'main',
+         'pid_constant_proof', 0, 'auto', 0.2),
+        (minute_start + INTERVAL '30 seconds', 'Phase5 PID Constant Room', 'main',
+         'pid_constant_proof', 0, 'auto', 0.2);
+END
+$seed_requested_pid_time_weighted$;
+SQL
+}
+
+prove_requested_pid_time_weighted_average() {
+  psql_as_postgres --dbname="$DATABASE_NAME" <<'SQL' >/dev/null
+DO $prove_requested_pid_time_weighted$
+DECLARE
+    minute_start TIMESTAMPTZ;
+    source_day TIMESTAMPTZ;
+    actual_average DOUBLE PRECISION;
+    constant_average DOUBLE PRECISION;
+    constant_minimum DOUBLE PRECISION;
+    constant_maximum DOUBLE PRECISION;
+BEGIN
+    SELECT min("time")
+    INTO minute_start
+    FROM public.automation_state
+    WHERE location = 'Phase5 PID Proof Room'
+      AND cluster = 'main'
+      AND device_name = 'pid_time_weighted_proof';
+    IF minute_start IS NULL THEN
+        RAISE EXCEPTION 'synthetic_pid_rows_missing';
+    END IF;
+    source_day := time_bucket(INTERVAL '1 day', minute_start);
+    CALL public.refresh_continuous_aggregate(
+        'public.monitoring_requested_pid_1hour'::REGCLASS,
+        source_day, source_day + INTERVAL '24 hours', TRUE,
+        '{"buckets_per_batch":0}'::JSONB);
+    CALL public.refresh_continuous_aggregate(
+        'public.monitoring_requested_pid_1day'::REGCLASS,
+        source_day, source_day + INTERVAL '24 hours', TRUE,
+        '{"buckets_per_batch":0}'::JSONB);
+
+    SELECT interpolated_average(
+               requested_tw,
+               minute_start,
+               INTERVAL '1 minute',
+               previous_tw,
+               next_tw)
+    INTO actual_average
+    FROM (
+        SELECT bucket,
+               requested_tw,
+               lag(requested_tw) OVER summary_window AS previous_tw,
+               lead(requested_tw) OVER summary_window AS next_tw
+        FROM public.monitoring_requested_pid_1hour
+        WHERE location = 'Phase5 PID Proof Room'
+          AND cluster = 'main'
+          AND device_name = 'pid_time_weighted_proof'
+        WINDOW summary_window AS (
+            PARTITION BY location, cluster, device_name
+            ORDER BY bucket
+        )
+    ) AS requested
+    WHERE bucket = time_bucket(INTERVAL '1 hour', minute_start);
+    IF round(actual_average::NUMERIC, 1) IS DISTINCT FROM 70.0::NUMERIC THEN
+        RAISE EXCEPTION 'synthetic_pid_time_weighted_average_expected_70_got_%',
+            actual_average;
+    END IF;
+
+    SELECT interpolated_average(
+               requested_tw,
+               minute_start,
+               INTERVAL '1 minute',
+               previous_tw,
+               next_tw),
+           requested_min::DOUBLE PRECISION,
+           requested_max::DOUBLE PRECISION
+    INTO constant_average, constant_minimum, constant_maximum
+    FROM (
+        SELECT bucket,
+               requested_tw,
+               requested_min,
+               requested_max,
+               lag(requested_tw) OVER summary_window AS previous_tw,
+               lead(requested_tw) OVER summary_window AS next_tw
+        FROM public.monitoring_requested_pid_1hour
+        WHERE location = 'Phase5 PID Constant Room'
+          AND cluster = 'main'
+          AND device_name = 'pid_constant_proof'
+        WINDOW summary_window AS (
+            PARTITION BY location, cluster, device_name
+            ORDER BY bucket
+        )
+    ) AS constant
+    WHERE bucket = time_bucket(INTERVAL '1 hour', minute_start);
+    IF constant_average IS DISTINCT FROM constant_minimum
+       OR constant_minimum IS DISTINCT FROM constant_maximum THEN
+        RAISE EXCEPTION 'constant_pid_average_minimum_maximum_mismatch: %, %, %',
+            constant_average, constant_minimum, constant_maximum;
+    END IF;
+END
+$prove_requested_pid_time_weighted$;
+SQL
+}
+
+prove_requested_pid_quiesce_timeout() {
+  local direction="$1" backfill_job_id synthetic_worker_pid output expected
+  synthetic_worker_pid=2147483000
+  backfill_job_id="$(query_db "$DATABASE_NAME" \
+    "SELECT job_id FROM timescaledb_information.jobs WHERE proc_schema='public' AND proc_name='monitoring_backfill_aggregates'")"
+  [[ "$backfill_job_id" =~ ^[0-9]+$ ]] || {
+    fail "Phase 5 backfill job was not registered: $backfill_job_id"
+    return 1
+  }
+  psql_as_postgres --dbname="$DATABASE_NAME" \
+    --command="SELECT alter_job($backfill_job_id, scheduled => TRUE, next_start => clock_timestamp() + INTERVAL '1 day')" \
+    >/dev/null
+  psql_as_postgres --dbname=postgres <<SQL >/dev/null
+ALTER DATABASE "$DATABASE_NAME"
+    SET app.requested_pid_test_quiesce_timeout TO '1 second';
+ALTER DATABASE "$DATABASE_NAME"
+    SET app.requested_pid_test_synthetic_worker_job_id TO '$backfill_job_id';
+ALTER DATABASE "$DATABASE_NAME"
+    SET app.requested_pid_test_synthetic_worker_pid TO '$synthetic_worker_pid';
+SQL
+
+  case "$direction" in
+    apply)
+      if output="$(run_migrator "$DATABASE_NAME" apply --skip-alembic 2>&1)"; then
+        psql_as_postgres --dbname=postgres <<SQL >/dev/null
+ALTER DATABASE "$DATABASE_NAME" RESET app.requested_pid_test_quiesce_timeout;
+ALTER DATABASE "$DATABASE_NAME" RESET app.requested_pid_test_synthetic_worker_job_id;
+ALTER DATABASE "$DATABASE_NAME" RESET app.requested_pid_test_synthetic_worker_pid;
+SQL
+        fail '0008 apply synthetic-worker override did not exercise the quiescence timeout'
+        return 1
+      fi
+      ;;
+    down)
+      if output="$(run_migrator "$DATABASE_NAME" down --to 0007_time_column_rename 2>&1)"; then
+        psql_as_postgres --dbname=postgres <<SQL >/dev/null
+ALTER DATABASE "$DATABASE_NAME" RESET app.requested_pid_test_quiesce_timeout;
+ALTER DATABASE "$DATABASE_NAME" RESET app.requested_pid_test_synthetic_worker_job_id;
+ALTER DATABASE "$DATABASE_NAME" RESET app.requested_pid_test_synthetic_worker_pid;
+SQL
+        fail '0008 down synthetic-worker override did not exercise the quiescence timeout'
+        return 1
+      fi
+      ;;
+    *)
+      psql_as_postgres --dbname=postgres <<SQL >/dev/null
+ALTER DATABASE "$DATABASE_NAME" RESET app.requested_pid_test_quiesce_timeout;
+ALTER DATABASE "$DATABASE_NAME" RESET app.requested_pid_test_synthetic_worker_job_id;
+ALTER DATABASE "$DATABASE_NAME" RESET app.requested_pid_test_synthetic_worker_pid;
+SQL
+      fail "unknown 0008 quiescence test direction: $direction"
+      return 1
+      ;;
+  esac
+
+  for expected in \
+    'requested_pid_migration_jobs_still_running' \
+    "job_id=$backfill_job_id" \
+    "worker_pid=$synthetic_worker_pid" \
+    "worker_app=phase5_quiesce_diagnostic [$backfill_job_id]" \
+    'DETAIL:' \
+    'HINT:' \
+    'Jobs are durably unscheduled and snapshotted; wait for canceled workers to exit (do not kill them), then re-run the migration.'; do
+    if [[ "$output" != *"$expected"* ]]; then
+      fail "0008 quiescence detail omitted '$expected': $output"
+      return 1
+    fi
+  done
+  assert_equal "$(query_db "$DATABASE_NAME" \
+    "SELECT scheduled FROM timescaledb_information.jobs WHERE job_id=$backfill_job_id")" \
+    'f' '0008 diagnostic timeout leaves the backfill job unscheduled'
+  assert_equal "$(query_db "$DATABASE_NAME" \
+    "SELECT scheduled FROM public.monitoring_job_snapshot_0008 WHERE job_id=$backfill_job_id")" \
+    't' '0008 diagnostic timeout preserves the saved backfill schedule'
+  assert_equal "$(query_db "$DATABASE_NAME" \
+    "WITH cagg_targets AS (SELECT user_view_schema, user_view_name, mat_hypertable_id FROM _timescaledb_catalog.continuous_agg WHERE user_view_schema='public' AND user_view_name IN ('monitoring_requested_pid_1hour','monitoring_requested_pid_1day')) SELECT count(*) FROM timescaledb_information.jobs AS job LEFT JOIN cagg_targets AS cagg ON cagg.mat_hypertable_id = CASE WHEN job.proc_name IN ('policy_refresh_continuous_aggregate','policy_compression','policy_columnstore') THEN COALESCE(NULLIF(job.config->>'mat_hypertable_id','')::INTEGER,NULLIF(job.config->>'hypertable_id','')::INTEGER) ELSE NULL END WHERE ((job.proc_schema='public' AND job.proc_name IN ('monitoring_backfill_aggregates','monitoring_refresh_overview_incremental','monitoring_rebuild_relay_overview')) OR (job.proc_schema='_timescaledb_functions' AND job.proc_name IN ('policy_refresh_continuous_aggregate','policy_compression','policy_columnstore') AND cagg.user_view_name IS NOT NULL)) AND job.scheduled")" \
+    '0' '0008 commits the unschedule for all target custom and native jobs'
+  assert_equal "$(query_db "$DATABASE_NAME" \
+    "SELECT count(*) FROM public.monitoring_job_snapshot_0008 WHERE target_is_cagg AND proc_name IN ('policy_refresh_continuous_aggregate','policy_compression','policy_columnstore')")" \
+    '4' '0008 snapshots both requested-PID refresh and compression policies'
+  psql_as_postgres --dbname=postgres <<SQL >/dev/null
+ALTER DATABASE "$DATABASE_NAME" RESET app.requested_pid_test_quiesce_timeout;
+ALTER DATABASE "$DATABASE_NAME" RESET app.requested_pid_test_synthetic_worker_job_id;
+ALTER DATABASE "$DATABASE_NAME" RESET app.requested_pid_test_synthetic_worker_pid;
+SQL
+}
+
+prove_requested_pid_quiesce_drain() {
+  local direction="$1" backfill_job_id worker_pid active_workers output attempt
+  backfill_job_id="$(query_db "$DATABASE_NAME" \
+    "SELECT job_id FROM timescaledb_information.jobs WHERE proc_schema='public' AND proc_name='monitoring_backfill_aggregates'")"
+  [[ "$backfill_job_id" =~ ^[0-9]+$ ]] || {
+    fail "Phase 5 drain job was not registered: $backfill_job_id"
+    return 1
+  }
+  psql_as_postgres --dbname="$DATABASE_NAME" <<SQL >/dev/null
+CREATE OR REPLACE PROCEDURE public.monitoring_backfill_aggregates(
+    job_id INTEGER, config JSONB)
+LANGUAGE plpgsql
+AS \$phase5_drain_sleep\$
+BEGIN
+    PERFORM pg_sleep(60);
+END
+\$phase5_drain_sleep\$;
+SELECT alter_job($backfill_job_id,
+                 schedule_interval => INTERVAL '1 second',
+                 max_runtime => INTERVAL '2 minutes',
+                 scheduled => TRUE,
+                 next_start => clock_timestamp());
+SQL
+  psql_as_postgres --dbname=postgres \
+    --command="ALTER DATABASE \"$DATABASE_NAME\" SET app.requested_pid_test_capture_quiescence TO '1'" \
+    >/dev/null
+
+  worker_pid=''
+  for ((attempt = 1; attempt <= 120; attempt++)); do
+    worker_pid="$(query_db "$DATABASE_NAME" \
+      "SELECT COALESCE((SELECT pid::TEXT FROM pg_stat_activity WHERE datname=current_database() AND backend_type <> 'client backend' AND right(application_name, length(' [$backfill_job_id]')) = ' [$backfill_job_id]' AND query LIKE '%monitoring_backfill_aggregates%' AND wait_event_type='Timeout' AND wait_event='PgSleep' ORDER BY pid LIMIT 1), '')")"
+    [[ "$worker_pid" =~ ^[0-9]+$ ]] && break
+    sleep 0.25
+  done
+  [[ "$worker_pid" =~ ^[0-9]+$ ]] || {
+    active_workers="$(query_db "$DATABASE_NAME" \
+      "SELECT COALESCE(string_agg(format('pid=%s type=%s app=%s wait=%s/%s query=%s', pid, backend_type, application_name, wait_event_type, wait_event, query), E'\\n' ORDER BY pid), '<none>') FROM pg_stat_activity WHERE datname=current_database()")"
+    psql_as_postgres --dbname=postgres \
+      --command="ALTER DATABASE \"$DATABASE_NAME\" RESET app.requested_pid_test_capture_quiescence" \
+      >/dev/null
+    psql_as_postgres --dbname="$DATABASE_NAME" \
+      --command="SELECT alter_job($backfill_job_id, scheduled => FALSE)" >/dev/null
+    fail "0008 drain worker did not enter pg_sleep: $active_workers"
+    return 1
+  }
+  printf '0008 drain proof starts with worker pid=%s job_id=%s direction=%s\n' \
+    "$worker_pid" "$backfill_job_id" "$direction" >&2
+
+  case "$direction" in
+    apply)
+      if output="$(run_migrator "$DATABASE_NAME" apply --skip-alembic 2>&1)"; then
+        :
+      else
+        psql_as_postgres --dbname=postgres \
+          --command="ALTER DATABASE \"$DATABASE_NAME\" RESET app.requested_pid_test_capture_quiescence" \
+          >/dev/null
+        fail "0008 apply did not cancel and drain its worker before DDL: $output"
+        return 1
+      fi
+      ;;
+    down)
+      if output="$(run_migrator "$DATABASE_NAME" down --to 0007_time_column_rename 2>&1)"; then
+        :
+      else
+        psql_as_postgres --dbname=postgres \
+          --command="ALTER DATABASE \"$DATABASE_NAME\" RESET app.requested_pid_test_capture_quiescence" \
+          >/dev/null
+        fail "0008 down did not cancel and drain its worker before DDL: $output"
+        return 1
+      fi
+      ;;
+    *)
+      psql_as_postgres --dbname=postgres \
+        --command="ALTER DATABASE \"$DATABASE_NAME\" RESET app.requested_pid_test_capture_quiescence" \
+        >/dev/null
+      fail "unknown 0008 drain direction: $direction"
+      return 1
+      ;;
+  esac
+  psql_as_postgres --dbname=postgres \
+    --command="ALTER DATABASE \"$DATABASE_NAME\" RESET app.requested_pid_test_capture_quiescence" \
+    >/dev/null
+
+  assert_equal "$(query_db "$DATABASE_NAME" \
+    "SELECT active_worker_count = 0 AND cardinality(active_worker_job_ids) = 0 AND cardinality(active_worker_pids) = 0 FROM public.monitoring_test_quiescence_snapshot_0008 ORDER BY captured_at DESC LIMIT 1")" \
+    't' '0008 confirmed worker exit at the DDL boundary'
+  assert_equal "$(query_db "$DATABASE_NAME" \
+    "SELECT NOT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND backend_type <> 'client backend' AND pid=$worker_pid)")" \
+    't' 'cancelled 0008 worker is gone after migration'
+  psql_as_postgres --dbname="$DATABASE_NAME" \
+    --command="SELECT alter_job($backfill_job_id, schedule_interval => INTERVAL '1 minute', next_start => clock_timestamp() + INTERVAL '1 minute', scheduled => FALSE)" \
+    >/dev/null
+}
+
 create_disposable_database() {
   local database_name="$1"
   [[ "$database_name" =~ ^monitoring_test_[a-z0-9_]+$ ]] || {
@@ -1342,6 +1673,7 @@ SELECT bounds.day0 + days.day_index * INTERVAL '1 day' + INTERVAL '8 minutes',
        'heater', 25.0, 0.02, 0.0, 'Flower Room', 'main'
 FROM bounds CROSS JOIN days;
 SQL
+seed_requested_pid_time_weighted_rows
 
 printf 'enabling source compression and compressing existing chunks\n'
 psql_as_postgres --dbname="$DATABASE_NAME" <<'SQL' >/dev/null
@@ -1732,6 +2064,45 @@ done
 assert_backfill_parity
 assert_measurement_ancestor_freshness
 
+printf 'applying and proving the Phase 5 time-weighted requested-PID aggregate\n'
+cp -- "$WORKTREE_ROOT/Infrastructure/database/migrations/0008_requested_pid_time_weighted.sql" \
+  "$MIGRATION_RELEASE_ROOT/Infrastructure/database/migrations/"
+cp -- "$WORKTREE_ROOT/Infrastructure/database/migrations/0008_requested_pid_time_weighted.down.sql" \
+  "$MIGRATION_RELEASE_ROOT/Infrastructure/database/migrations/"
+printf 'proving 0008 synthetic quiescence diagnostics and cancellation drain\n'
+prove_requested_pid_quiesce_timeout apply
+prove_requested_pid_quiesce_drain apply
+BACKFILL_JOB_ID="$(query_db "$DATABASE_NAME" \
+  "SELECT job_id FROM timescaledb_information.jobs WHERE proc_schema='public' AND proc_name='monitoring_backfill_aggregates'")"
+psql_as_postgres --dbname="$DATABASE_NAME" \
+  --command="SELECT alter_job($BACKFILL_JOB_ID, scheduled => FALSE)" >/dev/null
+assert_requested_pid_time_weighted_shape
+prove_requested_pid_time_weighted_average
+
+printf 'proving 0008 down synthetic diagnostics and cancellation drain\n'
+prove_requested_pid_quiesce_timeout down
+prove_requested_pid_quiesce_drain down
+assert_requested_pid_legacy_shape
+BACKFILL_JOB_ID="$(query_db "$DATABASE_NAME" \
+  "SELECT job_id FROM timescaledb_information.jobs WHERE proc_schema='public' AND proc_name='monitoring_backfill_aggregates'")"
+psql_as_postgres --dbname="$DATABASE_NAME" \
+  --command="SELECT alter_job($BACKFILL_JOB_ID, scheduled => FALSE)" >/dev/null
+
+printf 'reapplying 0008 and repeating the time-weight proof\n'
+prove_requested_pid_quiesce_drain apply
+BACKFILL_JOB_ID="$(query_db "$DATABASE_NAME" \
+  "SELECT job_id FROM timescaledb_information.jobs WHERE proc_schema='public' AND proc_name='monitoring_backfill_aggregates'")"
+psql_as_postgres --dbname="$DATABASE_NAME" \
+  --command="SELECT alter_job($BACKFILL_JOB_ID, scheduled => FALSE)" >/dev/null
+assert_requested_pid_time_weighted_shape
+prove_requested_pid_time_weighted_average
+prove_requested_pid_quiesce_drain down
+assert_requested_pid_legacy_shape
+BACKFILL_JOB_ID="$(query_db "$DATABASE_NAME" \
+  "SELECT job_id FROM timescaledb_information.jobs WHERE proc_schema='public' AND proc_name='monitoring_backfill_aggregates'")"
+psql_as_postgres --dbname="$DATABASE_NAME" \
+  --command="SELECT alter_job($BACKFILL_JOB_ID, scheduled => FALSE)" >/dev/null
+
 quiesce_phase4_jobs_for_down_proof
 printf 'forcing down migration failure after its first committed phase\n'
 down_migration_file="$MIGRATION_RELEASE_ROOT/Infrastructure/database/migrations/0007_time_column_rename.down.sql"
@@ -1762,9 +2133,11 @@ run_migrator "$DATABASE_NAME" down --to 0006_monitoring_gate_auto_clear
 assert_original_state_restored
 
 printf 'reapplying 0007 after restartable down\n'
+rm -- "$MIGRATION_RELEASE_ROOT/Infrastructure/database/migrations/0008_requested_pid_time_weighted.sql" \
+  "$MIGRATION_RELEASE_ROOT/Infrastructure/database/migrations/0008_requested_pid_time_weighted.down.sql"
 run_migrator "$DATABASE_NAME" apply --skip-alembic --allow-downtime
 assert_event_time_cutover
 assert_equal "$(query_db "$DATABASE_NAME" \
   "SELECT count(*) FROM public.monitoring_job_snapshot_0007 WHERE proc_schema='public' AND proc_name IN ('monitoring_refresh_overview_incremental','monitoring_rebuild_relay_overview')")" \
   '4' 'reapplied migration snapshots overview jobs again'
-printf 'Phase 4 time-column migration proof passed\n'
+printf 'Phase 4/5 time-column and PID weighting migration proof passed\n'

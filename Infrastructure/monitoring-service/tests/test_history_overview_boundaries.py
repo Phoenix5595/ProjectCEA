@@ -8,10 +8,14 @@ import pytest
 from monitoring_service.history_buckets import choose_history_bucket, history_bucket_bounds
 from monitoring_service.history_overview_models import (
     HistoryOverviewPoint,
+    HistoryOverviewSamplePoint,
     MonitoringValidationError,
 )
 from monitoring_service.history_overview_repository import _control_series_groups
-from monitoring_service.history_overview_sql import SENSOR_OVERVIEW_STATEMENT
+from monitoring_service.history_overview_sql import (
+    CONTROL_OVERVIEW_STATEMENT,
+    SENSOR_OVERVIEW_STATEMENT,
+)
 
 
 def test_sensor_overview_freshness_covers_measurement_ancestors():
@@ -72,7 +76,7 @@ def test_microsecond_edges_are_clipped_not_rounded_into_other_samples():
 @pytest.mark.parametrize("average,minimum,maximum", [(1.0, None, None), (None, 0.0, 1.0)])
 def test_zero_sample_summary_cannot_fabricate_statistics(average, minimum, maximum):
     with pytest.raises(MonitoringValidationError):
-        HistoryOverviewPoint(
+        HistoryOverviewSamplePoint(
             start=datetime(2026, 1, 1, tzinfo=UTC),
             end=datetime(2026, 1, 1, 1, tzinfo=UTC),
             sample_count=0,
@@ -136,3 +140,42 @@ def test_single_source_row_can_have_a_predecessor_weighted_average():
     )
 
     assert point.sample_count == 1
+
+
+def test_clipped_pid_raw_span_keeps_a_valid_predecessor_only_device():
+    # A 12:59:45 request edge lies between heartbeats at 12:59:30 and 13:00.
+    # The 15-second clipped span has a predecessor but no in-range source row.
+    statement = " ".join(CONTROL_OVERVIEW_STATEMENT.split())
+    assert 'latest."time" < rp.lo' in statement
+    assert "latest.id DESC" in statement
+    assert "LEFT JOIN automation_state AS facts" in statement
+    assert "count(facts.id)::BIGINT AS sample_count" in statement
+
+    start = datetime(2026, 1, 1, 12, 59, 45, tzinfo=UTC)
+    end = datetime(2026, 1, 1, 13, 0, tzinfo=UTC)
+    rows = [
+        {
+            "family": "pid",
+            "idx": 0,
+            "location": "Flower Room",
+            "cluster": "main",
+            "device_name": "flower_heater",
+            "sample_count": 0,
+            "min_value": Decimal("20"),
+            "max_value": Decimal("20"),
+            "weighted_value": Decimal("300"),
+            "covered_seconds": Decimal("15"),
+            "present": True,
+            "value_sum": None,
+            "value_sum_squares": None,
+        }
+    ]
+
+    lights, requested_pid = _control_series_groups(rows, ((start, end, True),))
+
+    assert lights == ()
+    point = requested_pid[0].points[0]
+    assert point.sample_count == 0
+    assert point.average == 20.0
+    assert point.minimum == 20.0
+    assert point.maximum == 20.0

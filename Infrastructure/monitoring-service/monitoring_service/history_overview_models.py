@@ -153,13 +153,10 @@ class HistoryOverviewPoint(FrozenMonitoringModel):
     def validate_sample_consistency(self) -> Self:
         if self.end <= self.start:
             raise MonitoringValidationError("overview point end must be later than its start")
-        if self.sample_count == 0:
-            if any(value is not None for value in (self.average, self.minimum, self.maximum)):
-                raise MonitoringValidationError(
-                    "zero-count overview points must leave average, minimum and maximum unset"
-                )
+        fields = (self.average, self.minimum, self.maximum)
+        if self.sample_count == 0 and all(value is None for value in fields):
             return self
-        if self.average is None or self.minimum is None or self.maximum is None:
+        if any(value is None for value in fields):
             raise MonitoringValidationError(
                 "populated overview points must set average, minimum and maximum"
             )
@@ -167,8 +164,26 @@ class HistoryOverviewPoint(FrozenMonitoringModel):
             raise MonitoringValidationError(
                 "overview point minimum, average and maximum must be ordered"
             )
-        # A time-weighted PID average can include a carried predecessor even
-        # when only one source row lies inside this request bucket.
+        return self
+
+
+class HistoryOverviewSamplePoint(HistoryOverviewPoint):
+    """Sample-backed sensor/light point with exact zero- and one-row semantics."""
+
+    @model_validator(mode="after")
+    def validate_sample_statistics(self) -> Self:
+        if self.sample_count == 0 and any(
+            value is not None for value in (self.average, self.minimum, self.maximum)
+        ):
+            raise MonitoringValidationError(
+                "zero-count overview points must leave average, minimum and maximum unset"
+            )
+        if self.sample_count == 1 and not (
+            self.minimum == self.average == self.maximum
+        ):
+            raise MonitoringValidationError(
+                "single-sample overview points must set average, minimum and maximum equally"
+            )
         return self
 
 
@@ -222,7 +237,7 @@ class HistoryOverviewSensorSeries(FrozenMonitoringModel):
     node: Node
     unit: str = Field(min_length=1)
     unit_family: UnitFamily
-    points: tuple[HistoryOverviewPoint, ...]
+    points: tuple[HistoryOverviewSamplePoint, ...]
 
     @model_validator(mode="after")
     def validate_points(self) -> Self:
@@ -232,6 +247,20 @@ class HistoryOverviewSensorSeries(FrozenMonitoringModel):
 
 class HistoryOverviewControlSeries(FrozenMonitoringModel):
     """One location-scoped control summary series keyed by recorded identity."""
+
+    location: str = Field(min_length=1)
+    cluster: str = Field(min_length=1)
+    device_name: str = Field(min_length=1)
+    points: tuple[HistoryOverviewSamplePoint, ...]
+
+    @model_validator(mode="after")
+    def validate_points(self) -> Self:
+        _ensure_ordered_points(self.points)
+        return self
+
+
+class HistoryOverviewRequestedPidSeries(FrozenMonitoringModel):
+    """One location-scoped time-weighted PID series."""
 
     location: str = Field(min_length=1)
     cluster: str = Field(min_length=1)
@@ -368,7 +397,7 @@ class HistoryOverviewControlResponse(FrozenMonitoringModel):
 
     metadata: HistoryOverviewMetadata
     lights: tuple[HistoryOverviewControlSeries, ...]
-    requested_pid: tuple[HistoryOverviewControlSeries, ...]
+    requested_pid: tuple[HistoryOverviewRequestedPidSeries, ...]
     relays: tuple[HistoryOverviewRelaySeries, ...]
 
     @model_validator(mode="after")

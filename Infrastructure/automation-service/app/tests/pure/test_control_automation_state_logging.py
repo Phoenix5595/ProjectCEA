@@ -118,7 +118,7 @@ async def test_first_tick_writes_and_unchanged_same_slot_skips(
     await engine._log_automation_state(SNAPSHOT)
 
     assert len(repository.batches) == 1
-    timestamp = repository.batches[0][0]["timestamp"]
+    timestamp = repository.batches[0][0]["time"]
     assert timestamp == T0
     assert timestamp.tzinfo is UTC
     assert engine._automation_context == {KEY: {"live_only": "unchanged"}}

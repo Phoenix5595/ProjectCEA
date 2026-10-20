@@ -71,13 +71,12 @@ export const HistoryOverviewPoint = z
       })
       return
     }
-    if (point.sample_count === 0) {
-      if (point.average !== null || point.minimum !== null || point.maximum !== null) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'zero-count overview points must leave average, minimum and maximum unset',
-        })
-      }
+    if (
+      point.sample_count === 0 &&
+      point.average === null &&
+      point.minimum === null &&
+      point.maximum === null
+    ) {
       return
     }
     if (point.average === null || point.minimum === null || point.maximum === null) {
@@ -93,17 +92,29 @@ export const HistoryOverviewPoint = z
         message: 'overview point minimum, average and maximum must be ordered',
       })
     }
-    if (
-      point.sample_count === 1 &&
-      !(point.minimum === point.average && point.average === point.maximum)
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'single-sample overview points must set average, minimum and maximum equally',
-      })
-    }
   })
 export type HistoryOverviewPoint = z.infer<typeof HistoryOverviewPoint>
+
+const HistoryOverviewSamplePoint = HistoryOverviewPoint.superRefine((point, context) => {
+  if (
+    point.sample_count === 0 &&
+    (point.average !== null || point.minimum !== null || point.maximum !== null)
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'zero-count overview points must leave average, minimum and maximum unset',
+    })
+  }
+  if (
+    point.sample_count === 1 &&
+    !(point.minimum === point.average && point.average === point.maximum)
+  ) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'single-sample overview points must set average, minimum and maximum equally',
+    })
+  }
+})
 
 export const HistoryOverviewRelayPoint = z
   .object({
@@ -173,15 +184,21 @@ export const HistoryOverviewSensorSeries = z
     node: z.string().min(1),
     unit: z.string().min(1),
     unit_family: UnitFamily,
-    points: z.array(HistoryOverviewPoint),
+    points: z.array(HistoryOverviewSamplePoint),
   })
   .strict()
 export type HistoryOverviewSensorSeries = z.infer<typeof HistoryOverviewSensorSeries>
 
 export const HistoryOverviewControlSeries = ControlIdentity.extend({
-  points: z.array(HistoryOverviewPoint),
+  points: z.array(HistoryOverviewSamplePoint),
 }).strict()
 export type HistoryOverviewControlSeries = z.infer<typeof HistoryOverviewControlSeries>
+export const HistoryOverviewRequestedPidSeries = ControlIdentity.extend({
+  points: z.array(HistoryOverviewPoint),
+}).strict()
+export type HistoryOverviewRequestedPidSeries = z.infer<
+  typeof HistoryOverviewRequestedPidSeries
+>
 
 export const HistoryOverviewRelaySeries = ControlIdentity.extend({
   channel: z.number().int().min(0).max(15),
@@ -294,7 +311,7 @@ export const HistoryOverviewControlResponse = z
   .object({
     metadata: HistoryOverviewMetadata,
     lights: z.array(HistoryOverviewControlSeries),
-    requested_pid: z.array(HistoryOverviewControlSeries),
+    requested_pid: z.array(HistoryOverviewRequestedPidSeries),
     relays: z.array(HistoryOverviewRelaySeries),
   })
   .strict()

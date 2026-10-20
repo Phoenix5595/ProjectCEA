@@ -214,7 +214,7 @@ function timelinePage(start: string, end: string, watermark = 42) {
         time: new Date(startMs + 20_000).toISOString(),
         requested_percent: 50,
         aggregated: false,
-        interval_seconds: 60,
+        interval_seconds: 30,
       },
     ],
     coverage_complete: true,
@@ -301,7 +301,7 @@ describe('RelayPidTimeline integration', () => {
             time: new Date(Date.parse(end) - 1_000),
             requested_percent: 42,
             aggregated: false,
-            interval_seconds: 5,
+            interval_seconds: 30,
           },
         ],
       })
@@ -311,7 +311,7 @@ describe('RelayPidTimeline integration', () => {
     const latestOutput = await screen.findByRole('group', { name: 'Latest requested PID output' })
     expect(within(latestOutput).getByText('42%')).toBeInTheDocument()
     expect(within(latestOutput).getByText(/Fresh/)).toBeInTheDocument()
-    expect(within(latestOutput).getByText(/raw, 5.0 s interval/)).toBeInTheDocument()
+    expect(within(latestOutput).getByText(/raw, 30.0 s interval/)).toBeInTheDocument()
   })
 
   it('keeps the assigned lane but draws no waveform when requested PID output is absent', async () => {
@@ -341,7 +341,7 @@ describe('RelayPidTimeline integration', () => {
             time: new Date(Date.parse(end) - 2_000),
             requested_percent: 75,
             aggregated: false,
-            interval_seconds: 1,
+            interval_seconds: 30,
           },
           {
             device_id: 101,

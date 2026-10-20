@@ -967,19 +967,45 @@ pid_raw_rows AS (
         weighted.covered_seconds
     FROM pid_raw_pieces AS rp
     CROSS JOIN LATERAL (
-        SELECT source.location, source.cluster, source.device_name,
-               count(*)::BIGINT AS sample_count
-        FROM automation_state AS source
-        WHERE source.location = $1
-          AND source."time" >= rp.lo
-          AND source."time" < rp.hi
-        GROUP BY source.location, source.cluster, source.device_name
+        SELECT identities.location, identities.cluster, identities.device_name,
+               count(facts.id)::BIGINT AS sample_count
+        FROM (
+            SELECT source.location, source.cluster, source.device_name
+            FROM automation_state AS source
+            WHERE source.location = $1
+              AND source."time" >= rp.lo
+              AND source."time" < rp.hi
+            GROUP BY source.location, source.cluster, source.device_name
+            UNION
+            SELECT previous.location, previous.cluster, previous.device_name
+            FROM (
+                SELECT DISTINCT ON (
+                    latest.location, latest.cluster, latest.device_name)
+                    latest.location, latest.cluster, latest.device_name,
+                    latest.pid_output
+                FROM automation_state AS latest
+                WHERE latest.location = $1
+                  AND latest."time" < rp.lo
+                ORDER BY latest.location, latest.cluster, latest.device_name,
+                         latest."time" DESC, latest.id DESC
+            ) AS previous
+            WHERE previous.pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
+              AND previous.pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION
+        ) AS identities
+        LEFT JOIN automation_state AS facts
+          ON facts.location = identities.location
+         AND facts.cluster = identities.cluster
+         AND facts.device_name = identities.device_name
+         AND facts."time" >= rp.lo
+         AND facts."time" < rp.hi
+        GROUP BY identities.location, identities.cluster, identities.device_name
         OFFSET 0
     ) AS facts
     CROSS JOIN LATERAL (
         SELECT
             sum(intervals.percent * intervals.covered_seconds) AS weighted_value,
-            sum(intervals.covered_seconds) AS covered_seconds,
+            sum(intervals.covered_seconds)
+                FILTER (WHERE intervals.percent IS NOT NULL) AS covered_seconds,
             min(intervals.percent) AS min_value,
             max(intervals.percent) AS max_value
         FROM (
@@ -995,38 +1021,51 @@ pid_raw_rows AS (
                 SELECT samples.sample_time,
                        samples.percent,
                        lead(samples.sample_time, 1, rp.hi)
-                           OVER (ORDER BY samples.sample_time) AS next_time
+                           OVER (ORDER BY samples.sample_time, samples.id) AS next_time
                 FROM (
                     (
-                        SELECT previous."time" AS sample_time,
-                               ((previous.pid_output * 100::REAL)::DOUBLE PRECISION)::NUMERIC AS percent
+                        SELECT previous.id, previous."time" AS sample_time,
+                               CASE
+                                   WHEN previous.pid_output::DOUBLE PRECISION
+                                        BETWEEN 0::DOUBLE PRECISION
+                                            AND 1::DOUBLE PRECISION
+                                   THEN round((
+                                       previous.pid_output::DOUBLE PRECISION
+                                       * 100::DOUBLE PRECISION)::NUMERIC, 13)
+                                   ELSE NULL::NUMERIC
+                               END AS percent
                         FROM automation_state AS previous
                         WHERE previous.location = facts.location
                           AND previous.cluster = facts.cluster
                           AND previous.device_name = facts.device_name
                           AND previous."time" < rp.lo
-                          AND previous.pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
-                          AND previous.pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION
-                        ORDER BY previous."time" DESC
+                        ORDER BY previous."time" DESC, previous.id DESC
                         LIMIT 1
                     )
                     UNION ALL
                     (
-                        SELECT current_point."time" AS sample_time,
-                               ((current_point.pid_output * 100::REAL)::DOUBLE PRECISION)::NUMERIC AS percent
+                        SELECT current_point.id, current_point."time" AS sample_time,
+                               CASE
+                                   WHEN current_point.pid_output::DOUBLE PRECISION
+                                        BETWEEN 0::DOUBLE PRECISION
+                                            AND 1::DOUBLE PRECISION
+                                   THEN round((
+                                       current_point.pid_output::DOUBLE PRECISION
+                                       * 100::DOUBLE PRECISION)::NUMERIC, 13)
+                                   ELSE NULL::NUMERIC
+                               END AS percent
                         FROM automation_state AS current_point
                         WHERE current_point.location = facts.location
                           AND current_point.cluster = facts.cluster
                           AND current_point.device_name = facts.device_name
                           AND current_point."time" >= rp.lo
                           AND current_point."time" < rp.hi
-                          AND current_point.pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
-                          AND current_point.pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION
                     )
                 ) AS samples
             ) AS points
         ) AS intervals
         WHERE intervals.covered_seconds > 0
+          AND intervals.percent IS NOT NULL
     ) AS weighted
     WHERE weighted.covered_seconds > 0
 ),

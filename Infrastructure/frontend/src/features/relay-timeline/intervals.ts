@@ -427,6 +427,12 @@ export function buildRelayLaneIntervals(input: {
   }
 }
 
+export function requestedOutputHoldSeconds(
+  point: Pick<RelayTimelineLoadPoint, 'aggregated' | 'interval_seconds'>
+): number {
+  return point.interval_seconds * 2 + (point.aggregated ? 0 : 1)
+}
+
 /**
  * Make piecewise-constant requested PID output segments. Output is a requested
  * controller percentage, never a measurement of electrical or thermal power.
@@ -459,7 +465,7 @@ export function buildRequestedOutputSegments(input: {
     const pointAt = point.time.getTime()
     const next = points[index + 1]
     const nextAt = next?.time.getTime()
-    const maxHoldEnd = pointAt + point.interval_seconds * 2_000
+    const maxHoldEnd = pointAt + requestedOutputHoldSeconds(point) * 1_000
     const segmentEnd = nextAt !== undefined && nextAt <= maxHoldEnd ? nextAt : maxHoldEnd
     const clippedStart = Math.max(start, pointAt)
     const clippedEnd = Math.min(end, segmentEnd)

@@ -20,6 +20,7 @@ import {
   buildRequestedOutputSegments,
   formatDuration,
   formatRequestedResolution,
+  requestedOutputHoldSeconds,
   MAX_RELAY_TIMELINE_TRANSITIONS,
 } from './intervals'
 import { RelayTimelineChart } from './RelayTimelineChart'
@@ -687,7 +688,8 @@ function RelayTimelineDetail({
                           {point.requested_percent.toFixed(0)}%
                         </strong>
                         <span className="text-10 text-text-muted">
-                          {ageSeconds !== null && ageSeconds <= point.interval_seconds * 2
+                          {ageSeconds !== null &&
+                          ageSeconds <= requestedOutputHoldSeconds(point)
                             ? 'Fresh'
                             : 'Stale'}
                           {' · sampled '}

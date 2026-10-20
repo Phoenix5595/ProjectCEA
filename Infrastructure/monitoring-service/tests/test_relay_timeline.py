@@ -918,6 +918,8 @@ def test_raw_pid_downsampling_keeps_extrema_and_null_gap_edges() -> None:
     assert points[0].time == START
     assert points[-1].time == START + timedelta(seconds=2_504)
     assert {point.requested_percent for point in points} >= {0.0, 100.0}
+
+    assert all(point.interval_seconds == 30 for point in points)
     assert all(
         point.requested_min_percent == point.requested_percent
         and point.requested_max_percent == point.requested_percent

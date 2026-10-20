@@ -37,6 +37,8 @@ from monitoring_service.history_overview_models import (
     HistoryOverviewRange,
     HistoryOverviewRelayPoint,
     HistoryOverviewRelaySeries,
+    HistoryOverviewRequestedPidSeries,
+    HistoryOverviewSamplePoint,
     HistoryOverviewSensorResponse,
     HistoryOverviewSensorSeries,
     HistoryOverviewSensorStatistics,
@@ -163,7 +165,7 @@ class HistoryOverviewRepository:
         bucket = choose_history_bucket(history_range.start, history_range.end, budget)
         bounds = history_bucket_bounds(history_range.start, history_range.end, bucket)
         buckets_json = bucket_points_json(bounds)
-        requested_pid: tuple[HistoryOverviewControlSeries, ...] = ()
+        requested_pid: tuple[HistoryOverviewRequestedPidSeries, ...] = ()
         relays: tuple[HistoryOverviewRelaySeries, ...] = ()
         async with request_observation(tier="overview"), local_history_scope(
             location, history_range.start, history_range.end,
@@ -249,9 +251,9 @@ def _metadata(
 
 def _overview_point(
     state: SummaryState, bound: tuple[datetime, datetime, bool]
-) -> HistoryOverviewPoint:
-    """Materialize exactly one overview point from merged bucket pieces."""
-    return HistoryOverviewPoint(
+) -> HistoryOverviewSamplePoint:
+    """Materialize exactly one sample-backed point from merged bucket pieces."""
+    return HistoryOverviewSamplePoint(
         start=bound[0],
         end=bound[1],
         average=float_or_none(state.average_decimal),
@@ -357,7 +359,7 @@ def _time_weighted_overview_point(
 def _control_series_groups(
     rows: Sequence[asyncpg.Record],
     bounds: Sequence[tuple[datetime, datetime, bool]],
-) -> tuple[tuple[HistoryOverviewControlSeries, ...], tuple[HistoryOverviewControlSeries, ...]]:
+) -> tuple[tuple[HistoryOverviewControlSeries, ...], tuple[HistoryOverviewRequestedPidSeries, ...]]:
     """Build lights and requested-PID series from the same merged snapshot."""
     light_grouped: defaultdict[
         tuple[str, str, str, str], defaultdict[int, SummaryState]
@@ -394,7 +396,7 @@ def _control_series_groups(
             )
         )
 
-    requested_pid: list[HistoryOverviewControlSeries] = []
+    requested_pid: list[HistoryOverviewRequestedPidSeries] = []
     for identity in sorted(pid_grouped):
         _, location, cluster, device_name = identity
         points = tuple(
@@ -404,7 +406,7 @@ def _control_series_groups(
             for index, bound in enumerate(bounds)
         )
         requested_pid.append(
-            HistoryOverviewControlSeries(
+            HistoryOverviewRequestedPidSeries(
                 location=location,
                 cluster=cluster,
                 device_name=device_name,

@@ -514,14 +514,15 @@ SELECT
     time_weight(
         'LOCF',
         "time",
-        -- Scale in REAL before Toolkit's DOUBLE PRECISION input conversion.
-        pid_output * 100::REAL
+        -- Share the rounded numeric percentage with extrema; Toolkit consumes float8.
+        round((pid_output::DOUBLE PRECISION * 100::DOUBLE PRECISION)::NUMERIC, 13)
+            ::DOUBLE PRECISION
     ) FILTER (WHERE pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
               AND pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION) AS requested_tw,
-    min((pid_output::DOUBLE PRECISION * 100.0::DOUBLE PRECISION)::NUMERIC)
+    min(round((pid_output::DOUBLE PRECISION * 100::DOUBLE PRECISION)::NUMERIC, 13))
         FILTER (WHERE pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
                 AND pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION) AS requested_min,
-    max((pid_output::DOUBLE PRECISION * 100.0::DOUBLE PRECISION)::NUMERIC)
+    max(round((pid_output::DOUBLE PRECISION * 100::DOUBLE PRECISION)::NUMERIC, 13))
         FILTER (WHERE pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
                 AND pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION) AS requested_max,
     max("time") AS last_observed_at
@@ -555,17 +556,17 @@ SELECT
     count(*) AS sample_count,
     count(pid_output) FILTER (WHERE pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
                               AND pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION) AS requested_count,
-    sum((pid_output::DOUBLE PRECISION * 100.0::DOUBLE PRECISION)::NUMERIC)
+    sum(round((pid_output::DOUBLE PRECISION * 100::DOUBLE PRECISION)::NUMERIC, 13))
         FILTER (WHERE pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
                 AND pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION) AS requested_sum,
-    sum((pid_output::DOUBLE PRECISION * 100.0::DOUBLE PRECISION)::NUMERIC
-        * (pid_output::DOUBLE PRECISION * 100.0::DOUBLE PRECISION)::NUMERIC)
+    sum(round((pid_output::DOUBLE PRECISION * 100::DOUBLE PRECISION)::NUMERIC, 13)
+        * round((pid_output::DOUBLE PRECISION * 100::DOUBLE PRECISION)::NUMERIC, 13))
         FILTER (WHERE pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
                 AND pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION) AS requested_sum_squares,
-    min((pid_output::DOUBLE PRECISION * 100.0::DOUBLE PRECISION)::NUMERIC)
+    min(round((pid_output::DOUBLE PRECISION * 100::DOUBLE PRECISION)::NUMERIC, 13))
         FILTER (WHERE pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
                 AND pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION) AS requested_min,
-    max((pid_output::DOUBLE PRECISION * 100.0::DOUBLE PRECISION)::NUMERIC)
+    max(round((pid_output::DOUBLE PRECISION * 100::DOUBLE PRECISION)::NUMERIC, 13))
         FILTER (WHERE pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
                 AND pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION) AS requested_max,
     max("time") AS last_observed_at
@@ -1323,12 +1324,12 @@ BEGIN
                             SELECT time_bucket(INTERVAL '1 hour', "time") AS bucket,
                                    location, cluster, device_name,
                                    count(*)::BIGINT AS sample_count,
-                                   min((pid_output::DOUBLE PRECISION
-                                        * 100.0::DOUBLE PRECISION)::NUMERIC)
+                                   min(round((pid_output::DOUBLE PRECISION
+                                              * 100::DOUBLE PRECISION)::NUMERIC, 13))
                                        FILTER (WHERE pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
                                                AND pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION) AS requested_min,
-                                   max((pid_output::DOUBLE PRECISION
-                                        * 100.0::DOUBLE PRECISION)::NUMERIC)
+                                   max(round((pid_output::DOUBLE PRECISION
+                                              * 100::DOUBLE PRECISION)::NUMERIC, 13))
                                        FILTER (WHERE pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
                                                AND pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION) AS requested_max,
                                    max("time") AS last_observed_at
@@ -1990,13 +1991,19 @@ BEGIN
 
         configured := jsonb_set(configured, '{done}', 'true'::JSONB, TRUE);
         PERFORM alter_job(job_id, scheduled => FALSE, config => configured);
+        IF to_regclass('public.monitoring_job_snapshot_0008') IS NOT NULL
+           AND to_regprocedure(
+               'public.monitoring_restore_requested_pid_job_schedule_0008()'
+           ) IS NOT NULL THEN
+            EXECUTE 'CALL public.monitoring_restore_requested_pid_job_schedule_0008()';
+        END IF;
     ELSE
         PERFORM alter_job(job_id, config => configured);
     END IF;
 END
 $procedure$;
 COMMENT ON PROCEDURE public.monitoring_backfill_aggregates(INTEGER, JSONB) IS
-'Oldest-first UTC-day materialization of the eleven Phase 4 aggregates; on completion schedules their refresh policies and restores the snapshotted non-refresh Timescale jobs.';
+'Oldest-first UTC-day materialization of the eleven Phase 4 aggregates; on completion schedules their refresh policies and restores Phase 4 jobs plus the Phase 5 requested-PID job schedules when present.';
 REVOKE EXECUTE ON PROCEDURE public.monitoring_backfill_aggregates(INTEGER, JSONB) FROM PUBLIC;
 
 \if :{?monitoring_time_rename_migration}

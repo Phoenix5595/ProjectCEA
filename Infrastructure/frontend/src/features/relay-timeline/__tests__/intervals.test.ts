@@ -372,12 +372,13 @@ describe('requested PID output step segments', () => {
       },
       {
         start: BASE_MS + 90_000,
-        end: BASE_MS + 150_000,
+        end: BASE_MS + 151_000,
         requestedPercent: 100,
         aggregated: false,
         intervalSeconds: 30,
       },
     ])
+
     expect(
       buildRequestedOutputSegments({
         deviceType: 'humidifier',
@@ -387,6 +388,38 @@ describe('requested PID output step segments', () => {
         points,
       })
     ).toEqual([])
+  })
+
+  it('holds raw output to the heartbeat gap limit and preserves explicit null gaps', () => {
+    const result = buildRequestedOutputSegments({
+      deviceType: 'heating',
+      deviceId: DEVICE.deviceId,
+      deviceName: DEVICE.deviceName,
+      range: range(0, 180),
+      points: [loadPoint(0, 40), loadPoint(30, null), loadPoint(90, 60)],
+    })
+
+    expect(
+      result.map(({ start, end, requestedPercent, intervalSeconds }) => ({
+        start,
+        end,
+        requestedPercent,
+        intervalSeconds,
+      }))
+    ).toEqual([
+      {
+        start: BASE_MS,
+        end: BASE_MS + 30_000,
+        requestedPercent: 40,
+        intervalSeconds: 30,
+      },
+      {
+        start: BASE_MS + 90_000,
+        end: BASE_MS + 151_000,
+        requestedPercent: 60,
+        intervalSeconds: 30,
+      },
+    ])
   })
 
   it('marks aggregate resolution without changing the requested percent', () => {

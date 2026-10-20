@@ -662,7 +662,7 @@ def raw_load_points(
                 requested_min_percent=percent,
                 requested_max_percent=percent,
                 aggregated=False,
-                interval_seconds=1,
+                interval_seconds=30,
             )
         )
     return tuple(result), truncated
