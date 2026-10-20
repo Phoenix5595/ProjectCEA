@@ -38,6 +38,8 @@ class FakePool:
     async def fetchval(self, query: str, service: str) -> datetime | None:
         assert "max(updated_at)" in query
         assert service
+        if not self.updated_at:
+            raise asyncio.CancelledError
         return self.updated_at.pop(0)
 
 
@@ -81,13 +83,61 @@ def test_load_uses_cache_then_fallback_when_database_is_unavailable(tmp_path: Pa
     assert loaded == {"poll_interval_seconds": 20, "discovery_interval_seconds": 30}
 
 
-def test_run_refresh_calls_callback_only_for_changed_timestamp(tmp_path: Path) -> None:
+def test_run_refresh_applies_first_poll_and_only_calls_again_for_changed_timestamp(
+    tmp_path: Path,
+) -> None:
     first = datetime(2026, 10, 19, tzinfo=UTC)
     changed = first + timedelta(seconds=1)
     pool = FakePool(
         rows=[{"key": "poll_interval_seconds", "value": "10"}],
         updated_at=[first, first, changed],
     )
+    callbacks: list[dict[str, Any]] = []
+
+    class StopRefresh(Exception):
+        pass
+
+    def on_change(values: dict[str, Any]) -> None:
+        callbacks.append(values)
+        if len(callbacks) == 2:
+            raise StopRefresh
+
+    with pytest.raises(StopRefresh):
+        asyncio.run(
+            ServiceSettings.run_refresh(
+                pool,
+                "soil",
+                on_change,
+                interval_s=0,
+                cache_path=tmp_path / "soil.json",
+            )
+        )
+
+    assert callbacks == [
+        {"poll_interval_seconds": 10},
+        {"poll_interval_seconds": 10},
+    ]
+
+
+def test_refresh_applies_database_change_after_initial_load(tmp_path: Path) -> None:
+    initial_time = datetime(2026, 10, 19, tzinfo=UTC)
+    changed_time = initial_time + timedelta(seconds=1)
+    pool = FakePool(
+        rows=[{"key": "poll_interval_seconds", "value": "5"}],
+        updated_at=[changed_time, changed_time],
+    )
+    cache_path = tmp_path / "soil.json"
+    initial = asyncio.run(
+        ServiceSettings.load(
+            pool,
+            "soil",
+            cache_path=cache_path,
+            fallback={"discovery_interval_seconds": 30},
+        )
+    )
+    assert initial == {"poll_interval_seconds": 5, "discovery_interval_seconds": 30}
+
+    pool.rows = [{"key": "poll_interval_seconds", "value": "10"}]
     callbacks: list[dict[str, Any]] = []
 
     class StopRefresh(Exception):
@@ -104,11 +154,83 @@ def test_run_refresh_calls_callback_only_for_changed_timestamp(tmp_path: Path) -
                 "soil",
                 on_change,
                 interval_s=0,
-                cache_path=tmp_path / "soil.json",
+                cache_path=cache_path,
+                fallback={"discovery_interval_seconds": 30},
             )
         )
 
-    assert callbacks == [{"poll_interval_seconds": 10}]
+    assert callbacks == [{"poll_interval_seconds": 10, "discovery_interval_seconds": 30}]
+
+
+def test_refresh_applies_database_settings_after_cache_yaml_initial_load(tmp_path: Path) -> None:
+    cache_path = tmp_path / "soil.json"
+    write_cache(cache_path, {"poll_interval_seconds": 20})
+    pool = FakePool(
+        updated_at=[datetime(2026, 10, 19, tzinfo=UTC)] * 2,
+        fetch_error=ConnectionError("database unavailable"),
+    )
+    fallback = {"poll_interval_seconds": 5, "discovery_interval_seconds": 30}
+    initial = asyncio.run(
+        ServiceSettings.load(
+            pool,
+            "soil",
+            cache_path=cache_path,
+            fallback=fallback,
+        )
+    )
+    assert initial == {"poll_interval_seconds": 20, "discovery_interval_seconds": 30}
+
+    pool.fetch_error = None
+    pool.rows = [{"key": "poll_interval_seconds", "value": "10"}]
+    callbacks: list[dict[str, Any]] = []
+
+    class StopRefresh(Exception):
+        pass
+
+    def on_change(values: dict[str, Any]) -> None:
+        callbacks.append(values)
+        raise StopRefresh
+
+    with pytest.raises(StopRefresh):
+        asyncio.run(
+            ServiceSettings.run_refresh(
+                pool,
+                "soil",
+                on_change,
+                interval_s=0,
+                cache_path=cache_path,
+                fallback=fallback,
+            )
+        )
+
+    assert callbacks == [{"poll_interval_seconds": 10, "discovery_interval_seconds": 30}]
+
+
+def test_load_ignores_invalid_utf8_cache_and_uses_database_and_yaml(tmp_path: Path) -> None:
+    cache_path = tmp_path / "soil.json"
+    cache_path.write_bytes(b"\xff")
+    fallback = {"poll_interval_seconds": 5, "discovery_interval_seconds": 30}
+    loaded = asyncio.run(
+        ServiceSettings.load(
+            FakePool(rows=[{"key": "poll_interval_seconds", "value": "10"}]),
+            "soil",
+            cache_path=cache_path,
+            fallback=fallback,
+        )
+    )
+
+    assert loaded == {"poll_interval_seconds": 10, "discovery_interval_seconds": 30}
+
+    cache_path.write_bytes(b"\xff")
+    fallback_only = asyncio.run(
+        ServiceSettings.load(
+            FakePool(fetch_error=ConnectionError("database unavailable")),
+            "soil",
+            cache_path=cache_path,
+            fallback=fallback,
+        )
+    )
+    assert fallback_only == fallback
 
 
 @pytest.mark.parametrize(

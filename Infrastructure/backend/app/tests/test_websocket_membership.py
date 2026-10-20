@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
+import json
 import unittest
 from unittest.mock import AsyncMock
 
+from app.events.consumer import ConfigEventConsumer
 from app.websocket import WebSocketManager
 
 
@@ -202,6 +204,34 @@ class MembershipTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(first.sent), 1)
         self.assertEqual(len(second.sent), 1)
+
+    async def test_global_config_event_reaches_all_rooms_and_preserves_scope(self) -> None:
+        first = FakeWS("first")
+        second = FakeWS("second")
+        self.manager.active_connections = {"Alpha": {first}, "Beta": {second}}
+        timestamp = datetime(2026, 10, 20).isoformat()
+        consumer = ConfigEventConsumer()
+
+        await consumer._process_message(
+            {
+                "event_type": "settings_updated",
+                "location": "global",
+                "cluster": "global",
+                "config_type": "service_setting",
+                "timestamp": timestamp,
+                "data": json.dumps({"service": "soil"}),
+            },
+            self.manager,
+        )
+
+        self.assertEqual(len(first.sent), 1)
+        self.assertEqual(len(second.sent), 1)
+        payload = json.loads(first.sent[0])
+        self.assertEqual(payload["location"], "global")
+        self.assertEqual(payload["cluster"], "global")
+        self.assertEqual(payload["config_type"], "service_setting")
+        self.assertEqual(payload["data"], {"service": "soil"})
+        self.assertEqual(json.loads(second.sent[0]), payload)
 
     async def test_config_broadcast_unknown_still_snapshots_members(self) -> None:
         gate = asyncio.Event()

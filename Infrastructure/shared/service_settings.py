@@ -263,7 +263,7 @@ def _read_cache(path: Path) -> dict[str, Any]:
             cached = json.load(cache_file)
     except FileNotFoundError:
         return {}
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeError, json.JSONDecodeError):
         logger.warning("Ignoring unreadable service settings cache at %s", path, exc_info=True)
         return {}
 
@@ -361,13 +361,7 @@ class ServiceSettings:
         if interval_s < 0:
             raise ValueError("interval_s must be non-negative")
 
-        try:
-            last_updated_at = await pool.fetchval(
-                "SELECT max(updated_at) FROM public.service_setting WHERE service = $1", service
-            )
-        except Exception:
-            logger.warning("Unable to initialize %s settings refresh", service, exc_info=True)
-            last_updated_at = None
+        last_updated_at: object = object()
 
         while True:
             await asyncio.sleep(interval_s)

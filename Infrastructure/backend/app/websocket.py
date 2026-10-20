@@ -86,8 +86,8 @@ class WebSocketManager:
         """Broadcast a config change event to WebSocket clients.
 
         Sends to clients subscribed to the given *location*.  If the location
-        is ``"unknown"`` or ``"all"``, the event is broadcast to **every**
-        connected client.
+        is ``"unknown"``, ``"all"``, or ``"global"``, the event is broadcast
+        to **every** connected client.
         """
         message_json = json.dumps(payload, default=str)
 
@@ -95,7 +95,7 @@ class WebSocketManager:
         # target locations — before any send await. Membership or the
         # location map may change during the awaits; a removed member may
         # still receive this event while joiners wait for the next one.
-        if location in ("unknown", "all"):
+        if location in ("unknown", "all", "global"):
             targets = [
                 (loc, tuple(recipients))
                 for loc, recipients in list(self.active_connections.items())

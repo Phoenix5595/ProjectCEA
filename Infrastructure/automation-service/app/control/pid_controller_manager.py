@@ -57,7 +57,7 @@ class PIDControllerManager:
             pid_params = await self._get_cached_pid_parameters(location, cluster, device_type)
             if pid_params and pid_params.get("source") != "settings_default":
                 self._settings_default_controllers.discard(key)
-                controller.update_gains(
+                controller.update_parameters(
                     pid_params.get("kp", 1.0),
                     pid_params.get("ki", 0.0),
                     pid_params.get("kd", 0.0),
@@ -88,7 +88,7 @@ class PIDControllerManager:
     def _refresh_settings_default_controller(self, controller: Any, device_type: str) -> None:
         defaults = self._service_pid_defaults(device_type)
         if defaults is not None:
-            controller.update_gains(defaults["kp"], defaults["ki"], defaults["kd"])
+            controller.update_parameters(defaults["kp"], defaults["ki"], defaults["kd"])
 
     # Control mode integration
     async def get_control_mode_info(

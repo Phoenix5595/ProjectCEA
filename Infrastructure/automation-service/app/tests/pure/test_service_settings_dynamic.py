@@ -11,6 +11,7 @@ import pytest
 
 import app.background_tasks.control_loop as control_loop_module
 from app.config import ConfigLoader
+from app.control.pid_controller import PIDController
 from app.control.pid_controller_manager import PIDControllerManager
 from shared.service_settings import ServiceSettings
 
@@ -113,33 +114,34 @@ async def test_cached_pid_controller_tracks_live_service_defaults():
         def get_pid_params_for_device(self, _device_type):
             return dict(self.gains)
 
-    class Controller:
-        def __init__(self):
-            self.updates = []
-
-        def update_gains(self, kp, ki, kd):
-            self.updates.append((kp, ki, kd))
-
     manager = PIDControllerManager.__new__(PIDControllerManager)
     manager.config = Config()
     key = ("Flower Room", "main", "Heater", "heating")
-    controller = Controller()
+    controller = PIDController(1.0, 0.1, 0.0)
     manager._pid_controllers = {key: controller}
     manager._settings_default_controllers = {key}
-    manager._get_cached_pid_parameters = AsyncMock(return_value={"source": "settings_default"})
+    manager._get_cached_pid_parameters = AsyncMock(
+        side_effect=[
+            {"source": "settings_default"},
+            {"source": "settings_default"},
+            {"kp": 4.0, "ki": 0.4, "kd": 0.2, "source": "database"},
+        ]
+    )
 
     assert await manager.get_pid_controller(*key) is controller
+    assert (controller.kp, controller.ki, controller.kd) == (8.0, 0.2, 0.0)
+
     manager.config.gains = {"kp": 9.0, "ki": 0.3, "kd": 0.1}
     assert await manager.get_pid_controller(*key) is controller
+    assert (controller.kp, controller.ki, controller.kd) == (9.0, 0.3, 0.1)
 
-    assert controller.updates == [(8.0, 0.2, 0.0), (9.0, 0.3, 0.1)]
+    assert await manager.get_pid_controller(*key) is controller
+    assert (controller.kp, controller.ki, controller.kd) == (4.0, 0.4, 0.2)
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure", [False, True])
-async def test_control_loop_uses_latest_interval_for_normal_and_error_sleep(
-    monkeypatch, failure
-):
+async def test_control_loop_uses_latest_interval_for_normal_and_error_sleep(monkeypatch, failure):
     class Config:
         interval = 2
 
@@ -149,9 +151,7 @@ async def test_control_loop_uses_latest_interval_for_normal_and_error_sleep(
     class Loop(control_loop_module.ControlLoopMixin):
         def __init__(self):
             self.config = Config()
-            self.control_engine = SimpleNamespace(
-                config=self.config, run_control_loop=self.tick
-            )
+            self.control_engine = SimpleNamespace(config=self.config, run_control_loop=self.tick)
             self.database = SimpleNamespace(_db_connected=True)
             self._scheduler_ready = SimpleNamespace(is_set=lambda: True)
             self._running = True
