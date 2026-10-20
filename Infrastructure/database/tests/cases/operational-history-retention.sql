@@ -1,7 +1,7 @@
 \set ON_ERROR_STOP on
 
 CREATE TABLE control_history (
-    timestamp TIMESTAMPTZ NOT NULL,
+    "time" TIMESTAMPTZ NOT NULL,
     location TEXT NOT NULL,
     cluster TEXT NOT NULL,
     device_name TEXT NOT NULL,
@@ -11,11 +11,11 @@ CREATE TABLE control_history (
     mode TEXT NOT NULL,
     reason TEXT
 );
-SELECT create_hypertable('control_history', by_range('timestamp', INTERVAL '1 day'));
+SELECT create_hypertable('control_history', by_range('time', INTERVAL '1 day'));
 
 CREATE TABLE relay_observation (
     observation_id BIGINT GENERATED ALWAYS AS IDENTITY,
-    observed_at TIMESTAMPTZ NOT NULL,
+    "time" TIMESTAMPTZ NOT NULL,
     session_id UUID NOT NULL,
     channel SMALLINT CHECK (channel BETWEEN 0 AND 15),
     observed_state BOOLEAN,
@@ -36,7 +36,7 @@ CREATE TABLE relay_observation (
             'heartbeat'
         )
     ),
-    PRIMARY KEY (observed_at, observation_id),
+    PRIMARY KEY ("time", observation_id),
     CHECK (
         (reason = 'heartbeat'
          AND channel IS NULL
@@ -47,32 +47,32 @@ CREATE TABLE relay_observation (
         OR (reason <> 'heartbeat' AND channel IS NOT NULL)
     )
 );
-SELECT create_hypertable('relay_observation', by_range('observed_at', INTERVAL '1 day'));
+SELECT create_hypertable('relay_observation', by_range('time', INTERVAL '1 day'));
 CREATE INDEX relay_observation_assignment_time_idx
-    ON relay_observation (location, cluster, device_id, observed_at, observation_id);
+    ON relay_observation (location, cluster, device_id, "time", observation_id);
 CREATE INDEX relay_observation_channel_time_idx
-    ON relay_observation (channel, observed_at, observation_id);
+    ON relay_observation (channel, "time", observation_id);
 
-INSERT INTO automation_state (timestamp, location, cluster, device_name, device_state, device_mode, control_reason)
+INSERT INTO automation_state ("time", location, cluster, device_name, device_state, device_mode, control_reason)
 VALUES
     (NOW() - INTERVAL '15 days', 'Veg Room', 'main', 'old_relay', 0, 'auto', 'old'),
     (NOW() - INTERVAL '7 days' + INTERVAL '1 second', 'Veg Room', 'main', 'boundary_relay', 1, 'auto', 'boundary'),
     (NOW() - INTERVAL '38 days', 'Veg Room', 'main', 'old_aggregate', 0, 'auto', 'old aggregate'),
     (NOW() - INTERVAL '29 days', 'Veg Room', 'main', 'recent_aggregate', 1, 'auto', 'recent aggregate');
-INSERT INTO effective_setpoints (timestamp, location, cluster)
+INSERT INTO effective_setpoints ("time", location, cluster)
 VALUES
     (NOW() - INTERVAL '15 days', 'Raw Retention Old', 'main'),
     (NOW() - INTERVAL '7 days' + INTERVAL '1 second', 'Raw Retention Recent', 'main'),
     (NOW() - INTERVAL '38 days', 'Aggregate Room', 'main'),
     (NOW() - INTERVAL '29 days', 'Recent Aggregate Room', 'main');
-INSERT INTO control_history (timestamp, location, cluster, device_name, channel, old_state, new_state, mode, reason)
+INSERT INTO control_history ("time", location, cluster, device_name, channel, old_state, new_state, mode, reason)
 VALUES
     (NOW() - INTERVAL '31 days', 'Veg Room', 'main', 'alarm:old', -1, 1, 0, 'alarm:clear:error', 'old'),
     (NOW() - INTERVAL '30 days' + INTERVAL '1 second', 'Veg Room', 'main', 'alarm:recent', -1, 0, 1, 'alarm:open:error', 'recent'),
     (NOW() - INTERVAL '1 day', 'Veg Room', 'main', 'heater_1', 0, 0, 1, 'manual', 'relay');
 
 INSERT INTO relay_observation (
-    observed_at,
+    "time",
     session_id,
     channel,
     observed_state,

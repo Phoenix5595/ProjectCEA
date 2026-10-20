@@ -26,11 +26,11 @@
 -- records them as absent and blocks if they ever appear without a descriptor.
 --
 -- Hypertable primary keys: repository baseline keys for automation_state and
--- control_history omit the partitioning timestamp; this fixture uses the verified
--- composite variants (timestamp, id) and (id, timestamp), respectively,
+-- control_history omit the partitioning event column; this fixture uses the
+-- verified composite variants (time, id) and (id, time), respectively,
 -- documented in source_schema.json.
--- Column order, types and nullability are unchanged and every repository
--- index keeps its name.
+-- Column order, types and nullability are unchanged; phase 0007 renames the
+-- event-time indexes without changing their definitions.
 --
 -- Edge rows cover: float32 normal/subnormal/signed-zero/maximum magnitudes,
 -- float64-edged JSONB numbers, legitimate NULLs, empty and NULL-bearing
@@ -234,7 +234,7 @@ CREATE INDEX idx_measurement_sensor_id ON measurement (sensor_id);
 
 CREATE TABLE automation_state (
     id BIGSERIAL,
-    timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "time" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     location TEXT NOT NULL,
     cluster TEXT NOT NULL,
     device_name TEXT NOT NULL,
@@ -252,22 +252,23 @@ CREATE TABLE automation_state (
     pid_ki REAL,
     pid_kd REAL,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (timestamp, id)
+    PRIMARY KEY ("time", id)
 );
 
-SELECT create_hypertable('automation_state', 'timestamp', if_not_exists => TRUE);
+SELECT create_hypertable('automation_state', 'time', if_not_exists => TRUE);
 
 CREATE INDEX idx_automation_state_location ON automation_state(location, cluster);
-CREATE INDEX idx_automation_state_timestamp ON automation_state(timestamp DESC);
+CREATE INDEX idx_automation_state_timestamp ON automation_state("time" DESC);
 CREATE INDEX idx_automation_state_device ON automation_state(location, cluster, device_name);
--- TimescaleDB default index; production carries it alongside the explicit
--- timestamp index above (duplicate candidates stay investigation-only).
-CREATE INDEX IF NOT EXISTS automation_state_timestamp_idx ON automation_state (timestamp DESC);
+-- Keep the production index name even though this post-rename fixture declares
+-- the event-time column as "time".
+DROP INDEX IF EXISTS automation_state_time_idx;
+CREATE INDEX IF NOT EXISTS automation_state_timestamp_idx ON automation_state ("time" DESC);
 CREATE INDEX IF NOT EXISTS monitoring_automation_state_id_idx ON automation_state (id)
     WITH (timescaledb.transaction_per_chunk);
 
 CREATE TABLE effective_setpoints (
-    timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "time" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     location TEXT NOT NULL,
     cluster TEXT NOT NULL,
     mode TEXT,
@@ -302,12 +303,12 @@ ALTER TABLE effective_setpoints
         SET DEFAULT nextval('monitoring_effective_setpoints_ingest_id_seq'::regclass),
     ALTER COLUMN ingested_at SET DEFAULT now();
 
-SELECT create_hypertable('effective_setpoints', 'timestamp', if_not_exists => TRUE);
+SELECT create_hypertable('effective_setpoints', 'time', if_not_exists => TRUE);
 
 CREATE INDEX idx_effective_setpoints_location ON effective_setpoints(location, cluster);
-CREATE INDEX idx_effective_setpoints_timestamp ON effective_setpoints(timestamp DESC);
+CREATE INDEX idx_effective_setpoints_time ON effective_setpoints("time" DESC);
 CREATE INDEX idx_effective_setpoints_device
-    ON effective_setpoints(location, cluster, device_name, timestamp DESC);
+    ON effective_setpoints(location, cluster, device_name, "time" DESC);
 CREATE INDEX monitoring_effective_setpoints_ingest_id_idx
     ON effective_setpoints (monitoring_ingest_id)
     WHERE monitoring_ingest_id IS NOT NULL;
@@ -317,7 +318,7 @@ CREATE INDEX monitoring_effective_setpoints_ingested_at_idx
 
 CREATE TABLE control_history (
     id BIGSERIAL,
-    timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "time" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     location TEXT NOT NULL,
     cluster TEXT NOT NULL,
     device_name TEXT NOT NULL,
@@ -330,20 +331,20 @@ CREATE TABLE control_history (
     setpoint REAL,
     load_percent REAL,
     manual_expires_at TIMESTAMPTZ,
-    PRIMARY KEY (id, timestamp)
+    PRIMARY KEY (id, "time")
 );
 
-SELECT create_hypertable('control_history', 'timestamp', if_not_exists => TRUE);
+SELECT create_hypertable('control_history', 'time', if_not_exists => TRUE);
 
 CREATE INDEX idx_control_history_location ON control_history(location, cluster);
-CREATE INDEX idx_control_history_timestamp ON control_history(timestamp DESC);
+CREATE INDEX idx_control_history_time ON control_history("time" DESC);
 CREATE INDEX idx_control_history_manual_expires
     ON control_history(manual_expires_at)
     WHERE manual_expires_at IS NOT NULL AND mode = 'manual';
 
 CREATE TABLE relay_observation (
     observation_id BIGINT GENERATED ALWAYS AS IDENTITY,
-    observed_at TIMESTAMPTZ NOT NULL,
+    "time" TIMESTAMPTZ NOT NULL,
     session_id UUID NOT NULL,
     channel SMALLINT NULL,
     observed_state BOOLEAN NULL,
@@ -355,7 +356,7 @@ CREATE TABLE relay_observation (
     registry_version BIGINT NOT NULL,
     reason TEXT NOT NULL,
     CONSTRAINT pk_relay_observation
-        PRIMARY KEY (observed_at, observation_id),
+        PRIMARY KEY ("time", observation_id),
     CONSTRAINT ck_relay_observation_channel
         CHECK (channel IS NULL OR channel BETWEEN 0 AND 15),
     CONSTRAINT ck_relay_observation_reason
@@ -379,16 +380,16 @@ CREATE TABLE relay_observation (
         )
 );
 
-SELECT create_hypertable('relay_observation', 'observed_at', if_not_exists => TRUE);
+SELECT create_hypertable('relay_observation', 'time', if_not_exists => TRUE);
 
 CREATE INDEX idx_relay_observation_location_cluster_device_time
-    ON relay_observation (location, cluster, device_id, observed_at, observation_id);
+    ON relay_observation (location, cluster, device_id, "time", observation_id);
 CREATE INDEX idx_relay_observation_channel_time
-    ON relay_observation (channel, observed_at, observation_id);
+    ON relay_observation (channel, "time", observation_id);
 
 CREATE TABLE monitoring_room_photoperiod (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    observed_at TIMESTAMPTZ NOT NULL,
+    "time" TIMESTAMPTZ NOT NULL,
     location TEXT NOT NULL,
     cluster TEXT NOT NULL,
     phase TEXT NOT NULL CHECK (phase IN ('SUN', 'MOON', 'UNKNOWN')),
@@ -398,13 +399,13 @@ CREATE TABLE monitoring_room_photoperiod (
     source TEXT NOT NULL CHECK (btrim(source) <> '')
 );
 CREATE INDEX monitoring_room_photoperiod_room_time_idx
-    ON monitoring_room_photoperiod (location, cluster, observed_at DESC);
+    ON monitoring_room_photoperiod (location, cluster, "time" DESC);
 CREATE INDEX monitoring_room_photoperiod_snapshot_idx
     ON monitoring_room_photoperiod (runtime_snapshot_version);
 
 CREATE TABLE monitoring_photoperiod_coverage (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    observed_at TIMESTAMPTZ NOT NULL,
+    "time" TIMESTAMPTZ NOT NULL,
     location TEXT NOT NULL,
     cluster TEXT NOT NULL,
     state TEXT NOT NULL CHECK (state IN ('available', 'unavailable')),
@@ -413,10 +414,10 @@ CREATE TABLE monitoring_photoperiod_coverage (
         'recording_gap', 'recovered', 'unclean_restart'
     )),
     runtime_snapshot_version BIGINT NOT NULL CHECK (runtime_snapshot_version >= 0),
-    UNIQUE (location, cluster, observed_at, state)
+    UNIQUE (location, cluster, "time", state)
 );
 CREATE INDEX monitoring_photoperiod_coverage_room_time_idx
-    ON monitoring_photoperiod_coverage (location, cluster, observed_at DESC, id DESC);
+    ON monitoring_photoperiod_coverage (location, cluster, "time" DESC, id DESC);
 
 CREATE TABLE mode_transition_history (
     id SERIAL PRIMARY KEY,
@@ -427,7 +428,7 @@ CREATE TABLE mode_transition_history (
     new_mode_id INTEGER NOT NULL REFERENCES room_modes(id),
     new_submode_id INTEGER REFERENCES flower_submodes(id),
     triggered_by TEXT NOT NULL CHECK (triggered_by IN ('api', 'schedule', 'system')),
-    triggered_at TIMESTAMPTZ DEFAULT NOW(),
+    "time" TIMESTAMPTZ DEFAULT NOW(),
     parameters_synced JSONB,
     success BOOLEAN DEFAULT true,
     error_message TEXT,
@@ -435,11 +436,11 @@ CREATE TABLE mode_transition_history (
 );
 
 CREATE INDEX idx_mode_transition_history_loc_clus_time
-    ON mode_transition_history (location, cluster, triggered_at DESC);
+    ON mode_transition_history (location, cluster, "time" DESC);
 
 CREATE TABLE pid_parameter_history (
     id BIGSERIAL PRIMARY KEY,
-    timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    "time" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     device_type TEXT NOT NULL,
     kp REAL NOT NULL,
     ki REAL NOT NULL,
@@ -452,7 +453,7 @@ CREATE TABLE pid_parameter_history (
 );
 
 CREATE INDEX idx_pid_parameter_history_device_type
-    ON pid_parameter_history(device_type, timestamp DESC);
+    ON pid_parameter_history(device_type, "time" DESC);
 
 CREATE TABLE config_versions (
     version_id BIGSERIAL PRIMARY KEY,
@@ -580,7 +581,7 @@ VALUES
 
 
 INSERT INTO automation_state (
-    id, timestamp, location, cluster, device_name, device_state, device_mode,
+    id, "time", location, cluster, device_name, device_state, device_mode,
     pid_output, duty_cycle_percent, active_rule_ids, active_schedule_ids, control_reason,
     schedule_ramp_up_duration, schedule_ramp_down_duration, schedule_photoperiod_hours,
     pid_kp, pid_ki, pid_kd, updated_at
@@ -601,7 +602,7 @@ VALUES
 SELECT setval(pg_get_serial_sequence('automation_state', 'id'), 4, TRUE);
 
 INSERT INTO effective_setpoints (
-    timestamp, location, cluster, mode, device_name,
+    "time", location, cluster, mode, device_name,
     effective_heating_setpoint, effective_cooling_setpoint, effective_humidity_setpoint,
     effective_co2_setpoint, effective_vpd_setpoint, effective_light_intensity,
     nominal_heating_setpoint, nominal_cooling_setpoint, nominal_humidity_setpoint,
@@ -633,7 +634,7 @@ VALUES
      NULL, NULL);
 
 INSERT INTO control_history (
-    id, timestamp, location, cluster, device_name, channel,
+    id, "time", location, cluster, device_name, channel,
     old_state, new_state, mode, reason, sensor_value, setpoint, load_percent, manual_expires_at
 )
 VALUES
@@ -650,7 +651,7 @@ VALUES
 SELECT setval(pg_get_serial_sequence('control_history', 'id'), 4, TRUE);
 
 INSERT INTO relay_observation (
-    observation_id, observed_at, session_id, channel, observed_state,
+    observation_id, "time", session_id, channel, observed_state,
     device_id, device_name, device_type, location, cluster, registry_version, reason
 )
 OVERRIDING SYSTEM VALUE
@@ -666,7 +667,7 @@ VALUES
 SELECT setval(pg_get_serial_sequence('relay_observation', 'observation_id'), 4, TRUE);
 
 INSERT INTO monitoring_room_photoperiod (
-    id, observed_at, location, cluster, phase, mode_id, submode_id,
+    id, "time", location, cluster, phase, mode_id, submode_id,
     runtime_snapshot_version, source
 )
 OVERRIDING SYSTEM VALUE
@@ -677,7 +678,7 @@ VALUES
 SELECT setval(pg_get_serial_sequence('monitoring_room_photoperiod', 'id'), 3, TRUE);
 
 INSERT INTO monitoring_photoperiod_coverage (
-    id, observed_at, location, cluster, state, reason, runtime_snapshot_version
+    id, "time", location, cluster, state, reason, runtime_snapshot_version
 )
 OVERRIDING SYSTEM VALUE
 VALUES
@@ -688,7 +689,7 @@ SELECT setval(pg_get_serial_sequence('monitoring_photoperiod_coverage', 'id'), 3
 
 INSERT INTO mode_transition_history (
     id, location, cluster, old_mode_id, old_submode_id, new_mode_id, new_submode_id,
-    triggered_by, triggered_at, parameters_synced, success, error_message, created_at
+    triggered_by, "time", parameters_synced, success, error_message, created_at
 )
 VALUES
     (1, 'Flower Room', 'main', NULL, NULL, 2, 1, 'api',
@@ -703,7 +704,7 @@ VALUES
 SELECT setval(pg_get_serial_sequence('mode_transition_history', 'id'), 3, TRUE);
 
 INSERT INTO pid_parameter_history (
-    id, timestamp, device_type, kp, ki, kd, updated_by, source,
+    id, "time", device_type, kp, ki, kd, updated_by, source,
     location, cluster, binary_hysteresis
 )
 VALUES

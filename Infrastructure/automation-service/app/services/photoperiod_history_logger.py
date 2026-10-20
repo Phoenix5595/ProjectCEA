@@ -53,7 +53,7 @@ _FLUSH_FAILED_EXC: Final = (asyncpg.PostgresError, ConnectionError, OSError, Run
 
 _PHASE_INSERT_SQL: Final = """
 INSERT INTO monitoring_room_photoperiod (
-    observed_at, location, cluster, phase, mode_id, submode_id,
+    "time", location, cluster, phase, mode_id, submode_id,
     runtime_snapshot_version, source
 )
 SELECT $1, $2, $3, $4, $5, $6, $7, $8
@@ -63,7 +63,7 @@ WHERE NOT EXISTS (
     WHERE prior.location = $2
       AND prior.cluster = $3
       AND prior.source = $8
-      AND prior.observed_at = $1
+      AND prior."time" = $1
       AND prior.phase = $4
 )
   AND (
@@ -72,32 +72,32 @@ WHERE NOT EXISTS (
     WHERE latest.location = $2
       AND latest.cluster = $3
       AND latest.source = $8
-    ORDER BY latest.observed_at DESC, latest.id DESC
+    ORDER BY latest."time" DESC, latest.id DESC
     LIMIT 1
   ) IS DISTINCT FROM $4
 """
 
 _COVERAGE_INSERT_SQL: Final = """
 INSERT INTO monitoring_photoperiod_coverage (
-    observed_at, location, cluster, state, reason, runtime_snapshot_version
+    "time", location, cluster, state, reason, runtime_snapshot_version
 )
 VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (location, cluster, observed_at, state) DO NOTHING
+ON CONFLICT (location, cluster, "time", state) DO NOTHING
 """
 
 _PHASE_STATE_SQL: Final = """
 SELECT DISTINCT ON (location, cluster)
-    location, cluster, phase, observed_at, runtime_snapshot_version
+    location, cluster, phase, "time", runtime_snapshot_version
 FROM monitoring_room_photoperiod
 WHERE source = 'photoperiod_transition'
-ORDER BY location, cluster, observed_at DESC, id DESC
+ORDER BY location, cluster, "time" DESC, id DESC
 """
 
 _COVERAGE_STATE_SQL: Final = """
 SELECT DISTINCT ON (location, cluster)
-    location, cluster, state, observed_at, runtime_snapshot_version
+    location, cluster, state, "time", runtime_snapshot_version
 FROM monitoring_photoperiod_coverage
-ORDER BY location, cluster, observed_at DESC, id DESC
+ORDER BY location, cluster, "time" DESC, id DESC
 """
 
 
@@ -238,9 +238,7 @@ class DatabasePhotoperiodHistoryStore:
             version_row: asyncpg.Record
             if phase_row is not None and coverage_row is not None:
                 version_row = (
-                    phase_row
-                    if phase_row["observed_at"] >= coverage_row["observed_at"]
-                    else coverage_row
+                    phase_row if phase_row["time"] >= coverage_row["time"] else coverage_row
                 )
             else:
                 version_row = phase_row if phase_row is not None else coverage_row
@@ -251,10 +249,10 @@ class DatabasePhotoperiodHistoryStore:
                     location=room_key[0],
                     cluster=room_key[1],
                     phase=Phase(str(phase_row["phase"])) if phase_row is not None else None,
-                    phase_observed_at=phase_row["observed_at"] if phase_row is not None else None,
+                    phase_observed_at=phase_row["time"] if phase_row is not None else None,
                     coverage_state=(coverage_row["state"] if coverage_row is not None else None),
                     coverage_observed_at=(
-                        coverage_row["observed_at"] if coverage_row is not None else None
+                        coverage_row["time"] if coverage_row is not None else None
                     ),
                     runtime_snapshot_version=RuntimeSnapshotVersion(
                         int(version_row["runtime_snapshot_version"])

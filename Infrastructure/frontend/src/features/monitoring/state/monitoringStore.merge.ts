@@ -50,7 +50,7 @@ export function downgradeQuality(q: Quality): Quality {
   return 'unavailable'
 }
 
-function mergePoints<T extends { timestamp: Date }>(
+function mergePoints<T extends { time: Date }>(
   existing: T[],
   incoming: T[],
   key: (p: T) => string
@@ -63,11 +63,11 @@ function mergePoints<T extends { timestamp: Date }>(
     seen.add(k)
     out.push(p)
   }
-  out.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+  out.sort((a, b) => a.time.getTime() - b.time.getTime())
   return out
 }
 
-function mergeSeriesByName<S extends { name: string; points: { timestamp: Date }[] }>(
+function mergeSeriesByName<S extends { name: string; points: { time: Date }[] }>(
   existing: S[],
   incoming: S[]
 ): S[] {
@@ -80,34 +80,34 @@ function mergeSeriesByName<S extends { name: string; points: { timestamp: Date }
     }
     byName.set(s.name, {
       ...cur,
-      points: mergePoints(cur.points, s.points, p => `${s.name}:${p.timestamp.getTime()}`),
+      points: mergePoints(cur.points, s.points, p => `${s.name}:${p.time.getTime()}`),
     })
   }
   return [...byName.values()]
 }
 
-function mergeTargetValues<T extends { timestamp: Date; value: number | null }>(
+function mergeTargetValues<T extends { time: Date; value: number | null }>(
   existing: T[],
   incoming: T[]
 ): T[] {
   const byTimestamp = new Map<number, T>()
   for (const value of [...existing, ...incoming]) {
-    const timestamp = value.timestamp.getTime()
+    const timestamp = value.time.getTime()
     const current = byTimestamp.get(timestamp)
     if (!current || (Number.isFinite(value.value) && !Number.isFinite(current.value))) {
       byTimestamp.set(timestamp, value)
     }
   }
   return [...byTimestamp.values()].sort(
-    (left, right) => left.timestamp.getTime() - right.timestamp.getTime()
+    (left, right) => left.time.getTime() - right.time.getTime()
   )
 }
 
 function mergeTargetSeriesByName<
   S extends {
     name: string
-    points: { timestamp: Date; value: number | null }[]
-    steps: { timestamp: Date; value: number | null }[]
+    points: { time: Date; value: number | null }[]
+    steps: { time: Date; value: number | null }[]
   },
 >(existing: S[], incoming: S[]): S[] {
   const byName = new Map(existing.map(series => [series.name, series]))
@@ -225,16 +225,16 @@ function mergeHistoricalPhotoperiod(
 ): PhotoperiodTimelinePoint[] {
   const outside: PhotoperiodTimelinePoint[] = []
   for (const point of existing) {
-    const timestamp = point.timestamp.getTime()
+    const timestamp = point.time.getTime()
     if (timestamp < start || timestamp >= end) outside.push(point)
   }
   const inside = new Map<number, PhotoperiodTimelinePoint>()
   for (const point of incoming) {
-    const timestamp = point.timestamp.getTime()
+    const timestamp = point.time.getTime()
     if (timestamp >= start && timestamp < end) inside.set(timestamp, point)
   }
   const merged: PhotoperiodTimelinePoint[] = [...outside, ...inside.values()].sort(
-    (left, right) => left.timestamp.getTime() - right.timestamp.getTime()
+    (left, right) => left.time.getTime() - right.time.getTime()
   )
   const collapsed: PhotoperiodTimelinePoint[] = []
   for (const point of merged) {

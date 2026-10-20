@@ -215,7 +215,7 @@ export type ArchiveJob = z.infer<typeof ArchiveJob>
 export const ArchivePhotoperiodFact = z
   .object({
     id: z.union([z.string(), z.number().int()]),
-    observed_at: archiveInstant,
+    time: archiveInstant,
     phase: z.string(),
     mode_id: z.number().int().nullable(),
     submode_id: z.number().int().nullable(),
@@ -228,7 +228,7 @@ export type ArchivePhotoperiodFact = z.infer<typeof ArchivePhotoperiodFact>
 export const ArchivePhotoperiodCoverageFact = z
   .object({
     id: z.union([z.string(), z.number().int()]),
-    observed_at: archiveInstant,
+    time: archiveInstant,
     state: z.string(),
     reason: z.string().nullable(),
     runtime_snapshot_version: z.number().int().nullable(),

@@ -1,11 +1,12 @@
 \set ON_ERROR_STOP on
--- Operator-only preparation of mergeable hourly/daily summary SOURCES for the
--- bounded all-history monitoring overviews. Never invoked by deployment,
--- startup, or any service lifespan; no supervisor/hardware interaction and no
--- automatic backfill or policy activation is performed or authorized here.
--- Production application requires separate owner authorization through the
--- canonical full-service candidate workflow; this file is NOT deployment
--- approval.
+-- Standalone operator-only preparation of mergeable hourly/daily summary
+-- SOURCES for the bounded all-history monitoring overviews. Not run by regular
+-- deploys, startup, or any service lifespan. The approved Phase 4 downtime
+-- migration includes this canonical file inside its own transaction; that
+-- include does not authorize standalone backfill or policy activation.
+-- Standalone production application requires separate owner authorization
+-- through the canonical full-service candidate workflow; this file is NOT
+-- itself deployment approval.
 --
 -- What this file creates (only pre-existing monitoring_read_models.sql
 -- prerequisites plus the objects below; nothing existing is modified or
@@ -50,26 +51,35 @@
 --     state are preserved by repeat application; structural config drift is
 --     refused, and no existing policy/index/raw schema is touched.
 --   * Identity-leading group indexes on the six new aggregates only.
+--   * `public.monitoring_backfill_aggregates(job_id INTEGER, config JSONB)`,
+--     the Phase 4 oldest-first aggregate refresh runner. Migration 0007
+--     schedules it every minute with a ten-minute runtime only after it
+--     snapshots and pauses the overview jobs.
 --
--- Authorization (choose exactly one; the script refuses everything else):
+-- Standalone authorization (choose exactly one; the script refuses all other
+-- connections):
 --   * Disposable proof harness: connect to a fresh `monitoring_test_*`
 --     database and SET app.grow_cycle_history_disposable = '1' for the
 --     session, then apply this file; or
---   * Production owner: connect to the source-target database `sj_cea` and
---     SET app.grow_cycle_history_authorized = '1' for the session, then apply
---     this file.
+--   * Production owner: connect to `sj_cea` and SET
+--     app.grow_cycle_history_authorized = '1' for the session. The Phase 4
+--     migration sets that local authorization when it includes this file.
 -- Inherited PG*/DATABASE_URL/MONITORING_TEST_DATABASE_URL environments are
 -- rejected upstream by the guarded harness; this file additionally refuses
 -- unsupported databases directly.
 --
 -- After the shared helper, the coverage table and the six summary sources are
 -- in place, `monitoring_relay_history_overview.sql` is included on the same
--- open transaction (relative include; run psql from this file's directory).
+-- open transaction; `\ir` resolves the relay file relative to this script.
 -- It owns the relay-duration hour/day sources, the exact duration-slice
 -- function, the relay overview progress singleton and the paused
 -- monitoring_rebuild_relay_overview procedure. A missing include file is an
 -- explicit failure; any error rolls the whole application back.
+\if :{?monitoring_time_rename_migration}
+-- The phase-4 migration owns this transaction when it includes this file.
+\else
 BEGIN;
+\endif
 SET LOCAL lock_timeout = '1s';
 SET LOCAL statement_timeout = '30s';
 
@@ -406,16 +416,16 @@ $overview_coverage_shape$;
 CREATE MATERIALIZED VIEW IF NOT EXISTS monitoring_measurement_1hour
 WITH (timescaledb.continuous, timescaledb.materialized_only = true) AS
 SELECT
-    time_bucket(INTERVAL '1 hour', time) AS bucket,
-    sensor_id,
-    count(value) AS sample_count,
-    sum(value::NUMERIC) AS value_sum,
-    sum(value::NUMERIC * value::NUMERIC) AS value_sum_squares,
-    min(value::NUMERIC) AS min_value,
-    max(value::NUMERIC) AS max_value,
-    max(time) AS last_observed_at
-FROM measurement
-GROUP BY bucket, sensor_id
+    time_bucket(INTERVAL '1 hour', minute.bucket) AS bucket,
+    minute.sensor_id,
+    sum(minute.sample_count)::BIGINT AS sample_count,
+    sum(minute.value_sum) AS value_sum,
+    sum(minute.value_sum_squares) AS value_sum_squares,
+    min(minute.min_value) AS min_value,
+    max(minute.max_value) AS max_value,
+    max(minute.last_observed_at) AS last_observed_at
+FROM monitoring_measurement_1min AS minute
+GROUP BY 1, minute.sensor_id
 WITH NO DATA;
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS monitoring_measurement_1day
@@ -442,7 +452,7 @@ WITH NO DATA;
 CREATE MATERIALIZED VIEW IF NOT EXISTS monitoring_light_intensity_1hour
 WITH (timescaledb.continuous, timescaledb.materialized_only = true) AS
 SELECT
-    time_bucket(INTERVAL '1 hour', timestamp) AS bucket,
+    time_bucket(INTERVAL '1 hour', "time") AS bucket,
     location,
     cluster,
     device_name,
@@ -451,7 +461,7 @@ SELECT
     sum(effective_light_intensity::NUMERIC * effective_light_intensity::NUMERIC) AS value_sum_squares,
     min(effective_light_intensity::NUMERIC) AS min_value,
     max(effective_light_intensity::NUMERIC) AS max_value,
-    max(timestamp) AS last_observed_at
+    max("time") AS last_observed_at
 FROM effective_setpoints
 WHERE device_name IS NOT NULL
   AND (effective_light_intensity IS NOT NULL
@@ -487,7 +497,7 @@ WITH NO DATA;
 CREATE MATERIALIZED VIEW IF NOT EXISTS monitoring_requested_pid_1hour
 WITH (timescaledb.continuous, timescaledb.materialized_only = true) AS
 SELECT
-    time_bucket(INTERVAL '1 hour', timestamp) AS bucket,
+    time_bucket(INTERVAL '1 hour', "time") AS bucket,
     location,
     cluster,
     device_name,
@@ -507,7 +517,7 @@ SELECT
     max((pid_output::DOUBLE PRECISION * 100.0::DOUBLE PRECISION)::NUMERIC)
         FILTER (WHERE pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
                 AND pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION) AS requested_max,
-    max(timestamp) AS last_observed_at
+    max("time") AS last_observed_at
 FROM automation_state
 GROUP BY bucket, location, cluster, device_name
 WITH NO DATA;
@@ -650,12 +660,13 @@ END
 $overview_index_guard$;
 
 -- ------------------------------------------------------------------ §9: materialized-only hierarchy and source identity
--- Each hourly source must aggregate exactly its declared raw hypertable, and
--- each daily source must be a child of exactly its hourly parent.
+-- Each hourly source must aggregate exactly its declared raw hypertable or
+-- canonical 1-minute aggregate; each daily source is its hourly parent's child.
 DO $overview_materialization_guard$
 DECLARE
     source_hypertable_id INTEGER;
     hourly_record RECORD;
+    minute_record RECORD;
     daily_record RECORD;
 BEGIN
     IF (SELECT count(*)
@@ -690,10 +701,14 @@ BEGIN
         RAISE EXCEPTION 'monitoring overview continuous aggregates must be materialized-only';
     END IF;
 
-    -- measurement: raw measurement -> hourly -> daily
+    -- measurement: raw measurement -> 1-minute -> hourly -> daily
     SELECT id INTO source_hypertable_id
     FROM _timescaledb_catalog.hypertable
     WHERE schema_name = 'public' AND table_name = 'measurement';
+    SELECT mat_hypertable_id, parent_mat_hypertable_id, raw_hypertable_id
+    INTO minute_record
+    FROM _timescaledb_catalog.continuous_agg
+    WHERE user_view_schema = 'public' AND user_view_name = 'monitoring_measurement_1min';
     SELECT mat_hypertable_id, parent_mat_hypertable_id, raw_hypertable_id
     INTO hourly_record
     FROM _timescaledb_catalog.continuous_agg
@@ -703,9 +718,12 @@ BEGIN
     FROM _timescaledb_catalog.continuous_agg
     WHERE user_view_schema = 'public' AND user_view_name = 'monitoring_measurement_1day';
 
-    IF source_hypertable_id IS NULL OR hourly_record IS NULL OR daily_record IS NULL
-       OR hourly_record.parent_mat_hypertable_id IS NOT NULL
-       OR hourly_record.raw_hypertable_id IS DISTINCT FROM source_hypertable_id
+    IF source_hypertable_id IS NULL OR minute_record IS NULL
+       OR hourly_record IS NULL OR daily_record IS NULL
+       OR minute_record.parent_mat_hypertable_id IS NOT NULL
+       OR minute_record.raw_hypertable_id IS DISTINCT FROM source_hypertable_id
+       OR hourly_record.parent_mat_hypertable_id IS DISTINCT FROM minute_record.mat_hypertable_id
+       OR hourly_record.raw_hypertable_id IS DISTINCT FROM minute_record.mat_hypertable_id
        OR daily_record.parent_mat_hypertable_id IS DISTINCT FROM hourly_record.mat_hypertable_id
        OR daily_record.raw_hypertable_id IS DISTINCT FROM hourly_record.mat_hypertable_id THEN
         RAISE EXCEPTION 'monitoring measurement overview aggregate hierarchy drifted';
@@ -1159,21 +1177,21 @@ BEGIN
                                 hour_raw.value_sum_squares, hour_raw.min_value,
                                 hour_raw.max_value, hour_raw.last_observed_at
                            FROM (
-                               SELECT time_bucket(INTERVAL '1 hour', timestamp) AS bucket,
+                               SELECT time_bucket(INTERVAL '1 hour', "time") AS bucket,
                                       location, cluster, device_name,
                                       count(effective_light_intensity) AS sample_count,
                                       sum(effective_light_intensity::NUMERIC) AS value_sum,
                                       sum(effective_light_intensity::NUMERIC * effective_light_intensity::NUMERIC) AS value_sum_squares,
                                       min(effective_light_intensity::NUMERIC) AS min_value,
                                       max(effective_light_intensity::NUMERIC) AS max_value,
-                                      max(timestamp) AS last_observed_at
+                                      max("time") AS last_observed_at
                                  FROM public.effective_setpoints
                                 WHERE device_name IS NOT NULL
                                   AND (effective_light_intensity IS NOT NULL
                                        OR nominal_light_intensity IS NOT NULL
                                        OR ramp_progress_light IS NOT NULL)
-                                  AND timestamp >= v_hour_front
-                                  AND timestamp < v_hour_cand_end
+                                  AND "time" >= v_hour_front
+                                  AND "time" < v_hour_cand_end
                                 GROUP BY 1, 2, 3, 4
                            ) AS hour_raw)
                         UNION ALL
@@ -1183,21 +1201,21 @@ BEGIN
                                 hour_raw.value_sum_squares, hour_raw.min_value,
                                 hour_raw.max_value, hour_raw.last_observed_at
                            FROM (
-                               SELECT time_bucket(INTERVAL '1 hour', timestamp) AS bucket,
+                               SELECT time_bucket(INTERVAL '1 hour', "time") AS bucket,
                                       location, cluster, device_name,
                                       count(effective_light_intensity) AS sample_count,
                                       sum(effective_light_intensity::NUMERIC) AS value_sum,
                                       sum(effective_light_intensity::NUMERIC * effective_light_intensity::NUMERIC) AS value_sum_squares,
                                       min(effective_light_intensity::NUMERIC) AS min_value,
                                       max(effective_light_intensity::NUMERIC) AS max_value,
-                                      max(timestamp) AS last_observed_at
+                                      max("time") AS last_observed_at
                                  FROM public.effective_setpoints
                                 WHERE device_name IS NOT NULL
                                   AND (effective_light_intensity IS NOT NULL
                                        OR nominal_light_intensity IS NOT NULL
                                        OR ramp_progress_light IS NOT NULL)
-                                  AND timestamp >= v_hour_front
-                                  AND timestamp < v_hour_cand_end
+                                  AND "time" >= v_hour_front
+                                  AND "time" < v_hour_cand_end
                                 GROUP BY 1, 2, 3, 4
                            ) AS hour_raw
                          EXCEPT ALL
@@ -1229,7 +1247,7 @@ BEGIN
                                 hour_raw.requested_min, hour_raw.requested_max,
                                 hour_raw.last_observed_at
                            FROM (
-                               SELECT time_bucket(INTERVAL '1 hour', timestamp) AS bucket,
+                               SELECT time_bucket(INTERVAL '1 hour', "time") AS bucket,
                                       location, cluster, device_name,
                                       count(*) AS sample_count,
                                       count(pid_output) FILTER (
@@ -1252,10 +1270,10 @@ BEGIN
                                           FILTER (
                                           WHERE pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
                                             AND pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION) AS requested_max,
-                                      max(timestamp) AS last_observed_at
+                                      max("time") AS last_observed_at
                                  FROM public.automation_state
-                                WHERE timestamp >= v_hour_front
-                                  AND timestamp < v_hour_cand_end
+                                WHERE "time" >= v_hour_front
+                                  AND "time" < v_hour_cand_end
                                 GROUP BY 1, 2, 3, 4
                            ) AS hour_raw)
                         UNION ALL
@@ -1267,7 +1285,7 @@ BEGIN
                                 hour_raw.requested_min, hour_raw.requested_max,
                                 hour_raw.last_observed_at
                            FROM (
-                               SELECT time_bucket(INTERVAL '1 hour', timestamp) AS bucket,
+                               SELECT time_bucket(INTERVAL '1 hour', "time") AS bucket,
                                       location, cluster, device_name,
                                       count(*) AS sample_count,
                                       count(pid_output) FILTER (
@@ -1290,10 +1308,10 @@ BEGIN
                                           FILTER (
                                           WHERE pid_output::DOUBLE PRECISION >= 0::DOUBLE PRECISION
                                             AND pid_output::DOUBLE PRECISION <= 1::DOUBLE PRECISION) AS requested_max,
-                                      max(timestamp) AS last_observed_at
+                                      max("time") AS last_observed_at
                                  FROM public.automation_state
-                                WHERE timestamp >= v_hour_front
-                                  AND timestamp < v_hour_cand_end
+                                WHERE "time" >= v_hour_front
+                                  AND "time" < v_hour_cand_end
                                 GROUP BY 1, 2, 3, 4
                            ) AS hour_raw
                          EXCEPT ALL
@@ -1709,5 +1727,130 @@ REVOKE EXECUTE ON PROCEDURE public.monitoring_refresh_overview_incremental(INTEG
 -- authorization transaction; the shared failure gate and the coverage table
 -- above already exist for it.
 \ir monitoring_relay_history_overview.sql
+-- Phase 4 aggregate backfill. Migration 0007 snapshots and pauses the
+-- overview jobs before including this procedure, then creates its scheduled
+-- job with the source-derived cursor after all aggregates are rebuilt.
+CREATE OR REPLACE PROCEDURE public.monitoring_backfill_aggregates(job_id INTEGER, config JSONB)
+LANGUAGE plpgsql
+SECURITY INVOKER
+AS $procedure$
+DECLARE
+    expected_views TEXT[] := ARRAY[
+        'monitoring_measurement_5min',
+        'monitoring_measurement_1hour',
+        'monitoring_measurement_1day',
+        'monitoring_effective_setpoints_1min',
+        'monitoring_effective_setpoints_5min',
+        'monitoring_automation_state_1min',
+        'monitoring_automation_state_5min',
+        'monitoring_light_intensity_1hour',
+        'monitoring_light_intensity_1day',
+        'monitoring_requested_pid_1hour',
+        'monitoring_requested_pid_1day'
+    ];
+    configured_views TEXT[];
+    configured JSONB := COALESCE(config, '{}'::JSONB);
+    view_name TEXT;
+    cursor_start TIMESTAMPTZ;
+    next_cursor TIMESTAMPTZ;
+    configured_start TIMESTAMPTZ;
+    policy_job_id INTEGER;
+    policy_count INTEGER;
+    snapshot_row RECORD;
+BEGIN
+    IF jsonb_typeof(configured) IS DISTINCT FROM 'object'
+       OR jsonb_typeof(configured -> 'views') IS DISTINCT FROM 'array'
+       OR jsonb_typeof(configured -> 'done') IS DISTINCT FROM 'boolean'
+       OR jsonb_typeof(configured -> 'start') IS DISTINCT FROM 'string'
+       OR jsonb_typeof(configured -> 'cursor') IS DISTINCT FROM 'string' THEN
+        RAISE EXCEPTION 'monitoring_backfill_aggregates: invalid job config';
+    END IF;
 
+    SELECT array_agg(entry.view_name ORDER BY entry.ordinality)
+    INTO configured_views
+    FROM jsonb_array_elements_text(configured -> 'views') WITH ORDINALITY
+         AS entry(view_name, ordinality);
+    IF configured_views IS DISTINCT FROM expected_views THEN
+        RAISE EXCEPTION 'monitoring_backfill_aggregates: unexpected view order';
+    END IF;
+
+    configured_start := (configured ->> 'start')::TIMESTAMPTZ;
+    cursor_start := (configured ->> 'cursor')::TIMESTAMPTZ;
+    IF cursor_start < configured_start
+       OR cursor_start IS DISTINCT FROM time_bucket(INTERVAL '1 day', cursor_start) THEN
+        RAISE EXCEPTION 'monitoring_backfill_aggregates: cursor must be a UTC day boundary at or after start';
+    END IF;
+
+    IF (configured ->> 'done')::BOOLEAN THEN
+        PERFORM alter_job(job_id, scheduled => FALSE);
+        RETURN;
+    END IF;
+
+    -- The source-day windows use the same UTC boundaries as the 1-day CAGGs.
+    -- time_bucket returns those boundaries independent of the database timezone,
+    -- so each refresh covers a complete day even across DST transitions.
+    next_cursor := time_bucket(INTERVAL '1 day', cursor_start + INTERVAL '1 day');
+    FOREACH view_name IN ARRAY configured_views LOOP
+        CALL public.refresh_continuous_aggregate(
+            format('public.%I', view_name)::REGCLASS,
+            cursor_start,
+            next_cursor,
+            TRUE,
+            '{"buckets_per_batch":0}'::JSONB);
+    END LOOP;
+
+    configured := jsonb_set(configured, '{cursor}', to_jsonb(next_cursor), TRUE);
+    IF next_cursor >= now() - INTERVAL '1 hour' THEN
+        SELECT count(*)
+        INTO policy_count
+        FROM _timescaledb_catalog.continuous_agg AS cagg
+        JOIN timescaledb_information.jobs AS policy
+          ON (policy.config ->> 'mat_hypertable_id')::INTEGER = cagg.mat_hypertable_id
+        WHERE cagg.user_view_schema = 'public'
+          AND cagg.user_view_name = ANY (expected_views)
+          AND policy.proc_schema = '_timescaledb_functions'
+          AND policy.proc_name = 'policy_refresh_continuous_aggregate';
+        IF policy_count <> cardinality(expected_views) THEN
+            RAISE EXCEPTION 'monitoring_backfill_aggregates: expected % refresh policies, found %',
+                cardinality(expected_views), policy_count;
+        END IF;
+
+        FOR policy_job_id IN
+            SELECT policy.job_id
+            FROM _timescaledb_catalog.continuous_agg AS cagg
+            JOIN timescaledb_information.jobs AS policy
+              ON (policy.config ->> 'mat_hypertable_id')::INTEGER = cagg.mat_hypertable_id
+            WHERE cagg.user_view_schema = 'public'
+              AND cagg.user_view_name = ANY (expected_views)
+              AND policy.proc_schema = '_timescaledb_functions'
+              AND policy.proc_name = 'policy_refresh_continuous_aggregate'
+        LOOP
+            PERFORM alter_job(policy_job_id, scheduled => TRUE);
+        END LOOP;
+
+        FOR snapshot_row IN
+            SELECT snapshot.job_id, snapshot.scheduled, snapshot.config
+            FROM public.monitoring_job_snapshot_0007 AS snapshot
+            ORDER BY snapshot.job_id
+        LOOP
+            PERFORM alter_job(snapshot_row.job_id,
+                              scheduled => snapshot_row.scheduled,
+                              config => snapshot_row.config);
+        END LOOP;
+
+        configured := jsonb_set(configured, '{done}', 'true'::JSONB, TRUE);
+        PERFORM alter_job(job_id, scheduled => FALSE, config => configured);
+    ELSE
+        PERFORM alter_job(job_id, config => configured);
+    END IF;
+END
+$procedure$;
+COMMENT ON PROCEDURE public.monitoring_backfill_aggregates(INTEGER, JSONB) IS
+'Oldest-first UTC-day materialization of the eleven Phase 4 aggregates; on completion schedules their refresh policies and restores the snapshotted overview jobs.';
+REVOKE EXECUTE ON PROCEDURE public.monitoring_backfill_aggregates(INTEGER, JSONB) FROM PUBLIC;
+
+\if :{?monitoring_time_rename_migration}
+-- The phase-4 migration commits after all canonical definitions are included.
+\else
 COMMIT;
+\endif

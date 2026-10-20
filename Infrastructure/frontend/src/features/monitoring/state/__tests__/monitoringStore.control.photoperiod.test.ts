@@ -37,14 +37,14 @@ const UNAVAILABLE: TimelineProvenance = {
 }
 
 function phasePoint(
-  timestamp: Date,
+  time: Date,
   phase: PhotoperiodTimelinePoint['phase'],
   provenance: TimelineProvenance = RECORDED,
   metadata: Partial<
     Pick<PhotoperiodTimelinePoint, 'mode_id' | 'submode_id' | 'runtime_snapshot_version'>
   > = {}
 ): PhotoperiodTimelinePoint {
-  return { timestamp, phase, provenance, ...metadata }
+  return { time, phase, provenance, ...metadata }
 }
 
 function sensorResponse(): MonitoringResponse {
@@ -133,7 +133,7 @@ describe('applyInitial', () => {
     )
 
     expect(data.photoperiod).toEqual(recorded)
-    expect(data.projectionHistory?.photoperiod.map(point => [point.timestamp, point.phase])).toEqual([
+    expect(data.projectionHistory?.photoperiod.map(point => [point.time, point.phase])).toEqual([
       [at(0), 'SUN'],
       [at(30), 'MOON'],
       [at(60), 'UNKNOWN'],
@@ -156,7 +156,7 @@ describe('applyInitialPartial', () => {
     const data = applyInitialPartial(existing, sensorResponse(), null, projection)
 
     expect(data.photoperiod).toBe(recorded)
-    expect(data.projectionHistory?.photoperiod.map(point => [point.timestamp, point.phase])).toEqual([
+    expect(data.projectionHistory?.photoperiod.map(point => [point.time, point.phase])).toEqual([
       [at(0), 'MOON'],
       [at(30), 'UNKNOWN'],
     ])

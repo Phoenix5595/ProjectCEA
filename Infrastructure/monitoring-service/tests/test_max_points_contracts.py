@@ -19,12 +19,12 @@ from monitoring_service.history_overview_models import (
     HistoryOverviewControlResponse,
     HistoryOverviewMetadata,
     HistoryOverviewRange,
+    HistoryOverviewSensorResponse,
 )
 from monitoring_service.history_buckets import choose_history_bucket
 from monitoring_service.main import create_app
 from monitoring_service.sensor_models import (
     MonitoringRange,
-    MonitoringValidationError,
     Node,
     SensorSeries,
     SensorStatistics,
@@ -32,6 +32,7 @@ from monitoring_service.sensor_models import (
     Tier,
     UnitFamily,
     derive_interval_seconds,
+    resolve_room_metadata,
 )
 from monitoring_service.sensor_repository import SensorMonitoringRepository
 from monitoring_service.sensor_routes import get_sensor_reads
@@ -273,7 +274,8 @@ class StatisticsRowsDatabase:
     async def fetch(
         self, query: str, *_: str | int | float | datetime | timedelta
     ) -> list[asyncpg.Record]:
-        del query
+        if "materialization_watermark" in query:
+            return [{"materialization_watermark": datetime(2026, 8, 24, 14, tzinfo=UTC)}]
         values = {
             "node": "main",
             "sensor": "dry_bulb",

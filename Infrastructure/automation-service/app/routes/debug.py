@@ -204,7 +204,7 @@ async def get_light_schedule_health(
                 async with pool.acquire() as conn:
                     row = await conn.fetchrow(
                         """
-                        SELECT MAX(timestamp) AS ts FROM effective_setpoints
+                        SELECT MAX("time") AS ts FROM effective_setpoints
                         WHERE location = $1 AND cluster = $2 AND device_name = $3
                           AND effective_light_intensity IS NOT NULL
                         """,
@@ -266,7 +266,7 @@ async def get_mode_history(
                 """
                 SELECT * FROM mode_transition_history
                 WHERE location = $1 AND cluster = $2
-                ORDER BY triggered_at DESC
+                ORDER BY "time" DESC
                 LIMIT $3
                 """,
                 location,
@@ -274,7 +274,7 @@ async def get_mode_history(
                 limit,
             )
             oldest = min(
-                (row["triggered_at"] for row in rows if row["triggered_at"] is not None),
+                (row["time"] for row in rows if row["time"] is not None),
                 default=datetime.min.replace(tzinfo=UTC),
             )
             await require_local_history(

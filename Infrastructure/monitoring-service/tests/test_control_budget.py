@@ -17,7 +17,7 @@ def _setpoint_row(
     timestamp: datetime, heating: float, ramp_progress: float | None
 ) -> dict[str, str | float | datetime | None]:
     return {
-        "timestamp": timestamp,
+        "time": timestamp,
         "mode": "day",
         "effective_heating_setpoint": heating,
         "effective_heating_setpoint_min": heating,
@@ -66,6 +66,8 @@ class DenseControlDatabase:
     async def fetch(
         self, query: str, *_: str | int | float | datetime
     ) -> list[dict[str, str | float | datetime | int | None]]:
+        if "AS materialization_watermark" in query:
+            return [{"materialization_watermark": NOW + timedelta(minutes=12)}]
         if "FROM effective_setpoints" in query:
             rows = [
                 _setpoint_row(NOW + timedelta(minutes=index), 20.0, None)
@@ -106,7 +108,7 @@ class DenseControlDatabase:
             return [
                 {
                     "id": 50,
-                    "observed_at": NOW,
+                    "time": NOW,
                     "location": "Veg Room",
                     "cluster": "main",
                     "state": "available",
@@ -118,7 +120,7 @@ class DenseControlDatabase:
             return [
                 {
                     "id": 40 + index,
-                    "observed_at": NOW + timedelta(minutes=index),
+                    "time": NOW + timedelta(minutes=index),
                     "location": "Veg Room",
                     "cluster": "main",
                     "phase": "SUN" if index < 2 else "MOON",
@@ -154,6 +156,8 @@ class AggregateControlDatabase:
         self, query: str, *_: str | int | float | datetime
     ) -> list[dict[str, str | float | datetime | int | None]]:
         self.queries.append(query)
+        if "AS materialization_watermark" in query:
+            return [{"materialization_watermark": NOW}]
         if "monitoring_effective_setpoints_5min" in query:
             return [_setpoint_row(NOW, 21.0, None)]
         if "monitoring_automation_state_5min" in query:
@@ -210,7 +214,7 @@ async def test_budgeted_history_preserves_step_holds_ramp_endpoints_and_phase_tr
     assert response.requested_max_points == 10
     assert response.interval_seconds == 120
     assert len(climate.points) + len(climate.steps) + (2 * len(climate.linear)) <= 10
-    assert [(step.timestamp, step.value) for step in climate.steps] == [
+    assert [(step.time, step.value) for step in climate.steps] == [
         (NOW, 20.0),
         (NOW + timedelta(minutes=8), 25.0),
     ]
@@ -274,7 +278,7 @@ async def test_budgeted_history_keeps_unavailable_setpoint_gaps_unbridged() -> N
 
     # Then: the gap becomes an unavailable null step rather than a held-value bridge.
     steps = response.climate[0].steps
-    assert [(step.timestamp, step.value) for step in steps] == [
+    assert [(step.time, step.value) for step in steps] == [
         (NOW, 20.0),
         (NOW + timedelta(minutes=1), None),
         (NOW + timedelta(minutes=2), 22.0),
@@ -307,7 +311,7 @@ async def test_budgeted_light_history_keeps_one_mode_aware_timeline_and_gap() ->
     assert [series.name for series in response.lights] == ["light_f_1"]
     light = response.lights[0]
     assert light.points == ()
-    assert [(step.timestamp, step.value) for step in light.steps] == [
+    assert [(step.time, step.value) for step in light.steps] == [
         (timestamps[0], 40.0),
         (timestamps[1], 0.0),
         (timestamps[4], None),
@@ -340,7 +344,7 @@ def _raw_light_row(
     ramp_progress: float | None = None,
 ) -> dict[str, str | float | datetime | None]:
     return {
-        "timestamp": timestamp,
+        "time": timestamp,
         "mode": "SUN",
         "device_name": device_name,
         "effective_light_intensity": value,
@@ -403,7 +407,7 @@ async def test_light_ramp_geometry_survives_every_supported_range_selection() ->
             [(ramp.start, ramp.end, ramp.start_value, ramp.end_value) for ramp in light.linear]
         )
         assert light.points == ()
-        assert [(step.timestamp, step.value) for step in light.steps] == [
+        assert [(step.time, step.value) for step in light.steps] == [
             (start, 0.0),
             (start + timedelta(minutes=63), ramp_values[-1]),
             (start + timedelta(minutes=65), None),
@@ -508,7 +512,7 @@ async def test_light_budget_pressure_preserves_boundaries_and_reports_approximat
 
     # Then: mandatory boundaries stay exact and the ramp keeps its real deviations.
     assert light.points == ()
-    assert [(step.timestamp, step.value) for step in light.steps] == [
+    assert [(step.time, step.value) for step in light.steps] == [
         (start, 40.0),
         (start + timedelta(minutes=22), 60.0),
         (start + timedelta(minutes=24), None),
@@ -546,7 +550,7 @@ async def test_light_missing_rows_never_gain_fabricated_samples() -> None:
     # Then: observed values survive, but expired coverage cannot span the outage.
     light = response.lights[0]
     assert light.points == ()
-    assert [(step.timestamp, step.value) for step in light.steps] == [
+    assert [(step.time, step.value) for step in light.steps] == [
         (start, 40.0),
         (start + timedelta(minutes=2), None),
         (start + timedelta(minutes=10), 80.0),
@@ -565,6 +569,8 @@ class AggregateSetpointDatabase:
     async def fetch(
         self, query: str, *_: str | int | float | datetime
     ) -> list[dict[str, str | float | datetime | int | None]]:
+        if "AS materialization_watermark" in query:
+            return [{"materialization_watermark": NOW + timedelta(minutes=15)}]
         if "monitoring_effective_setpoints_" in query:
             return self.setpoint_rows
         return []
@@ -577,6 +583,8 @@ class PidExtremaDatabase:
     async def fetch(
         self, query: str, *_: str | int | float | datetime
     ) -> list[dict[str, str | float | datetime | int | None]]:
+        if "AS materialization_watermark" in query:
+            return [{"materialization_watermark": NOW + timedelta(minutes=11)}]
         if "monitoring_automation_state" in query:
             return [
                 {
@@ -610,7 +618,7 @@ async def test_pid_budget_reduction_never_discards_recorded_extrema() -> None:
 
     # Then: the retained representatives carry the discarded spans' extrema,
     # while their retained last values and count of transitions stay unchanged.
-    assert [(point.timestamp, point.pid_output) for point in points] == [
+    assert [(point.time, point.pid_output) for point in points] == [
         (NOW, 0.2),
         (NOW + timedelta(minutes=5), 0.45),
         (NOW + timedelta(minutes=10), 0.7),
@@ -645,6 +653,6 @@ async def test_same_value_climate_steps_merge_collapsed_bucket_extrema() -> None
     steps = response.climate[0].steps
 
     # Then: the retained step reports the merged extrema of every collapsed bucket.
-    assert [(step.timestamp, step.value) for step in steps] == [(NOW, 20.0)]
+    assert [(step.time, step.value) for step in steps] == [(NOW, 20.0)]
     assert steps[0].minimum == 19.0
     assert steps[0].maximum == 21.0

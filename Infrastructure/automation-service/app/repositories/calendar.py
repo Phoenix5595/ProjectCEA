@@ -109,17 +109,17 @@ _REQUIRED_PHASE_END_TYPES = frozenset(
 _FLOWER_DATE_TYPES = frozenset({"flip_to_flower", "flower_stretch", "flower_bulk", "flower_ripen"})
 
 _ROOM_SOURCE_STREAMS = (
-    ("automation_state", "timestamp", "location", False),
-    ("effective_setpoints", "timestamp", "location", False),
-    ("control_history", "timestamp", "location", False),
-    ("relay_observation", "observed_at", "location", True),
-    ("monitoring_room_photoperiod", "observed_at", "location", False),
-    ("monitoring_photoperiod_coverage", "observed_at", "location", False),
-    ("mode_transition_history", "triggered_at", "location", False),
-    ("pid_parameter_history", "timestamp", "location", False),
+    ("automation_state", '"time"', "location", False),
+    ("effective_setpoints", '"time"', "location", False),
+    ("control_history", '"time"', "location", False),
+    ("relay_observation", '"time"', "location", True),
+    ("monitoring_room_photoperiod", '"time"', "location", False),
+    ("monitoring_photoperiod_coverage", '"time"', "location", False),
+    ("mode_transition_history", '"time"', "location", False),
+    ("pid_parameter_history", '"time"', "location", False),
     ("config_versions", "timestamp", "location", True),
 )
-_IDENTITY_SOURCE_STREAMS = (("measurement", "time", "sensor_id", "sensor_id"),)
+_IDENTITY_SOURCE_STREAMS = (("measurement", '"time"', "sensor_id", "sensor_id"),)
 _OPTIONAL_SOURCE_STREAMS = (
     "light_state_history",
     "pid_adjustments",
@@ -552,10 +552,10 @@ class CalendarRepository(BaseRepository):
                     LEFT JOIN room_modes rm_new ON rm_new.id = h.new_mode_id
                     LEFT JOIN flower_submodes fs_old ON fs_old.id = h.old_submode_id
                     LEFT JOIN flower_submodes fs_new ON fs_new.id = h.new_submode_id
-                    WHERE h.triggered_at::date >= $1
-                      AND h.triggered_at::date <= $2
+                    WHERE h."time"::date >= $1
+                      AND h."time"::date <= $2
                       {loc_clause}
-                    ORDER BY h.triggered_at DESC
+                    ORDER BY h."time" DESC
                     """,
                     *params,
                 )
@@ -1076,7 +1076,7 @@ class CalendarRepository(BaseRepository):
         if archive_windows and "mode_transition_history" in source_tables:
             null_time_context = await conn.fetchval(
                 "SELECT count(*) FROM mode_transition_history "
-                "WHERE triggered_at IS NULL AND (location=ANY($1::text[]) OR location IS NULL)",
+                'WHERE "time" IS NULL AND (location=ANY($1::text[]) OR location IS NULL)',
                 sorted(set(new_rooms)),
             )
             context_counts["mode_transition_history_null_time"] = int(null_time_context)
@@ -1164,7 +1164,7 @@ class CalendarRepository(BaseRepository):
                 )
             ambiguous = await conn.fetch(
                 "WITH ambiguous_rows AS (SELECT s."
-                f"{identity_column} AS identity,s.{time_column} AS observed_at "
+                f"{identity_column} AS identity,s.{time_column} AS event_time "
                 f"FROM public.{table} s WHERE s.{time_column} IS NOT NULL "
                 f"AND NOT ({override_any}) "
                 "AND EXISTS (SELECT 1 FROM unnest($1::text[],$2::timestamptz[],$3::timestamptz[]) "
@@ -1176,8 +1176,8 @@ class CalendarRepository(BaseRepository):
                 f"AND snap->'source_identity'=jsonb_build_object('{identity_key}',s.{identity_column}) "
                 f"AND (snap->>'start')::timestamptz<=s.{time_column} "
                 f"AND (snap->>'end')::timestamptz>s.{time_column})>1) "
-                "SELECT identity,min(observed_at) AS start_at,"
-                "(max(observed_at)+interval '1 microsecond') AS end_at,count(*) AS row_count "
+                "SELECT identity,min(event_time) AS start_at,"
+                "(max(event_time)+interval '1 microsecond') AS end_at,count(*) AS row_count "
                 "FROM ambiguous_rows GROUP BY identity ORDER BY identity",
                 new_rooms,
                 new_starts,

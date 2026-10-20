@@ -85,7 +85,7 @@ END
 $case$;
 
 INSERT INTO effective_setpoints (
-    timestamp,
+    "time",
     location,
     cluster,
     mode,
@@ -106,7 +106,7 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1
         FROM effective_setpoints
-        WHERE timestamp = '2026-01-08T00:00:00Z'
+        WHERE "time" = '2026-01-08T00:00:00Z'
           AND monitoring_ingest_id IS NOT NULL
           AND ingested_at IS NOT NULL
     ) THEN

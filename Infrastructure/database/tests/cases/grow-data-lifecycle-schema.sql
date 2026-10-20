@@ -161,8 +161,8 @@ BEGIN
     FOR stream_name, expected_key IN
         SELECT s.stream_name, s.key_names
         FROM (VALUES
-            ('automation_state', 'timestamp,id'),
-            ('control_history', 'id,timestamp')
+            ('automation_state', 'time,id'),
+            ('control_history', 'id,time')
         ) AS s(stream_name, key_names)
     LOOP
         SELECT count(*) INTO found_count

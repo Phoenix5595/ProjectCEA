@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS mode_transition_history (
     new_mode_id INTEGER NOT NULL REFERENCES room_modes(id),
     new_submode_id INTEGER REFERENCES flower_submodes(id),
     triggered_by TEXT NOT NULL CHECK (triggered_by IN ('api', 'schedule', 'system')),
-    triggered_at TIMESTAMPTZ DEFAULT NOW(),
+    "time" TIMESTAMPTZ DEFAULT NOW(),
     parameters_synced JSONB,
     success BOOLEAN DEFAULT true,
     error_message TEXT,
@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS mode_transition_history (
 
 -- Index for query performance on location, cluster and time
 CREATE INDEX IF NOT EXISTS idx_mode_transition_history_loc_clus_time 
-    ON mode_transition_history (location, cluster, triggered_at DESC);
+    ON mode_transition_history (location, cluster, "time" DESC);
 
 -- Comment for documentation
 COMMENT ON TABLE mode_transition_history IS 'Audit trail for environmental mode transitions in rooms/clusters';

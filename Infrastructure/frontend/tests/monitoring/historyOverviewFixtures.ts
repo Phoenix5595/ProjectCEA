@@ -397,7 +397,7 @@ const HEARTBEAT_MAX_GAP_MS = 60_000
 
 interface RelayFactRow {
   readonly observation_id: number
-  readonly observed_at: Date
+  readonly time: Date
   readonly channel: number | null
   readonly observed_state: boolean | null
   readonly reason:
@@ -428,7 +428,7 @@ function relayFactRow(
 ): RelayFactRow {
   return {
     observation_id: observationId,
-    observed_at: new Date(atMs),
+    time: new Date(atMs),
     channel,
     observed_state: state,
     reason,
@@ -514,7 +514,7 @@ function relayLaneFactRows(
       push(atMs, null, null, 'heartbeat', null)
     }
   }
-  rows.sort((a, b) => a.observed_at.getTime() - b.observed_at.getTime())
+  rows.sort((a, b) => a.time.getTime() - b.time.getTime())
   return rows
 }
 

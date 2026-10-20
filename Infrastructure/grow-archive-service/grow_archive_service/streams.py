@@ -1,4 +1,5 @@
 """Stable source-table bindings used by archive lifecycle policy."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -21,15 +22,15 @@ STREAM_BINDINGS: Final[Mapping[str, StreamBinding]] = {
     binding.name: binding
     for binding in (
         StreamBinding("measurement", True, "time", None, "sensor_id", None),
-        StreamBinding("automation_state", True, "timestamp", "location", None, None),
-        StreamBinding("effective_setpoints", True, "timestamp", "location", None, None),
-        StreamBinding("control_history", True, "timestamp", "location", None, None),
-        StreamBinding("relay_observation", True, "observed_at", "location", None, None),
-        StreamBinding("monitoring_room_photoperiod", True, "observed_at", "location", None, None),
-        StreamBinding("monitoring_photoperiod_coverage", True, "observed_at", "location", None, None),
+        StreamBinding("automation_state", True, "time", "location", None, None),
+        StreamBinding("effective_setpoints", True, "time", "location", None, None),
+        StreamBinding("control_history", True, "time", "location", None, None),
+        StreamBinding("relay_observation", True, "time", "location", None, None),
+        StreamBinding("monitoring_room_photoperiod", True, "time", "location", None, None),
+        StreamBinding("monitoring_photoperiod_coverage", True, "time", "location", None, None),
         StreamBinding("light_state_history", False, "triggered_at", "location", None, None),
-        StreamBinding("mode_transition_history", False, "triggered_at", "location", None, None),
-        StreamBinding("pid_parameter_history", False, "timestamp", "location", None, None),
+        StreamBinding("mode_transition_history", False, "time", "location", None, None),
+        StreamBinding("pid_parameter_history", False, "time", "location", None, None),
         StreamBinding("setpoint_history", False, "timestamp", "location", None, None),
         StreamBinding("pid_adjustments", False, "created_at", "location", None, None),
         StreamBinding("config_versions", False, "timestamp", "location", None, None),

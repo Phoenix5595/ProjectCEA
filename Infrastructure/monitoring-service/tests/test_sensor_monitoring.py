@@ -30,6 +30,8 @@ class QueryCapturingDatabase:
         self, query: str, *_: str | int | float | datetime | timedelta
     ) -> list[asyncpg.Record]:
         self.queries.append(query)
+        if "materialization_watermark" in query:
+            return [{"materialization_watermark": None}]
         return []
 
 
@@ -167,15 +169,20 @@ def test_compute_tier_preserves_legacy_duration_boundaries() -> None:
     assert tiers == (Tier.RAW, Tier.ONE_MINUTE, Tier.FIVE_MINUTES)
 
 
-def test_tiered_series_sql_reads_only_its_own_cagg() -> None:
-    # Given: the SQL selected for each aggregated tier
-    # When: the source relations are inspected
-    # Then: each statement reads exactly its own CAGG (watermark-guarded)
+def test_tiered_series_sql_checks_parent_invalidations_and_reads_raw_fallback() -> None:
+    # Given: the SQL selected for the hierarchical five-minute tier
     from monitoring_service.sensor_sql import TIERED_STATEMENTS
 
-    assert "_materialized" not in TIERED_STATEMENTS["1min"]
-    assert "monitoring_measurement_1min" in TIERED_STATEMENTS["1min"]
-    assert "monitoring_measurement_5min" in TIERED_STATEMENTS["5min"]
+    query = TIERED_STATEMENTS["5min"]
+
+    # Then: both aggregate relations gate materialized buckets and raw replaces stale buckets
+    assert "FROM monitoring_measurement_5min c" in query
+    assert (
+        "pending.cagg_name IN ('monitoring_measurement_5min', 'monitoring_measurement_1min')"
+        in query
+    )
+    assert "FROM measurement" in query
+    assert "raw.bucket > $8" in query
 
 
 @pytest.fixture
@@ -221,7 +228,7 @@ def test_compute_tier_accepts_live_tick_windows() -> None:
 
 
 @pytest.mark.anyio
-async def test_statistics_uses_five_minute_cagg_when_duration_exceeds_48_hours() -> None:
+async def test_statistics_uses_five_minute_cagg_with_parent_aware_raw_fallback() -> None:
     # Given: a seven-day statistics request and a query-capturing database fake
     from monitoring_service.sensor_models import MonitoringRange
 
@@ -233,10 +240,11 @@ async def test_statistics_uses_five_minute_cagg_when_duration_exceeds_48_hours()
     # When: statistics are loaded for the wide request
     _ = await repository.statistics("Flower Room", monitoring_range)
 
-    # Then: every sensor query reads only the five-minute aggregate
-    assert database.queries
-    assert all("monitoring_measurement_5min" in query for query in database.queries)
-    assert all("FROM measurement " not in query for query in database.queries)
+    # Then: the sufficient-statistics query uses the child, its parent, and raw stale buckets
+    statistics_query = next(query for query in database.queries if "FROM source_rows c" in query)
+    assert "monitoring_measurement_5min" in statistics_query
+    assert "monitoring_measurement_1min" in statistics_query
+    assert "FROM measurement" in statistics_query
 
 
 @pytest.mark.anyio

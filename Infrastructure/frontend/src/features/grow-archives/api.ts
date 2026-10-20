@@ -151,7 +151,7 @@ export class ArchiveApi {
       }
     }
     if ([...graph.photoperiod, ...graph.photoperiod_coverage].some(fact =>
-      fact.observed_at.getTime() < start || fact.observed_at.getTime() >= end
+      fact.time.getTime() < start || fact.time.getTime() >= end
     )) {
       throw new Error('archive_integrity_failed')
     }

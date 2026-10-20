@@ -99,7 +99,7 @@ def _budget_light(series: LightTimelineSeriesOut, budget: int) -> LightTimelineS
             if not steps or steps[-1].value is not None:
                 steps.append(
                     TimelineStepOut(
-                        timestamp=point.timestamp,
+                        time=point.time,
                         value=None,
                         provenance=point.provenance,
                         minimum=point.minimum,
@@ -113,7 +113,7 @@ def _budget_light(series: LightTimelineSeriesOut, budget: int) -> LightTimelineS
             if not steps or steps[-1].value != point.value:
                 steps.append(
                     TimelineStepOut(
-                        timestamp=point.timestamp,
+                        time=point.time,
                         value=point.value,
                         provenance=point.provenance,
                         minimum=point.minimum,
@@ -132,8 +132,8 @@ def _budget_light(series: LightTimelineSeriesOut, budget: int) -> LightTimelineS
             vertex = chain[0]
             linear.append(
                 TimelineLinearOut(
-                    start=vertex.timestamp,
-                    end=vertex.timestamp,
+                    start=vertex.time,
+                    end=vertex.time,
                     start_value=_non_null(vertex.value),
                     end_value=_non_null(vertex.value),
                     provenance=vertex.provenance,
@@ -143,8 +143,8 @@ def _budget_light(series: LightTimelineSeriesOut, budget: int) -> LightTimelineS
         for left, right in zip(chain, chain[1:]):
             linear.append(
                 TimelineLinearOut(
-                    start=left.timestamp,
-                    end=right.timestamp,
+                    start=left.time,
+                    end=right.time,
                     start_value=_non_null(left.value),
                     end_value=_non_null(right.value),
                     provenance=left.provenance,
@@ -186,12 +186,12 @@ def _reduce_ramp_run(
         end = run[high]
         start_value = _non_null(start.value)
         end_value = _non_null(end.value)
-        duration = (end.timestamp - start.timestamp).total_seconds()
+        duration = (end.time - start.time).total_seconds()
         worst_index: int | None = None
         worst_error = tolerance
         for index in range(low + 1, high):
             sample = run[index]
-            offset = (sample.timestamp - start.timestamp).total_seconds()
+            offset = (sample.time - start.time).total_seconds()
             fraction = offset / duration if duration > 0 else 0.0
             interpolated = start_value + fraction * (end_value - start_value)
             error = abs(_non_null(sample.value) - interpolated)
@@ -217,7 +217,7 @@ def _budget_targets(
             if not steps or steps[-1].value is not None:
                 steps.append(
                     TimelineStepOut(
-                        timestamp=point.timestamp,
+                        time=point.time,
                         value=None,
                         provenance=point.provenance,
                         minimum=point.minimum,
@@ -232,7 +232,7 @@ def _budget_targets(
             if not steps or steps[-1].value != point.value:
                 steps.append(
                     TimelineStepOut(
-                        timestamp=point.timestamp,
+                        time=point.time,
                         value=point.value,
                         provenance=point.provenance,
                         minimum=point.minimum,
@@ -250,8 +250,8 @@ def _budget_targets(
         ramp_end = points[index - 1]
         linear.append(
             TimelineLinearOut(
-                start=ramp_start.timestamp,
-                end=ramp_end.timestamp,
+                start=ramp_start.time,
+                end=ramp_end.time,
                 start_value=_non_null(ramp_start.value),
                 end_value=_non_null(ramp_end.value),
                 provenance=ramp_start.provenance,

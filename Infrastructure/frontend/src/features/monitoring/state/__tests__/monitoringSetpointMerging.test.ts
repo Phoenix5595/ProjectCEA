@@ -19,7 +19,7 @@ const unavailableProvenance = {
 
 function targetSeries(value: number | null): ClimateTimelineSeries {
   const pointProvenance = value === null ? unavailableProvenance : provenance
-  const step: TimelineStep = { timestamp, value, provenance: pointProvenance }
+  const step: TimelineStep = { time: timestamp, value, provenance: pointProvenance }
   return {
     name: 'VPD Setpoint',
     provenance,
@@ -27,7 +27,7 @@ function targetSeries(value: number | null): ClimateTimelineSeries {
     warnings: [],
     points: [
       {
-        timestamp,
+        time: timestamp,
         value,
         nominal_value: value,
         metric: 'vpd_setpoint',
@@ -111,14 +111,14 @@ describe('light history merging', () => {
       'light_f_1',
       [
         {
-          timestamp: first,
+          time: first,
           value: 40,
           nominal_value: 40,
           device_name: 'light_f_1',
           provenance,
         },
       ],
-      [{ timestamp: first, value: 40, provenance }],
+      [{ time: first, value: 40, provenance }],
       [
         {
           start: third,
@@ -134,14 +134,14 @@ describe('light history merging', () => {
       'light.intensity.light_f_1',
       [
         {
-          timestamp: second,
+          time: second,
           value: 50,
           nominal_value: 50,
           device_name: 'light_f_1',
           provenance,
         },
       ],
-      [{ timestamp: second, value: 50, provenance }],
+      [{ time: second, value: 50, provenance }],
       [
         {
           start: first,
@@ -157,7 +157,7 @@ describe('light history merging', () => {
       'Budgeted label',
       'light.intensity.light_f_1',
       [],
-      [{ timestamp: third, value: 60, provenance }],
+      [{ time: third, value: 60, provenance }],
       [
         {
           start: second,
@@ -178,8 +178,8 @@ describe('light history merging', () => {
     expect(merged.lights).toHaveLength(1)
     expect(merged.lights[0]?.name).toBe('light_f_1')
     expect(merged.lights[0]?.metric).toBe('light_f_1')
-    expect(merged.lights[0]?.points.map(point => point.timestamp)).toEqual([first, second])
-    expect(merged.lights[0]?.steps.map(step => step.timestamp)).toEqual([first, second, third])
+    expect(merged.lights[0]?.points.map(point => point.time)).toEqual([first, second])
+    expect(merged.lights[0]?.steps.map(step => step.time)).toEqual([first, second, third])
     expect(merged.lights[0]?.linear.map(segment => [segment.start, segment.end])).toEqual([
       [first, second],
       [second, third],

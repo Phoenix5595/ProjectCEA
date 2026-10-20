@@ -60,7 +60,7 @@ function input(overrides: Partial<AlignInput> = {}): AlignInput {
     controlHistory: controlWithSteps(
       [
         {
-          timestamp: START,
+          time: START,
           value: 22,
           provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false },
         },
@@ -128,12 +128,12 @@ describe('live alignment', () => {
         controlHistory: controlWithSteps(
           [
             {
-              timestamp: START,
+              time: START,
               value: 22,
               provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false },
             },
             {
-              timestamp: unavailableNow,
+              time: unavailableNow,
               value: null,
               provenance: { origin: 'recorded', quality: 'unavailable', is_aggregated: false },
             },

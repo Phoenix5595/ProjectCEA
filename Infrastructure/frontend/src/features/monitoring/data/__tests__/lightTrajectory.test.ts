@@ -322,7 +322,7 @@ describe('light trajectory identity merging', () => {
     const provenance = { origin: 'projected' as const, quality: 'estimated' as const, is_aggregated: false }
     const unavailable = projectedLight('Effective projection', 'light.intensity.light_f_1', 'effective', [
       {
-        timestamp: new Date(10),
+        time: new Date(10),
         value: null,
         provenance: { ...provenance, quality: 'unavailable' },
       },
@@ -331,13 +331,13 @@ describe('light trajectory identity merging', () => {
       'Scheduled projection',
       'light.intensity.light_f_1',
       'scheduled',
-      [{ timestamp: new Date(10), value: 80, provenance }]
+      [{ time: new Date(10), value: 80, provenance }]
     )
     const pointIdentity: LightTimelineSeries = {
       ...projectedLight('Presentation label is not identity', 'wrong_metric', null, []),
       points: [
         {
-          timestamp: new Date(0),
+          time: new Date(0),
           value: 40,
           nominal_value: 40,
           device_name: 'light_f_1',
@@ -346,7 +346,7 @@ describe('light trajectory identity merging', () => {
       ],
     }
     const bareMetric = projectedLight('Light V 1', 'light_v_1', null, [
-      { timestamp: new Date(10), value: 20, provenance },
+      { time: new Date(10), value: 20, provenance },
     ])
 
     const merged = mergeLightSeries(
@@ -366,14 +366,14 @@ describe('light trajectory identity merging', () => {
   it('merges repeated same-kind observations with finite facts preferred to nulls', () => {
     const unavailable = projectedLight('Light light_f_1', 'light_f_1', 'effective', [
       {
-        timestamp: new Date(10),
+        time: new Date(10),
         value: null,
         provenance: { origin: 'recorded', quality: 'unavailable', is_aggregated: false },
       },
     ])
     const finite = projectedLight('Light light_f_1', 'light_f_1', 'effective', [
       {
-        timestamp: new Date(10),
+        time: new Date(10),
         value: 45,
         provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false },
       },
@@ -391,7 +391,7 @@ describe('light trajectory identity merging', () => {
     const equalValue = (name: string): LightTimelineSeries =>
       projectedLight(name, `light.intensity.${name}`, 'effective', [
         {
-          timestamp: new Date(10),
+          time: new Date(10),
           value: 40,
           provenance: { origin: 'projected', quality: 'estimated', is_aggregated: false },
         },

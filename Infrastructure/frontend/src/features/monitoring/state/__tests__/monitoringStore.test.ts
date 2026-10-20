@@ -50,14 +50,14 @@ function sensorRangeResponse(average = 24.5): MonitoringResponse {
   }
 }
 
-function climateSeries(points: { timestamp: Date; value: number }[]) {
+function climateSeries(points: { time: Date; value: number }[]) {
   return {
     name: 'Heating Setpoint',
     provenance: { origin: 'recorded' as const, quality: 'exact' as const, is_aggregated: false },
     projection: null,
     warnings: [],
     points: points.map(p => ({
-      timestamp: p.timestamp,
+      time: p.time,
       value: p.value,
       nominal_value: p.value,
       metric: 'heating_setpoint',
@@ -369,7 +369,7 @@ describe('monitoring store', () => {
     await vi.advanceTimersByTimeAsync(0)
     staleTail.resolve(
       controlResponse({
-        climate: [climateSeries([{ timestamp: new Date(T0), value: 99 }])],
+        climate: [climateSeries([{ time: new Date(T0), value: 99 }])],
       })
     )
     await vi.advanceTimersByTimeAsync(0)
@@ -398,7 +398,7 @@ describe('monitoring store', () => {
     await vi.advanceTimersByTimeAsync(0)
     staleReconciliation.resolve(
       controlResponse({
-        climate: [climateSeries([{ timestamp: new Date(T0), value: 99 }])],
+        climate: [climateSeries([{ time: new Date(T0), value: 99 }])],
       })
     )
     await vi.advanceTimersByTimeAsync(0)
@@ -432,7 +432,7 @@ describe('monitoring store', () => {
     healthyDefaults(api)
     api.controlRange.mockResolvedValue(
       controlResponse({
-        climate: [climateSeries([{ timestamp: new Date(T0), value: 22 }])],
+        climate: [climateSeries([{ time: new Date(T0), value: 22 }])],
       })
     )
     const store = new MonitoringStore('Flower Room', api, { now: () => new Date() })
@@ -455,8 +455,8 @@ describe('monitoring store', () => {
       controlResponse({
         climate: [
           climateSeries([
-            { timestamp: new Date('2026-08-02T11:00:00.000Z'), value: 22 },
-            { timestamp: new Date('2026-08-02T11:00:05.000Z'), value: 22.5 },
+            { time: new Date('2026-08-02T11:00:00.000Z'), value: 22 },
+            { time: new Date('2026-08-02T11:00:05.000Z'), value: 22.5 },
           ]),
         ],
       })
@@ -465,9 +465,9 @@ describe('monitoring store', () => {
       controlResponse({
         climate: [
           climateSeries([
-            { timestamp: new Date('2026-08-02T11:00:00.000Z'), value: 22 },
-            { timestamp: new Date('2026-08-02T11:00:05.000Z'), value: 22.5 },
-            { timestamp: new Date('2026-08-02T11:00:10.000Z'), value: 23 },
+            { time: new Date('2026-08-02T11:00:00.000Z'), value: 22 },
+            { time: new Date('2026-08-02T11:00:05.000Z'), value: 22.5 },
+            { time: new Date('2026-08-02T11:00:10.000Z'), value: 23 },
           ]),
         ],
       })
@@ -481,7 +481,7 @@ describe('monitoring store', () => {
     await vi.advanceTimersByTimeAsync(1000)
 
     const points = store.getSnapshot().data.controlHistory?.climate[0].points ?? []
-    const timestamps = points.map(p => p.timestamp.getTime())
+    const timestamps = points.map(p => p.time.getTime())
     expect(new Set(timestamps).size).toBe(timestamps.length)
     expect(points).toHaveLength(3)
     expect(store.getSnapshot().data.series).toHaveLength(1)
@@ -509,7 +509,7 @@ describe('monitoring store', () => {
     await vi.advanceTimersByTimeAsync(5000)
 
     const points = store.getSnapshot().data.controlHistory?.climate[0].points ?? []
-    const timestamps = points.map(p => p.timestamp.getTime())
+    const timestamps = points.map(p => p.time.getTime())
     expect(new Set(timestamps).size).toBe(timestamps.length)
     unsub()
   })

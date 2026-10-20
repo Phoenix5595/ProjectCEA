@@ -574,8 +574,8 @@ _CONTROL_FAMILY_TEMPLATE: Final[str] = """
         CROSS JOIN {p}_bounds
         WHERE facts.location = $1
           AND {p}_bounds.cov_from_min IS NOT NULL
-          AND facts."timestamp" >= {p}_bounds.range_start
-          AND facts."timestamp"
+          AND facts."time" >= {p}_bounds.range_start
+          AND facts."time"
               < LEAST({p}_bounds.range_end, {p}_bounds.cov_from_min)
           AND {beyond_probe}
     ) END AS empty
@@ -587,7 +587,7 @@ _CONTROL_FAMILY_TEMPLATE: Final[str] = """
              >= {p}_bounds.range_end THEN TRUE
         ELSE NOT EXISTS (
         SELECT 1 FROM (
-            SELECT "timestamp" AS observed_at FROM {raw_table} AS facts
+            SELECT "time" AS observed_at FROM {raw_table} AS facts
              WHERE facts.location = $1 AND {beyond_probe}
             UNION ALL
             SELECT bucket FROM {hour_table} WHERE location = $1
@@ -728,8 +728,8 @@ _CONTROL_FAMILY_TEMPLATE: Final[str] = """
         SELECT {raw_projection}
         FROM {raw_table} AS facts
         WHERE facts.location = $1
-          AND facts."timestamp" >= rp.lo
-          AND facts."timestamp" < rp.hi
+          AND facts."time" >= rp.lo
+          AND facts."time" < rp.hi
           AND {raw_predicate}
         OFFSET 0
     ) AS facts
@@ -1132,8 +1132,8 @@ relay_below_empty AS (
         FROM relay_observation
         CROSS JOIN relay_bounds
         WHERE relay_bounds.cov_from_min IS NOT NULL
-          AND relay_observation.observed_at >= relay_bounds.range_start
-          AND relay_observation.observed_at
+          AND relay_observation."time" >= relay_bounds.range_start
+          AND relay_observation."time"
               < LEAST(relay_bounds.range_end, relay_bounds.cov_from_min)
     ) AS empty
     FROM relay_bounds

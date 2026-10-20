@@ -33,7 +33,7 @@ export type RelayTimelineRange = z.infer<typeof RelayTimelineRange>
 export const RelayTimelineTransition = z
   .object({
     observation_id: z.number().int().positive(),
-    observed_at: utcDate,
+    time: utcDate,
     channel: z.number().int().min(0).max(15).nullable(),
     observed_state: z.boolean().nullable(),
     reason: RelayObservationReason,
@@ -73,7 +73,7 @@ export const RelayTimelineLoadPoint = z
   .object({
     device_id: z.number().int().nonnegative().nullable(),
     device_name: z.string(),
-    timestamp: utcDate,
+    time: utcDate,
     requested_percent: z.number().finite().min(0).max(100).nullable(),
     // Valid requested-percent extrema over the samples the point represents:
     // raw points repeat requested_percent on both sides; an aggregated point

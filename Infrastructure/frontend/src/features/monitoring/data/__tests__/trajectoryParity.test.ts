@@ -43,9 +43,9 @@ function controlResponse(climate: ClimateTimelineSeries[]): ControlMonitoringRes
   }
 }
 
-function point(timestamp: Date, value: number, origin: Origin, quality: Quality) {
+function point(time: Date, value: number, origin: Origin, quality: Quality) {
   return {
-    timestamp,
+    time,
     value,
     nominal_value: value,
     metric: 'heating_setpoint',

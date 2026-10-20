@@ -39,21 +39,21 @@ export function collectTimestamps(
   for (const resp of [input.controlHistory, input.projectionHistory]) {
     if (!resp) continue
     for (const cs of [...resp.climate, ...resp.lights]) {
-      for (const p of cs.points) set.add(p.timestamp.getTime())
-      for (const st of cs.steps) set.add(st.timestamp.getTime())
+      for (const p of cs.points) set.add(p.time.getTime())
+      for (const st of cs.steps) set.add(st.time.getTime())
       for (const ln of cs.linear) {
         set.add(ln.start.getTime())
         set.add(ln.end.getTime())
       }
     }
     for (const ds of resp.devices) {
-      for (const p of ds.points) set.add(p.timestamp.getTime())
+      for (const p of ds.points) set.add(p.time.getTime())
     }
     for (const ps of resp.pid) {
-      for (const p of ps.points) set.add(p.timestamp.getTime())
+      for (const p of ps.points) set.add(p.time.getTime())
     }
   }
-  for (const p of input.photoperiod) set.add(p.timestamp.getTime())
+  for (const p of input.photoperiod) set.add(p.time.getTime())
   return [...set].filter(t => t >= start && t <= end).sort((a, b) => a - b)
 }
 

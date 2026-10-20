@@ -28,7 +28,7 @@ FROM relay_observation
 RELAY_TRANSITIONS_FIRST_PAGE_SQL = """
 WITH relay_timeline_page_source AS (
     SELECT
-        ro.observation_id, ro.observed_at, ro.channel,
+        ro.observation_id, ro."time" AS observed_at, ro.channel,
         CASE WHEN ro.location = $4 AND ro.cluster = 'main'
              THEN ro.observed_state ELSE NULL END AS observed_state,
         ro.reason, ro.session_id, ro.registry_version,
@@ -44,7 +44,7 @@ WITH relay_timeline_page_source AS (
              THEN ro.cluster ELSE NULL END AS cluster
     FROM relay_observation AS ro
     WHERE ro.observation_id <= $1
-      AND ro.observed_at >= $2 AND ro.observed_at < $3
+      AND ro."time" >= $2 AND ro."time" < $3
       AND (
           ro.reason = 'heartbeat'
           OR ro.reason IN ('stale', 'recovered', 'recording_gap')
@@ -66,7 +66,7 @@ LIMIT $5
 RELAY_TRANSITIONS_AFTER_CURSOR_SQL = """
 WITH relay_timeline_page_source AS (
     SELECT
-        ro.observation_id, ro.observed_at, ro.channel,
+        ro.observation_id, ro."time" AS observed_at, ro.channel,
         CASE WHEN ro.location = $4 AND ro.cluster = 'main'
              THEN ro.observed_state ELSE NULL END AS observed_state,
         ro.reason, ro.session_id, ro.registry_version,
@@ -82,7 +82,7 @@ WITH relay_timeline_page_source AS (
              THEN ro.cluster ELSE NULL END AS cluster
     FROM relay_observation AS ro
     WHERE ro.observation_id <= $1
-      AND ro.observed_at >= $2 AND ro.observed_at < $3
+      AND ro."time" >= $2 AND ro."time" < $3
       AND (
           ro.reason = 'heartbeat'
           OR ro.reason IN ('stale', 'recovered', 'recording_gap')
@@ -93,7 +93,7 @@ WITH relay_timeline_page_source AS (
               AND ro.device_type IS DISTINCT FROM 'light'
           )
       )
-      AND (ro.observed_at, ro.observation_id) > ($5, $6)
+      AND (ro."time", ro.observation_id) > ($5, $6)
 )
 SELECT observation_id, observed_at, channel, observed_state, reason, session_id,
        registry_version, device_id, device_name, device_type, location, cluster
@@ -105,14 +105,14 @@ LIMIT $7
 RELAY_CHANNEL_ANCHORS_SQL = """
 WITH relay_channel_anchors AS (
     SELECT DISTINCT ON (ro.channel)
-        ro.observation_id, ro.observed_at, ro.channel, ro.observed_state,
+        ro.observation_id, ro."time" AS observed_at, ro.channel, ro.observed_state,
         ro.reason, ro.session_id, ro.registry_version, ro.device_id,
         ro.device_name, ro.device_type, ro.location, ro.cluster
     FROM relay_observation AS ro
     WHERE ro.channel IS NOT NULL
-      AND ro.observed_at < $1
+      AND ro."time" < $1
       AND ro.observation_id <= $2
-    ORDER BY ro.channel, ro.observed_at DESC, ro.observation_id DESC
+    ORDER BY ro.channel, ro."time" DESC, ro.observation_id DESC
 )
 SELECT observation_id, observed_at, channel, observed_state, reason, session_id,
        registry_version, device_id, device_name, device_type, location, cluster
@@ -124,19 +124,19 @@ ORDER BY channel
 
 RELAY_HEARTBEAT_HISTORY_SQL = """
 WITH relay_heartbeat_before_range AS (
-    SELECT observation_id, observed_at, channel, observed_state, reason, session_id,
+    SELECT observation_id, "time" AS observed_at, channel, observed_state, reason, session_id,
            registry_version, device_id, device_name, device_type, location, cluster,
            0::bigint AS window_count
     FROM relay_observation
-    WHERE reason = 'heartbeat' AND observed_at < $2 AND observation_id <= $1
-    ORDER BY observed_at DESC, observation_id DESC
+    WHERE reason = 'heartbeat' AND "time" < $2 AND observation_id <= $1
+    ORDER BY "time" DESC, observation_id DESC
     LIMIT 1
 ), relay_heartbeat_window AS (
-    SELECT observation_id, observed_at, channel, observed_state, reason, session_id,
+    SELECT observation_id, "time" AS observed_at, channel, observed_state, reason, session_id,
            registry_version, device_id, device_name, device_type, location, cluster,
            COUNT(*) OVER ()::bigint AS window_count
     FROM relay_observation
-    WHERE reason = 'heartbeat' AND observed_at >= $2 AND observed_at < $3
+    WHERE reason = 'heartbeat' AND "time" >= $2 AND "time" < $3
       AND observation_id <= $1
 ), relay_heartbeat_bounded AS (
     SELECT * FROM relay_heartbeat_window
@@ -163,18 +163,18 @@ WITH relay_candidate_channels AS (
     SELECT DISTINCT channel
     FROM relay_observation
     WHERE observation_id <= $1 AND channel IS NOT NULL
-      AND observed_at < $4
+      AND "time" < $4
       AND location = $3 AND cluster = 'main'
       AND device_type IS DISTINCT FROM 'light'
 ), relay_channel_before_range AS (
     SELECT DISTINCT ON (ro.channel)
-        ro.observation_id, ro.observed_at, ro.channel, ro.observed_state,
+        ro.observation_id, ro."time" AS observed_at, ro.channel, ro.observed_state,
         ro.reason, ro.session_id, ro.device_id, ro.device_name, ro.device_type,
         ro.location, ro.cluster
     FROM relay_observation AS ro
     JOIN relay_candidate_channels AS candidate USING (channel)
-    WHERE ro.observation_id <= $1 AND ro.observed_at < $2
-    ORDER BY ro.channel, ro.observed_at DESC, ro.observation_id DESC
+    WHERE ro.observation_id <= $1 AND ro."time" < $2
+    ORDER BY ro.channel, ro."time" DESC, ro.observation_id DESC
 ), relay_relevant_channels AS (
     SELECT channel
     FROM relay_channel_before_range
@@ -184,7 +184,7 @@ WITH relay_candidate_channels AS (
     SELECT DISTINCT channel
     FROM relay_observation
     WHERE observation_id <= $1
-      AND observed_at >= $2 AND observed_at < $4
+      AND "time" >= $2 AND "time" < $4
       AND location = $3 AND cluster = 'main'
       AND (
           device_type IS DISTINCT FROM 'light'
@@ -198,13 +198,13 @@ WITH relay_candidate_channels AS (
     FROM relay_channel_before_range AS before_row
     JOIN relay_relevant_channels AS relevant USING (channel)
     UNION ALL
-    SELECT ro.observation_id, ro.observed_at, ro.channel, ro.observed_state,
+    SELECT ro.observation_id, ro."time" AS observed_at, ro.channel, ro.observed_state,
            ro.reason, ro.session_id, ro.device_id, ro.device_name, ro.device_type,
            ro.location, ro.cluster
     FROM relay_observation AS ro
     JOIN relay_relevant_channels AS relevant USING (channel)
     WHERE ro.observation_id <= $1
-      AND ro.observed_at >= $2 AND ro.observed_at < $4
+      AND ro."time" >= $2 AND ro."time" < $4
 ), relay_sequenced_channel_history AS (
     SELECT *,
            LAG(observation_id) OVER channel_order AS previous_observation_id,
@@ -251,20 +251,20 @@ SELECT
 _RELAY_ASSIGNMENT_INTERVALS = """
 WITH relay_assignment_predecessors AS (
     SELECT DISTINCT ON (ro.channel)
-        ro.observation_id, ro.observed_at, ro.channel, ro.device_id,
+        ro.observation_id, ro."time" AS observed_at, ro.channel, ro.device_id,
         ro.device_name, ro.device_type, ro.location, ro.cluster, ro.reason
     FROM relay_observation AS ro
-    WHERE ro.channel IS NOT NULL AND ro.observed_at < $2
+    WHERE ro.channel IS NOT NULL AND ro."time" < $2
       AND ro.observation_id <= $1
-    ORDER BY ro.channel, ro.observed_at DESC, ro.observation_id DESC
+    ORDER BY ro.channel, ro."time" DESC, ro.observation_id DESC
 ), relay_assignment_history AS (
     SELECT * FROM relay_assignment_predecessors
     UNION ALL
-    SELECT ro.observation_id, ro.observed_at, ro.channel, ro.device_id,
+    SELECT ro.observation_id, ro."time" AS observed_at, ro.channel, ro.device_id,
            ro.device_name, ro.device_type, ro.location, ro.cluster, ro.reason
     FROM relay_observation AS ro
     WHERE ro.channel IS NOT NULL
-      AND ro.observed_at >= $2 AND ro.observed_at < $3
+      AND ro."time" >= $2 AND ro."time" < $3
       AND ro.observation_id <= $1
 ), relay_assignment_ordered AS (
     SELECT *,
@@ -300,7 +300,7 @@ RELAY_RAW_PID_LOAD_SQL = (
     _RELAY_ASSIGNMENT_INTERVALS
     + """
 , relay_matched_pid_samples AS (
-    SELECT s.id, s.timestamp, s.device_name, s.pid_output,
+    SELECT s.id, s."time" AS timestamp, s.device_name, s.pid_output,
            COUNT(DISTINCT assignment.device_id)::bigint AS owner_count,
            MIN(assignment.device_id) AS device_id
     FROM automation_state AS s
@@ -308,12 +308,12 @@ RELAY_RAW_PID_LOAD_SQL = (
       ON assignment.location = $4 AND assignment.cluster = 'main'
      AND assignment.device_type IN ('heating', 'cooling', 'co2')
      AND assignment.device_name = s.device_name
-     AND s.timestamp >= assignment.observed_at
+     AND s."time" >= assignment.observed_at
      AND (assignment.next_observed_at IS NULL
-          OR s.timestamp < assignment.next_observed_at)
+          OR s."time" < assignment.next_observed_at)
     WHERE s.location = $4 AND s.cluster = 'main'
-      AND s.timestamp >= $2 AND s.timestamp < $3
-    GROUP BY s.id, s.timestamp, s.device_name, s.pid_output
+      AND s."time" >= $2 AND s."time" < $3
+    GROUP BY s.id, s."time", s.device_name, s.pid_output
 )
 SELECT id, timestamp, device_name,
        CASE WHEN owner_count = 1 THEN device_id ELSE NULL END AS device_id,
@@ -657,7 +657,7 @@ def raw_load_points(
                     else None
                 ),
                 device_name=str(row["device_name"]),
-                timestamp=row["timestamp"],
+                time=row["timestamp"],
                 requested_percent=percent,
                 requested_min_percent=percent,
                 requested_max_percent=percent,
@@ -694,7 +694,7 @@ def aggregate_load_points(
                     else None
                 ),
                 device_name=device_name,
-                timestamp=timestamp,
+                time=timestamp,
                 requested_percent=percent,
                 requested_min_percent=minimum,
                 requested_max_percent=maximum,
@@ -702,7 +702,7 @@ def aggregate_load_points(
                 interval_seconds=interval_seconds,
             )
         )
-    result.sort(key=lambda point: (point.timestamp, point.device_id or -1, point.device_name))
+    result.sort(key=lambda point: (point.time, point.device_id or -1, point.device_name))
     return tuple(result), truncated
 
 

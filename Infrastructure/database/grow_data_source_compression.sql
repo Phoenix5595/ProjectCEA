@@ -24,10 +24,10 @@ BEGIN
         SELECT source_table, time_column, segment_columns
         FROM (VALUES
             ('measurement', 'time', 'sensor_id'),
-            ('automation_state', 'timestamp', 'location,cluster,device_name'),
-            ('effective_setpoints', 'timestamp', 'location,cluster,device_name,mode'),
-            ('control_history', 'timestamp', 'location,cluster,device_name,channel'),
-            ('relay_observation', 'observed_at', 'channel')
+            ('automation_state', 'time', 'location,cluster,device_name'),
+            ('effective_setpoints', 'time', 'location,cluster,device_name,mode'),
+            ('control_history', 'time', 'location,cluster,device_name,channel'),
+            ('relay_observation', 'time', 'channel')
         ) AS streams(source_table, time_column, segment_columns)
     LOOP
         v_relation := to_regclass(format('public.%I', v_stream.source_table));

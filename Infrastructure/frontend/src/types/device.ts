@@ -58,7 +58,7 @@ export interface DeviceRegistryEntry {
 
 /** Control history entry (recent on/off log). */
 export interface ControlHistoryEntry {
-  timestamp: string
+  time: string
   location?: string
   cluster?: string
   channel?: number | null

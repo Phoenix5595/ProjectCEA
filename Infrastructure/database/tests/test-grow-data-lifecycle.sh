@@ -42,6 +42,7 @@ readonly GROW_DERIVED_REFRESH_SMOKE="$GROW_HARNESS_DIRECTORY/../../grow-archive-
 readonly GROW_ARCHIVE_API_SMOKE="$GROW_HARNESS_DIRECTORY/../../grow-archive-service/tests/smoke_archive_api.py"
 readonly GROW_NATIVE_READERS_SMOKE="$GROW_HARNESS_DIRECTORY/../../grow-archive-service/tests/smoke_native_backend_readers.py"
 readonly GROW_ENABLED_LIFECYCLE_SMOKE="$GROW_HARNESS_DIRECTORY/../../grow-archive-service/tests/smoke_enabled_lifecycle.py"
+readonly GROW_TIME_COLUMN_RENAME_SMOKE="$GROW_HARNESS_DIRECTORY/../../grow-archive-service/tests/smoke_time_column_rename.py"
 readonly GROW_RENAME_CASE_SH="$GROW_HARNESS_DIRECTORY/grow_data_lifecycle_rename_case.sh"
 readonly GROW_RENAME_CASE_PY="$GROW_HARNESS_DIRECTORY/grow_data_lifecycle_rename_case.py"
 readonly GROW_COMPRESSION_POLICY_SQL="$GROW_HARNESS_DIRECTORY/../grow_data_source_compression.sql"
@@ -118,7 +119,7 @@ assert_case_files_present() {
     "$GROW_FILES_EXPORT_SMOKE" "$GROW_DERIVED_REFRESH_SMOKE" \
     "$GROW_ANNUAL_CORRECTION_SMOKE" \
     "$GROW_ARCHIVE_API_SMOKE" "$GROW_NATIVE_READERS_SMOKE" \
-    "$GROW_ENABLED_LIFECYCLE_SMOKE"; do
+    "$GROW_ENABLED_LIFECYCLE_SMOKE" "$GROW_TIME_COLUMN_RENAME_SMOKE"; do
     [[ -f "$path" ]] || {
       grow_fail "required file is missing: $path"
       return 1
@@ -162,28 +163,28 @@ grow_run_internal_case() {
         export GROW_LIFECYCLE_PYTHON
         "$GROW_LIFECYCLE_PYTHON" "$GROW_SCHEMA_CASE_PY" \
           --database-url "$database_url" --with-queue-smoke
-      )
+      ) || return $?
       printf 'schema case passed\n'
       ;;
     membership)
       "$GROW_LIFECYCLE_PYTHON" "$GROW_MEMBERSHIP_SMOKE" \
-        --database-url "$database_url"
+        --database-url "$database_url" || return $?
       printf 'membership case passed\n'
       ;;
     calendar-sync)
-      "$GROW_LIFECYCLE_PYTHON" "$GROW_CALENDAR_SYNC_SMOKE" --database-url "$database_url"
+      "$GROW_LIFECYCLE_PYTHON" "$GROW_CALENDAR_SYNC_SMOKE" --database-url "$database_url" || return $?
       printf 'calendar sync case passed\n'
       ;;
     history-availability)
-      "$GROW_LIFECYCLE_PYTHON" "$GROW_HISTORY_AVAILABILITY_SMOKE" --database-url "$database_url"
+      "$GROW_LIFECYCLE_PYTHON" "$GROW_HISTORY_AVAILABILITY_SMOKE" --database-url "$database_url" || return $?
       printf 'history availability case passed\n'
       ;;
     lossless)
-      "$GROW_LIFECYCLE_PYTHON" "$GROW_LOSSLESS_SMOKE" --database-url "$database_url"
+      "$GROW_LIFECYCLE_PYTHON" "$GROW_LOSSLESS_SMOKE" --database-url "$database_url" || return $?
       printf 'lossless case passed\n'
       ;;
     compressed-source)
-      "$GROW_LIFECYCLE_PYTHON" "$GROW_COMPRESSED_SOURCE_SMOKE" --database-url "$database_url"
+      "$GROW_LIFECYCLE_PYTHON" "$GROW_COMPRESSED_SOURCE_SMOKE" --database-url "$database_url" || return $?
       printf 'compressed-source case passed\n'
       ;;
     source-compression-policy)
@@ -200,35 +201,35 @@ grow_run_internal_case() {
         return 1
       fi
       "$GROW_LIFECYCLE_PYTHON" "$GROW_COMPRESSION_POLICY_CASE_PY" \
-        --database-url "$database_url"
+        --database-url "$database_url" || return $?
       printf 'source compression policy case passed\n'
       ;;
     deletion-fence)
-      "$GROW_LIFECYCLE_PYTHON" "$GROW_DELETION_FENCE_SMOKE" --database-url "$database_url"
+      "$GROW_LIFECYCLE_PYTHON" "$GROW_DELETION_FENCE_SMOKE" --database-url "$database_url" || return $?
       printf 'deletion-fence case passed\n'
       ;;
     files-export)
-      "$GROW_LIFECYCLE_PYTHON" "$GROW_FILES_EXPORT_SMOKE" --database-url "$database_url"
+      "$GROW_LIFECYCLE_PYTHON" "$GROW_FILES_EXPORT_SMOKE" --database-url "$database_url" || return $?
       printf 'files export case passed\n'
       ;;
     annual-correction)
-      "$GROW_LIFECYCLE_PYTHON" "$GROW_ANNUAL_CORRECTION_SMOKE" --database-url "$database_url"
+      "$GROW_LIFECYCLE_PYTHON" "$GROW_ANNUAL_CORRECTION_SMOKE" --database-url "$database_url" || return $?
       printf 'annual correction case passed\n'
       ;;
     archive-api)
-      "$GROW_LIFECYCLE_PYTHON" "$GROW_ARCHIVE_API_SMOKE" --database-url "$database_url"
+      "$GROW_LIFECYCLE_PYTHON" "$GROW_ARCHIVE_API_SMOKE" --database-url "$database_url" || return $?
       printf 'archive API case passed\n'
       ;;
     derived-repair)
-      "$GROW_LIFECYCLE_PYTHON" "$GROW_DERIVED_REFRESH_SMOKE" --database-url "$database_url"
+      "$GROW_LIFECYCLE_PYTHON" "$GROW_DERIVED_REFRESH_SMOKE" --database-url "$database_url" || return $?
       printf 'derived repair case passed\n'
       ;;
     native-readers)
-      "$GROW_LIFECYCLE_PYTHON" "$GROW_NATIVE_READERS_SMOKE" --database-url "$database_url"
+      "$GROW_LIFECYCLE_PYTHON" "$GROW_NATIVE_READERS_SMOKE" --database-url "$database_url" || return $?
       printf 'native readers case passed\n'
       ;;
     enabled-lifecycle)
-      "$GROW_LIFECYCLE_PYTHON" "$GROW_ENABLED_LIFECYCLE_SMOKE" --database-url "$database_url"
+      "$GROW_LIFECYCLE_PYTHON" "$GROW_ENABLED_LIFECYCLE_SMOKE" --database-url "$database_url" || return $?
       printf 'enabled lifecycle case passed\n'
       ;;
     rename)
@@ -244,6 +245,8 @@ grow_run_internal_case() {
         grow_fail 'rename case lock is not held'
         return 1
       fi
+      "$GROW_LIFECYCLE_PYTHON" "$GROW_TIME_COLUMN_RENAME_SMOKE" || return $?
+      printf 'time-column archive compatibility case passed\n'
       source "$GROW_RENAME_CASE_SH"
       run_owned_database_rename_proof "$database_url" || return $?
       printf 'rename case passed\n'

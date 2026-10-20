@@ -126,7 +126,9 @@ async def test_cagg_rebucket_uses_sum_weighted_mean_not_mean_of_means() -> None:
     assert point.average == pytest.approx(weighted_mean, abs=1e-9)
     assert point.average != pytest.approx(sum(cagg_means) / len(cagg_means), abs=1e-9)
     assert (point.minimum, point.maximum, point.sample_count) == (1.0, 100.0, 11)
-    query, arguments = database.calls[1]
+    query, arguments = next(
+        call for call in database.calls if call[0] == TIERED_BUCKETED_STATEMENTS["5min"]
+    )
     assert query == TIERED_BUCKETED_STATEMENTS["5min"]
     assert arguments[7] == timedelta(seconds=900)
     assert "sum(c.value_sum) / NULLIF(sum(c.sample_count), 0)" in query

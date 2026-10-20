@@ -64,7 +64,7 @@ export function historicalPhotoperiodHistory(
     if (ts >= startMs && ts < endMs) entries.push([ts, anchor])
   }
   return entries.map(([ts, anchor]) => ({
-    timestamp: new Date(ts).toISOString(),
+    time: new Date(ts).toISOString(),
     phase: anchor.phase,
     provenance: {
       origin: anchor.origin,

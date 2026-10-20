@@ -334,11 +334,11 @@ function graphReply(url: URL, entry: Record<string, unknown>, scenario: string):
     ? [{ start: gapStart.toISOString(), end: gapEnd.toISOString(), reason: 'Fixture source coverage gap', source_tables: ['measurement'] }]
     : []
   const photoperiod = [
-    { id: 901, observed_at: start.toISOString(), phase: 'SUN', mode_id: 2, submode_id: null, runtime_snapshot_version: 4, source: 'recorded' },
-    { id: 902, observed_at: new Date(Math.min(end.getTime() - 1, start.getTime() + 12 * 60 * 60 * 1000)).toISOString(), phase: 'MOON', mode_id: 2, submode_id: null, runtime_snapshot_version: 4, source: 'recorded' },
+    { id: 901, time: start.toISOString(), phase: 'SUN', mode_id: 2, submode_id: null, runtime_snapshot_version: 4, source: 'recorded' },
+    { id: 902, time: new Date(Math.min(end.getTime() - 1, start.getTime() + 12 * 60 * 60 * 1000)).toISOString(), phase: 'MOON', mode_id: 2, submode_id: null, runtime_snapshot_version: 4, source: 'recorded' },
   ]
   const photoperiodCoverage = [
-    { id: 801, observed_at: start.toISOString(), state: 'covered', reason: null, runtime_snapshot_version: 4 },
+    { id: 801, time: start.toISOString(), state: 'covered', reason: null, runtime_snapshot_version: 4 },
   ]
   return {
     archive: { dataset_id: entry.dataset_id, revision: entry.published_revision, coverage: entry.coverage, gaps },

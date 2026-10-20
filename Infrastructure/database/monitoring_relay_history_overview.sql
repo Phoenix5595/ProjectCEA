@@ -154,7 +154,7 @@ $function$;
 --     A recent heartbeat cannot resurrect a baseline that previously expired.
 --     Fresh channel observations themselves support the next 60 seconds, so
 --     supported state crosses hour/day boundaries without a fabricated reset.
---   * Rows stream in the global (observed_at, observation_id) order that
+--   * Rows stream in the global ("time", observation_id) order that
 --     the TS compareTransition insists on, so same-timestamp rows apply
 --     strictly by id.
 --   * All comparisons run on integer microseconds from
@@ -252,8 +252,8 @@ BEGIN
       FROM public.relay_observation o
      WHERE o.observation_id <= v_wm
        AND o.reason = 'heartbeat'
-       AND o.observed_at < range_start
-     ORDER BY o.observed_at DESC, o.observation_id DESC
+       AND o."time" < range_start
+     ORDER BY o."time" DESC, o.observation_id DESC
      LIMIT 1;
 
     -----------------------------------------------------------------
@@ -266,20 +266,20 @@ BEGIN
     -----------------------------------------------------------------
     FOR r IN
         SELECT DISTINCT ON (o.channel)
-               o.channel, o.observation_id, o.observed_at, o.session_id,
+               o.channel, o.observation_id, o."time", o.session_id,
                o.observed_state, o.reason,
                o.device_id, o.device_name, o.device_type,
                o.location, o.cluster
           FROM public.relay_observation o
          WHERE o.observation_id <= v_wm
            AND o.channel IS NOT NULL
-           AND o.observed_at < range_start
-         ORDER BY o.channel, o.observed_at DESC, o.observation_id DESC
+           AND o."time" < range_start
+         ORDER BY o.channel, o."time" DESC, o.observation_id DESC
     LOOP
         ci := (r.channel)::INT + 1;
         a_exists[ci]  := TRUE;
         a_id[ci]      := r.observation_id;
-        a_us[ci]      := public.monitoring_relay_epoch_us(r.observed_at);
+        a_us[ci]      := public.monitoring_relay_epoch_us(r."time");
         a_session[ci] := r.session_id;
         a_state[ci]   := r.observed_state;
         a_reason[ci]  := r.reason;
@@ -300,8 +300,8 @@ BEGIN
                ro.device_id, ro.device_name, ro.device_type
           FROM public.relay_observation ro
          WHERE ro.observation_id <= v_wm
-           AND ro.observed_at >= range_start
-           AND ro.observed_at < range_end
+           AND ro."time" >= range_start
+           AND ro."time" < range_end
            AND ro.reason <> 'heartbeat'
            AND ro.channel IS NOT NULL
            AND ro.location IS NOT NULL
@@ -371,16 +371,16 @@ BEGIN
         IF v_anchor_matches THEN
             WITH heartbeats AS (
                 SELECT o.session_id,
-                       public.monitoring_relay_epoch_us(o.observed_at) AS at_us,
-                       lag(public.monitoring_relay_epoch_us(o.observed_at),
+                       public.monitoring_relay_epoch_us(o."time") AS at_us,
+                       lag(public.monitoring_relay_epoch_us(o."time"),
                            1, a_us[ci]) OVER (
-                           ORDER BY o.observed_at, o.observation_id) AS previous_us
+                           ORDER BY o."time", o.observation_id) AS previous_us
                   FROM public.relay_observation AS o
                  WHERE o.observation_id <= v_wm
                    AND o.reason = 'heartbeat'
-                   AND (o.observed_at, o.observation_id) >
+                   AND (o."time", o.observation_id) >
                        (public.monitoring_relay_ts_at_us(a_us[ci]), a_id[ci])
-                   AND o.observed_at < range_start
+                   AND o."time" < range_start
             )
             SELECT COALESCE(bool_and(
                        session_id = a_session[ci] AND at_us - previous_us <= v_gap_us),
@@ -401,24 +401,24 @@ BEGIN
     END LOOP;
 
     -----------------------------------------------------------------
-    -- Row stream in the global (observed_at, observation_id) order.
+    -- Row stream in the global ("time", observation_id) order.
     -- Heartbeats apply to every lane; non-heartbeat rows apply to lanes on
     -- that row's channel (the TS filter reason='heartbeat' OR channel
     -- match). ck_relay_observation_channel_reason guarantees non-heartbeat
     -- rows carry a nonnull channel, so the lane filter is total.
     -----------------------------------------------------------------
     FOR r IN
-        SELECT o.observed_at, o.observation_id, o.session_id, o.reason,
+        SELECT o."time", o.observation_id, o.session_id, o.reason,
                o.channel, o.observed_state,
                o.device_id, o.device_name, o.device_type,
                o.location, o.cluster
           FROM public.relay_observation o
          WHERE o.observation_id <= v_wm
-           AND o.observed_at >= range_start
-           AND o.observed_at < range_end
-         ORDER BY o.observed_at, o.observation_id
+           AND o."time" >= range_start
+           AND o."time" < range_end
+         ORDER BY o."time", o.observation_id
     LOOP
-        v_t_us := public.monitoring_relay_epoch_us(r.observed_at);
+        v_t_us := public.monitoring_relay_epoch_us(r."time");
         IF v_t_us IS NULL OR v_t_us >= v_end_us THEN
             CONTINUE;  -- half-open window guard
         END IF;
@@ -833,8 +833,8 @@ COMMENT ON COLUMN public.monitoring_relay_duration_1hour.off_microseconds IS
 'Exact known OFF time in integer microseconds; bucket microseconds not
 accounted for by on+off are unknown time, never fabricated.';
 COMMENT ON COLUMN public.monitoring_relay_duration_1hour.last_observed_at IS
-'observed_at of the newest event-time owner row for this lane with
-observation_id <= source_watermark and observed_at < bucket end.';
+'time of the newest event-time owner row for this lane with
+observation_id <= source_watermark and time < bucket end.';
 COMMENT ON COLUMN public.monitoring_relay_duration_1hour.source_watermark IS
 'relay_observation.observation_id snapshot the row was verified with.';
 COMMENT ON COLUMN public.monitoring_relay_duration_1hour.active IS
@@ -960,7 +960,7 @@ corresponding concept has no work yet.';
 ---------------------------------------------------------------------
 -- §F. Dirty propagation: separate AFTER INSERT and AFTER UPDATE
 -- statement-level triggers with transition tables. Each statement
--- aggregates its OWN min/max observed_at over its transition tables once;
+-- aggregates its OWN min/max time over its transition tables once;
 -- there is no global MAX() of relay_observation and no per-row auxiliary
 -- write, and recorder INSERT/COPY pacing is unchanged. The trigger
 -- function is SECURITY DEFINER (least-privilege bridge for writer roles;
@@ -990,18 +990,18 @@ BEGIN
         RAISE EXCEPTION 'relay dirty trigger may only observe public.relay_observation';
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT min(observed_at), max(observed_at)
+        SELECT min("time"), max("time")
           INTO v_changed_min, v_changed_max
           FROM relay_observation_inserted;
     ELSIF TG_OP = 'UPDATE' THEN
         -- A mutated row owns both its old and new instants so neither side
         -- of a displaced identity ever drops out of the pending window.
-        SELECT min(observed_at), max(observed_at)
+        SELECT min("time"), max("time")
           INTO v_changed_min, v_changed_max
           FROM (
-              SELECT observed_at FROM relay_observation_update_old
+              SELECT "time" FROM relay_observation_update_old
               UNION ALL
-              SELECT observed_at FROM relay_observation_update_new
+              SELECT "time" FROM relay_observation_update_new
           ) AS changed;
     ELSE
         RETURN NULL;  -- unreachable: only INSERT/UPDATE triggers exist
@@ -1174,11 +1174,11 @@ SET search_path = pg_catalog
 AS $empty_span$
     WITH source_end AS (
         SELECT date_trunc('day', LEAST(range_end, COALESCE((
-            SELECT observed_at - INTERVAL '60 seconds'
+            SELECT "time" - INTERVAL '60 seconds'
               FROM public.relay_observation
              WHERE observation_id <= watermark
-               AND observed_at >= range_start - INTERVAL '60 seconds'
-             ORDER BY observed_at, observation_id LIMIT 1
+               AND "time" >= range_start - INTERVAL '60 seconds'
+             ORDER BY "time", observation_id LIMIT 1
         ), range_end)) AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS through
     )
     SELECT CASE WHEN through <= range_start + INTERVAL '24 hours' THEN through
@@ -1437,10 +1437,10 @@ BEGIN
                  GROUP BY 1, 2, 3, 4, 5, 6, 7
               ) AS derived
               JOIN LATERAL (
-                SELECT max(ro.observed_at) AS last_observed_at
+                SELECT max(ro."time") AS last_observed_at
                   FROM public.relay_observation AS ro
                  WHERE ro.observation_id <= v_watermark
-                   AND ro.observed_at < v_hour_end
+                   AND ro."time" < v_hour_end
                    AND ro.location = derived.location
                    AND ro.cluster = derived.cluster
                    AND ro.channel = derived.channel

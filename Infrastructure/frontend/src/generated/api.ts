@@ -1695,7 +1695,7 @@ export interface paths {
          *         limit: Maximum number of history entries to return (default: 100)
          *
          *     Returns:
-         *         List of history entries with timestamp, kp, ki, kd, updated_by, source
+         *         List of history entries with changed_at, kp, ki, kd, updated_by, source
          */
         get: operations["get_api_pid_parameters_{location}_{cluster}_{device_type}_history"];
         put?: never;
@@ -3919,17 +3919,17 @@ export interface components {
         PhotoperiodCoverageFact: {
             /** Id */
             id: number;
-            /**
-             * Observed At
-             * Format: date-time
-             */
-            observed_at: string;
             /** Reason */
             reason: string;
             /** Runtime Snapshot Version */
             runtime_snapshot_version: number;
             /** State */
             state: string;
+            /**
+             * Time
+             * Format: date-time
+             */
+            time: string;
         };
         /** PhotoperiodFact */
         PhotoperiodFact: {
@@ -3937,11 +3937,6 @@ export interface components {
             id: number;
             /** Mode Id */
             mode_id?: number | null;
-            /**
-             * Observed At
-             * Format: date-time
-             */
-            observed_at: string;
             /** Phase */
             phase: string;
             /** Runtime Snapshot Version */
@@ -3950,6 +3945,11 @@ export interface components {
             source: string;
             /** Submode Id */
             submode_id?: number | null;
+            /**
+             * Time
+             * Format: date-time
+             */
+            time: string;
         };
         /**
          * PidLimitsGroup

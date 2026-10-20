@@ -190,7 +190,7 @@ function normalizeControlSeries(
     trajectoryKind: s.trajectory_kind ?? null,
     points: canonicalizeTargetValues(
       s.points.map(p => ({
-        t: p.timestamp.getTime(),
+        t: p.time.getTime(),
         value: p.value,
         origin: p.provenance.origin,
         quality: p.provenance.quality,
@@ -201,7 +201,7 @@ function normalizeControlSeries(
     ),
     steps: canonicalizeTargetValues(
       s.steps.map(st => ({
-        t: st.timestamp.getTime(),
+        t: st.time.getTime(),
         value: st.value,
         origin: st.provenance.origin,
         quality: st.provenance.quality,
@@ -227,7 +227,7 @@ function normalizeControlSeries(
 type RawDeviceInput = {
   name: string
   provenance: { origin: Origin; quality: Quality; is_aggregated: boolean }
-  points: { timestamp: Date; device_state: number }[]
+  points: { time: Date; device_state: number }[]
 }
 
 function normalizeDeviceSeries(s: RawDeviceInput, metric: string): NormDeviceSeries {
@@ -235,7 +235,7 @@ function normalizeDeviceSeries(s: RawDeviceInput, metric: string): NormDeviceSer
     name: s.name,
     metric,
     states: s.points.map(p => ({
-      t: p.timestamp.getTime(),
+      t: p.time.getTime(),
       value: p.device_state,
       origin: s.provenance.origin,
       quality: s.provenance.quality,
@@ -247,7 +247,7 @@ function normalizeDeviceSeries(s: RawDeviceInput, metric: string): NormDeviceSer
 }
 
 type RawPidPoint = {
-  timestamp: Date
+  time: Date
   pid_output?: number | null
   duty_cycle_percent?: number | null
   pid_output_min?: number | null
@@ -269,7 +269,7 @@ function normalizePidSeries(s: RawPidInput, metric: string): NormPidSeries {
     pidOutputs: s.points
       .filter(p => p.pid_output !== null && p.pid_output !== undefined)
       .map(p => ({
-        t: p.timestamp.getTime(),
+        t: p.time.getTime(),
         value: p.pid_output ?? null,
         origin: s.provenance.origin,
         quality: s.provenance.quality,
@@ -280,7 +280,7 @@ function normalizePidSeries(s: RawPidInput, metric: string): NormPidSeries {
     dutyCycles: s.points
       .filter(p => p.duty_cycle_percent !== null && p.duty_cycle_percent !== undefined)
       .map(p => ({
-        t: p.timestamp.getTime(),
+        t: p.time.getTime(),
         value: p.duty_cycle_percent ?? null,
         origin: s.provenance.origin,
         quality: s.provenance.quality,

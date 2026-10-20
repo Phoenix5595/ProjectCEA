@@ -1,4 +1,5 @@
 """Strict public DTOs for Historical archive selection and graph reads."""
+
 from __future__ import annotations
 
 from typing import Any, Literal
@@ -11,16 +12,16 @@ from monitoring_service.history_overview_models import (
 )
 from monitoring_service.sensor_models import MonitoringResponse
 
-ArchiveKind = Literal['grow', 'veg_quarter', 'veg_year']
-JobKind = Literal['export', 'annual_merge', 'load', 'expire', 'artifact_cleanup']
-JobState = Literal['pending', 'running', 'succeeded', 'blocked', 'failed']
-LocalTier = Literal['hot', 'zip_cache', 'remote_zip', 'none']
-ExportStatus = Literal['not_exported', 'pending', 'verified', 'blocked']
-CoverageState = Literal['complete', 'gapped', 'unknown']
+ArchiveKind = Literal["grow", "veg_quarter", "veg_year"]
+JobKind = Literal["export", "annual_merge", "load", "expire", "artifact_cleanup"]
+JobState = Literal["pending", "running", "succeeded", "blocked", "failed"]
+LocalTier = Literal["hot", "zip_cache", "remote_zip", "none"]
+ExportStatus = Literal["not_exported", "pending", "verified", "blocked"]
+CoverageState = Literal["complete", "gapped", "unknown"]
 
 
 class StrictModel(BaseModel):
-    model_config = ConfigDict(extra='forbid', frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
 
 class ExpectedRevision(StrictModel):
@@ -51,7 +52,7 @@ class ArchiveJobSummary(StrictModel):
 class ArchiveContainer(StrictModel):
     dataset_id: UUID
     revision: StrictInt
-    kind: Literal['veg_year']
+    kind: Literal["veg_year"]
     remote_download_url: StrictStr | None = None
 
 
@@ -65,7 +66,7 @@ class ArchiveEntry(StrictModel):
     state: StrictStr
     revision: StrictInt
     published_revision: StrictInt | None = None
-    lifecycle_state: Literal['open', 'closed'] | None = None
+    lifecycle_state: Literal["open", "closed"] | None = None
     anniversary_at: AwareDatetime | None = None
     local_tier: LocalTier
     export_status: ExportStatus
@@ -98,7 +99,7 @@ class ArchiveAvailability(StrictModel):
     room: StrictStr | None = None
     start_at: AwareDatetime
     end_at: AwareDatetime
-    state: Literal['captured', 'expired']
+    state: Literal["captured", "expired"]
     source_rows_removed: bool
     aggregates_refreshed: bool
 
@@ -108,35 +109,34 @@ class ArchiveSchema(StrictModel):
     graph_schema: dict[str, Any] = Field(default_factory=dict)
 
 
-
 class ArchiveDetail(ArchiveEntry):
     phases: tuple[GrowPhase, ...] = ()
-    schema_info: ArchiveSchema = Field(alias='schema')
+    schema_info: ArchiveSchema = Field(alias="schema")
     availability: tuple[ArchiveAvailability, ...] = ()
     identity_snapshots: tuple[dict[str, Any], ...] = ()
 
 
 class ExportQueued(StrictModel):
     job_id: UUID
-    state: Literal['pending'] = 'pending'
+    state: Literal["pending"] = "pending"
 
 
 class ExportReady(StrictModel):
     artifact_id: UUID
     revision: StrictInt
-    state: Literal['verified'] = 'verified'
+    state: Literal["verified"] = "verified"
 
 
 class LoadQueued(StrictModel):
     job_id: UUID
-    state: Literal['pending'] = 'pending'
+    state: Literal["pending"] = "pending"
 
 
 class LoadReady(StrictModel):
     load_id: UUID
     revision: StrictInt
-    state: Literal['ready'] = 'ready'
-    source_kind: Literal['zip']
+    state: Literal["ready"] = "ready"
+    source_kind: Literal["zip"]
     stale: bool
     remote_download_url: StrictStr | None
     download_label: StrictStr | None
@@ -151,7 +151,7 @@ class ArchiveSelectionMeta(StrictModel):
 
 class PhotoperiodFact(StrictModel):
     id: StrictInt
-    observed_at: AwareDatetime
+    time: AwareDatetime
     phase: StrictStr
     mode_id: StrictInt | None = None
     submode_id: StrictInt | None = None
@@ -161,7 +161,7 @@ class PhotoperiodFact(StrictModel):
 
 class PhotoperiodCoverageFact(StrictModel):
     id: StrictInt
-    observed_at: AwareDatetime
+    time: AwareDatetime
     state: StrictStr
     reason: StrictStr
     runtime_snapshot_version: StrictInt
@@ -169,7 +169,7 @@ class PhotoperiodCoverageFact(StrictModel):
 
 class ArchiveGraphResponse(StrictModel):
     archive: ArchiveSelectionMeta
-    tier: Literal['detailed', 'overview']
+    tier: Literal["detailed", "overview"]
     sensors: MonitoringResponse | HistoryOverviewSensorResponse
     lights: tuple[HistoryOverviewControlSeries, ...]
     photoperiod: tuple[PhotoperiodFact, ...]

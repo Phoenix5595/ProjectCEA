@@ -28,14 +28,14 @@ function climateSeries(name: string, metric: string, start: string, end: string,
     warnings: [],
     points: [
       {
-        timestamp: start,
+        time: start,
         value,
         nominal_value: value,
         metric,
         provenance: provenance('recorded', 'exact'),
       },
       {
-        timestamp: end,
+        time: end,
         value,
         nominal_value: value,
         metric,
@@ -126,7 +126,7 @@ export function controlRangeFixture(
       ...base,
       photoperiod: [
         {
-          timestamp: start,
+          time: start,
           phase: 'UNKNOWN',
           provenance: provenance('recorded', 'unavailable'),
         },

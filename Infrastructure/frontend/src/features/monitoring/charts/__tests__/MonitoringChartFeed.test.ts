@@ -355,7 +355,7 @@ describe('MonitoringChartFeed', () => {
       warnings: [],
       points: [
         {
-          timestamp: new Date(0),
+          time: new Date(0),
           value: 40,
           nominal_value: 40,
           device_name: 'light_f_1',

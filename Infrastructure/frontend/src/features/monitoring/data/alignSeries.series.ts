@@ -318,7 +318,7 @@ function alignPhotoperiodWithPredecessorFloor(
   end: number,
   predecessorFloor: number
 ): PhotoperiodInterval[] {
-  const sorted = [...photoperiod].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+  const sorted = [...photoperiod].sort((a, b) => a.time.getTime() - b.time.getTime())
   const intervals: PhotoperiodInterval[] = []
   let curPhase: 'SUN' | 'MOON' | 'UNKNOWN' | null = null
   let curStart = start
@@ -329,7 +329,7 @@ function alignPhotoperiodWithPredecessorFloor(
   }
 
   for (const p of sorted) {
-    const t = p.timestamp.getTime()
+    const t = p.time.getTime()
     if (t < start) {
       if (t >= predecessorFloor) curPhase = p.phase
       continue

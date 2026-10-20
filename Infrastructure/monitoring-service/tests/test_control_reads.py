@@ -20,7 +20,6 @@ from monitoring_service.control_models import (
 from monitoring_service.control_repository import (
     ControlHistoryRepository,
     ControlPublicationRepository,
-    RelayTimelineRepository,
     _publication_keys,
 )
 from monitoring_service.control_history_queries import (
@@ -28,6 +27,8 @@ from monitoring_service.control_history_queries import (
     _RAW_SETPOINTS_SQL,
     _SETPOINTS_1MIN_SQL,
     _SETPOINTS_5MIN_SQL,
+    _STATE_1MIN_SQL,
+    _STATE_RAW_SQL,
     select_control_history_sources,
 )
 from monitoring_service.history_buckets import choose_history_bucket
@@ -69,7 +70,7 @@ def _light_history_row(
     value: float | None,
 ) -> dict[str, str | float | datetime | None]:
     row: dict[str, str | float | datetime | None] = {
-        "timestamp": timestamp,
+        "time": timestamp,
         "mode": mode,
         "device_name": device_name,
         "effective_light_intensity": value,
@@ -144,11 +145,13 @@ class FakeDatabase:
         self, query: str, *arguments: str | int | float | datetime
     ) -> list[dict[str, str | float | int | datetime | None]]:
         self.queries.append(query)
+        if "AS materialization_watermark" in query:
+            return [{"materialization_watermark": NOW}]
         if "monitoring_photoperiod_coverage" in query:
             return [
                 {
                     "id": 7,
-                    "observed_at": NOW - timedelta(minutes=30),
+                    "time": NOW - timedelta(minutes=30),
                     "location": "Veg Room",
                     "cluster": "main",
                     "state": "available",
@@ -160,7 +163,7 @@ class FakeDatabase:
             return [
                 {
                     "id": 6,
-                    "observed_at": NOW - timedelta(minutes=30),
+                    "time": NOW - timedelta(minutes=30),
                     "location": "Veg Room",
                     "cluster": "main",
                     "phase": "SUN",
@@ -175,7 +178,7 @@ class FakeDatabase:
                 return []
             return [
                 {
-                    "timestamp": NOW - timedelta(seconds=5),
+                    "time": NOW - timedelta(seconds=5),
                     "mode": "day",
                     "effective_heating_setpoint": 22.0,
                     "nominal_heating_setpoint": 21.0,
@@ -382,6 +385,128 @@ async def test_history_builds_timelines_from_committed_read_models() -> None:
 
 
 @pytest.mark.anyio
+async def test_control_history_splits_at_watermark_without_gap_or_duplicate() -> None:
+    start = NOW
+    watermark = start + timedelta(hours=1)
+    end = start + timedelta(hours=3)
+
+    def setpoint_row(at: datetime, value: float, *, aggregated: bool) -> dict[str, object]:
+        row: dict[str, object] = {
+            "time": at,
+            "mode": "day",
+            "effective_heating_setpoint": value,
+            "nominal_heating_setpoint": value,
+            "ramp_progress_heating": None,
+            "effective_heating_setpoint_min": value,
+            "effective_heating_setpoint_max": value,
+            "effective_cooling_setpoint": None,
+            "nominal_cooling_setpoint": None,
+            "ramp_progress_cooling": None,
+            "effective_humidity_setpoint": None,
+            "nominal_humidity_setpoint": None,
+            "ramp_progress_humidity": None,
+            "effective_co2_setpoint": None,
+            "nominal_co2_setpoint": None,
+            "ramp_progress_co2": None,
+            "effective_vpd_setpoint": None,
+            "nominal_vpd_setpoint": None,
+            "ramp_progress_vpd": None,
+            "device_name": None,
+            "effective_light_intensity": None,
+            "nominal_light_intensity": None,
+            "ramp_progress_light": None,
+            "is_aggregated": aggregated,
+        }
+        return row
+
+    aggregate_rows = [setpoint_row(start + timedelta(minutes=30), 20.0, aggregated=True)]
+    raw_rows = [
+        setpoint_row(watermark, 21.0, aggregated=False),
+        setpoint_row(watermark + timedelta(minutes=1), 22.0, aggregated=False),
+    ]
+
+    def state_row(at: datetime, value: float, *, aggregated: bool) -> dict[str, object]:
+        return {
+            "bucket": at,
+            "device_name": "heater_v_1",
+            "device_state_last": value,
+            "device_mode_last": "auto",
+            "control_reason_last": "schedule",
+            "pid_output_last": value,
+            "duty_cycle_percent_last": value * 100,
+            "pid_output_min": value,
+            "pid_output_max": value,
+            "duty_cycle_percent_min": value * 100,
+            "duty_cycle_percent_max": value * 100,
+            "is_aggregated": aggregated,
+        }
+
+    state_aggregate_rows = [state_row(start + timedelta(minutes=30), 0.2, aggregated=True)]
+    state_raw_rows = [
+        state_row(watermark, 0.4, aggregated=False),
+        state_row(watermark + timedelta(minutes=1), 0.6, aggregated=False),
+    ]
+
+    class WatermarkDatabase:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, tuple[object, ...]]] = []
+
+        async def fetch(self, query: str, *arguments: object) -> list[dict[str, object]]:
+            self.calls.append((query, arguments))
+            if "AS materialization_watermark" in query:
+                return [{"materialization_watermark": watermark}]
+            if query == _SETPOINTS_1MIN_SQL:
+                _, lower, upper = arguments
+                return [row for row in aggregate_rows if lower <= row["time"] < upper]
+            if query == _RAW_SETPOINTS_SQL:
+                _, lower, upper = arguments
+                return [row for row in raw_rows if lower <= row["time"] < upper]
+            if query == _STATE_1MIN_SQL:
+                _, lower, upper = arguments
+                return [row for row in state_aggregate_rows if lower <= row["bucket"] < upper]
+            if query == _STATE_RAW_SQL:
+                _, lower, upper = arguments
+                return [row for row in state_raw_rows if lower <= row["bucket"] < upper]
+            return []
+
+    database = WatermarkDatabase()
+    response = await ControlHistoryRepository(database).read(
+        "Veg Room",
+        ControlHistoryRange(start=start, end=end),
+        max_points=600,
+    )
+
+    steps = response.climate[0].steps
+    assert [(step.time, step.value, step.provenance.is_aggregated) for step in steps] == [
+        (start + timedelta(minutes=30), 20.0, True),
+        (watermark, 21.0, False),
+        (watermark + timedelta(minutes=1), 22.0, False),
+    ]
+    assert len({step.time for step in steps}) == len(steps)
+    aggregate_call = next(
+        arguments for query, arguments in database.calls if query == _SETPOINTS_1MIN_SQL
+    )
+    raw_call = next(arguments for query, arguments in database.calls if query == _RAW_SETPOINTS_SQL)
+    assert aggregate_call[1:] == (start, watermark)
+    assert raw_call[1:] == (watermark, end)
+    device_points = response.devices[0].points
+    assert [(point.time, point.provenance.is_aggregated) for point in device_points] == [
+        (start + timedelta(minutes=30), True),
+        (watermark, False),
+        (watermark + timedelta(minutes=1), False),
+    ]
+    assert len({point.time for point in device_points}) == len(device_points)
+    state_aggregate_call = next(
+        arguments for query, arguments in database.calls if query == _STATE_1MIN_SQL
+    )
+    state_raw_call = next(
+        arguments for query, arguments in database.calls if query == _STATE_RAW_SQL
+    )
+    assert state_aggregate_call[1:] == (start, watermark)
+    assert state_raw_call[1:] == (watermark, end)
+
+
+@pytest.mark.anyio
 async def test_history_canonicalizes_each_light_by_device_and_timestamp() -> None:
     # Given: mode transitions, a null/finite sibling pair, and conflicting finite siblings.
     start = NOW - timedelta(minutes=5)
@@ -407,7 +532,7 @@ async def test_history_canonicalizes_each_light_by_device_and_timestamp() -> Non
     # Then: each physical light has one chronological identity and one fact per timestamp.
     assert [series.name for series in response.lights] == ["light_f_1", "light_f_2"]
     light = response.lights[0]
-    assert [(point.timestamp, point.value, point.mode) for point in light.points] == [
+    assert [(point.time, point.value, point.mode) for point in light.points] == [
         (start, 40.0, "day"),
         (start + timedelta(minutes=1), 0.0, "night"),
         (start + timedelta(minutes=2), 80.0, "day"),
@@ -532,9 +657,10 @@ async def test_control_scope_query_selects_lights_and_defaults_to_all() -> None:
         )
 
     # Then: the requested scope reaches the read service and omission stays the full scope.
-    assert [response.status_code for response in (
-        lights_history, default_history, lights_overview, default_overview
-    )] == [200, 200, 200, 200]
+    assert [
+        response.status_code
+        for response in (lights_history, default_history, lights_overview, default_overview)
+    ] == [200, 200, 200, 200]
     assert reads.history_scopes == ["lights", "all"]
     assert reads.overview_scopes == ["lights", "all"]
     lights_payload = lights_history.json()
@@ -608,17 +734,15 @@ class WindowedControlDatabase:
                 return [
                     row
                     for row in self.light_rows
-                    if isinstance(row["timestamp"], datetime)
-                    and predecessor_start - timedelta(seconds=60)
-                    <= row["timestamp"]
-                    < predecessor_start
+                    if isinstance(row["time"], datetime)
+                    and predecessor_start - timedelta(seconds=60) <= row["time"] < predecessor_start
                 ]
             _, start, end = arguments
             return [
                 row
                 for row in self.light_rows
-                if isinstance(row["timestamp"], datetime)
-                and start <= row["timestamp"] < end
+                if isinstance(row["time"], datetime)
+                and start <= row["time"] < end
                 and row.get("device_name") is not None
                 and any(
                     row.get(column) is not None
@@ -637,12 +761,10 @@ class WindowedControlDatabase:
         arguments: tuple[str | int | float | datetime, ...],
     ) -> list[dict[str, str | int | datetime | None]]:
         _, start, end = arguments
-        carried = [row for row in rows if row["observed_at"] < start]
-        in_range = [row for row in rows if row["observed_at"] >= start]
+        carried = [row for row in rows if row["time"] < start]
+        in_range = [row for row in rows if row["time"] >= start]
         half_open = [
-            row
-            for row in in_range
-            if isinstance(row["observed_at"], datetime) and row["observed_at"] < end
+            row for row in in_range if isinstance(row["time"], datetime) and row["time"] < end
         ]
         return (carried[-1:] if carried else []) + half_open
 
@@ -656,7 +778,7 @@ def _transition_fixture(
 ) -> dict[str, str | int | datetime | None]:
     return {
         "id": id_,
-        "observed_at": observed_at,
+        "time": observed_at,
         "location": "Veg Room",
         "cluster": "main",
         "phase": phase,
@@ -675,7 +797,7 @@ def _coverage_fixture(
 ) -> dict[str, str | int | datetime | None]:
     return {
         "id": id_,
-        "observed_at": observed_at,
+        "time": observed_at,
         "location": "Veg Room",
         "cluster": "main",
         "state": state,
@@ -693,9 +815,7 @@ async def test_history_clamps_light_bounds_but_carries_photoperiod_in() -> None:
     in_light = _light_history_row(start + timedelta(minutes=1), "light_f_1", "day", 80.0)
     database = WindowedControlDatabase(
         light_rows=[pre_light, in_light],
-        photoperiod_rows=[
-            _transition_fixture(start - timedelta(seconds=30), "SUN")
-        ],
+        photoperiod_rows=[_transition_fixture(start - timedelta(seconds=30), "SUN")],
         coverage_rows=[_coverage_fixture(start - timedelta(minutes=10), "available")],
     )
     repository = ControlHistoryRepository(database)
@@ -709,11 +829,11 @@ async def test_history_clamps_light_bounds_but_carries_photoperiod_in() -> None:
     # the committed phase carries in as the exact start anchor.
     assert [series.name for series in response.lights] == ["light_f_1"]
     lights = response.lights[0]
-    assert [(point.timestamp, point.value) for point in lights.points] == [
+    assert [(point.time, point.value) for point in lights.points] == [
         (start + timedelta(minutes=1), 80.0)
     ]
     assert response.photoperiod[0].phase == "SUN"
-    assert response.photoperiod[0].timestamp == start
+    assert response.photoperiod[0].time == start
     assert response.photoperiod[0].provenance.origin == "recorded"
     assert response.photoperiod[0].provenance.quality == "exact"
 
@@ -728,9 +848,7 @@ async def test_legacy_predecessor_beyond_sixty_seconds_cannot_carry_in() -> None
     database = WindowedControlDatabase(
         light_rows=[],
         photoperiod_rows=[
-            _transition_fixture(
-                start - timedelta(seconds=70), "MOON", id_=12, source="photoperiod"
-            )
+            _transition_fixture(start - timedelta(seconds=70), "MOON", id_=12, source="photoperiod")
         ],
         coverage_rows=[],
     )
@@ -740,9 +858,7 @@ async def test_legacy_predecessor_beyond_sixty_seconds_cannot_carry_in() -> None
         "Veg Room", ControlHistoryRange(start=start, end=start + timedelta(minutes=5))
     )
 
-    assert [(point.phase, point.timestamp) for point in response.photoperiod] == [
-        ("UNKNOWN", start)
-    ]
+    assert [(point.phase, point.time) for point in response.photoperiod] == [("UNKNOWN", start)]
 
 
 @pytest.mark.anyio
@@ -768,15 +884,13 @@ async def test_overlapping_history_windows_keep_absolute_transition_instants() -
     )
     second = await repository.read(
         "Veg Room",
-        ControlHistoryRange(
-            start=start + timedelta(minutes=1), end=start + timedelta(minutes=6)
-        ),
+        ControlHistoryRange(start=start + timedelta(minutes=1), end=start + timedelta(minutes=6)),
     )
 
     assert [point.phase for point in first.photoperiod] == ["MOON", "SUN"]
     assert [point.phase for point in second.photoperiod] == ["MOON", "SUN"]
-    first_instants = [point.timestamp for point in first.photoperiod]
-    second_instants = [point.timestamp for point in second.photoperiod]
+    first_instants = [point.time for point in first.photoperiod]
+    second_instants = [point.time for point in second.photoperiod]
     assert first_instants == [start, transition_at]
     assert second_instants == [start + timedelta(minutes=1), transition_at]
 

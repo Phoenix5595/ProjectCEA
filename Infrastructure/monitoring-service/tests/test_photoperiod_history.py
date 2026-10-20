@@ -49,7 +49,7 @@ def _transition(
     """One committed monitoring_room_photoperiod row of either stream."""
     return {
         "id": ident,
-        "observed_at": observed_at,
+        "time": observed_at,
         "phase": phase,
         "mode_id": mode_id,
         "submode_id": submode_id,
@@ -58,12 +58,10 @@ def _transition(
     }
 
 
-def _coverage(
-    ident: int, observed_at: datetime, state: str
-) -> dict[str, str | int | datetime]:
+def _coverage(ident: int, observed_at: datetime, state: str) -> dict[str, str | int | datetime]:
     return {
         "id": ident,
-        "observed_at": observed_at,
+        "time": observed_at,
         "location": "Flower Room",
         "cluster": "main",
         "state": state,
@@ -81,7 +79,7 @@ def _light_sample(
     cluster: str = "main",
 ) -> dict[str, str | float | datetime | None]:
     return {
-        "timestamp": observed_at,
+        "time": observed_at,
         "cluster": cluster,
         "device_name": device_name,
         "mode": mode,
@@ -93,7 +91,7 @@ def _light_sample(
 
 def _shape(point: PhotoperiodTimelinePointOut) -> tuple:
     return (
-        point.timestamp,
+        point.time,
         point.phase,
         point.provenance.origin,
         point.provenance.quality.value,
@@ -114,9 +112,7 @@ def test_empty_evidence_yields_explicit_unknown_without_schedule_fallback() -> N
     # of extrapolating the current schedule.
     points, versions = build_photoperiod_history(_range(_m(-60), _h(60)), (), (), [])
 
-    assert _shapes(points) == [
-        (_m(-60), "UNKNOWN", "recorded", "unavailable", None, None, None)
-    ]
+    assert _shapes(points) == [(_m(-60), "UNKNOWN", "recorded", "unavailable", None, None, None)]
     assert versions == []
 
 
@@ -128,9 +124,7 @@ def test_new_phase_transition_requires_available_coverage() -> None:
         _range(_m(-1), _h(1)), [_transition(1, NOW, "SUN")], (), []
     )
 
-    assert _shapes(points) == [
-        (_m(-1), "UNKNOWN", "recorded", "unavailable", None, None, None)
-    ]
+    assert _shapes(points) == [(_m(-1), "UNKNOWN", "recorded", "unavailable", None, None, None)]
 
 
 def test_available_coverage_holds_phase_without_heartbeat_rows() -> None:
@@ -147,7 +141,7 @@ def test_available_coverage_holds_phase_without_heartbeat_rows() -> None:
         _range(NOW, _h(24)), rows, [_coverage(1, NOW, "available")], []
     )
 
-    assert [(point.phase, point.timestamp) for point in points] == [
+    assert [(point.phase, point.time) for point in points] == [
         ("SUN", NOW),
         ("MOON", _h(2)),
         ("SUN", _h(2) + timedelta(seconds=1)),
@@ -213,7 +207,7 @@ def test_witness_after_outage_boundary_reestablishes_derived_phase() -> None:
         ("SUN", "estimated"),
         ("UNKNOWN", "unavailable"),
     ]
-    assert [point.timestamp for point in points] == [
+    assert [point.time for point in points] == [
         NOW,
         _m(30),
         _m(31),
@@ -247,7 +241,7 @@ def test_legacy_sample_tail_is_truncated_half_open_by_its_successor() -> None:
     ]
     points, _ = build_photoperiod_history(_range(_m(-1), _h(1)), rows, (), [])
 
-    assert [(point.phase, point.timestamp) for point in points] == [
+    assert [(point.phase, point.time) for point in points] == [
         ("UNKNOWN", _m(-1)),
         ("SUN", NOW),
         ("MOON", _s(59)),
@@ -259,9 +253,7 @@ def test_legacy_predecessor_anchors_start_only_within_its_window() -> None:
     # Given: a legacy sample thirty seconds before the requested start.
     # When: carry-in covers only unsupported spans.
     # Then: the anchor holds until that sample's own support expires.
-    rows = [
-        _transition(5, _s(-30), "MOON", mode_id=1, version=2, source="photoperiod")
-    ]
+    rows = [_transition(5, _s(-30), "MOON", mode_id=1, version=2, source="photoperiod")]
     points, _ = build_photoperiod_history(_range(NOW, _h(1)), rows, (), [])
 
     assert _shapes(points) == [
@@ -282,7 +274,7 @@ def test_light_consensus_supports_retired_devices_within_their_window() -> None:
     ]
     points, _ = build_photoperiod_history(_range(_m(-1), _h(1)), (), (), lights)
 
-    assert [(point.phase, point.timestamp) for point in points] == [
+    assert [(point.phase, point.time) for point in points] == [
         ("UNKNOWN", _m(-1)),
         ("SUN", NOW),
         ("UNKNOWN", _s(80)),
@@ -307,7 +299,7 @@ def test_same_phase_distinct_devices_remain_independent_witnesses() -> None:
     ]
     points, _ = build_photoperiod_history(_range(_s(-10), _h(1)), (), (), lights)
 
-    assert [(point.phase, point.timestamp) for point in points] == [
+    assert [(point.phase, point.time) for point in points] == [
         ("UNKNOWN", _s(-10)),
         ("SUN", NOW),
         ("UNKNOWN", _s(90)),
@@ -327,7 +319,7 @@ def test_newest_device_sample_replaces_its_older_witness() -> None:
     ]
     points, _ = build_photoperiod_history(_range(_s(-10), _h(1)), (), (), lights)
 
-    assert [(point.phase, point.timestamp) for point in points] == [
+    assert [(point.phase, point.time) for point in points] == [
         ("UNKNOWN", _s(-10)),
         ("SUN", NOW),
         ("UNKNOWN", _s(20)),
@@ -345,9 +337,7 @@ def test_off_mode_light_rows_are_not_phase_evidence() -> None:
         _light_sample(_s(10), "light_f_1", "night", 0.0),
     ]
     points, _ = build_photoperiod_history(_range(_m(-1), _h(1)), (), (), lights)
-    assert [(point.phase, point.timestamp) for point in points] == [
-        ("UNKNOWN", _m(-1))
-    ]
+    assert [(point.phase, point.time) for point in points] == [("UNKNOWN", _m(-1))]
 
 
 def test_zero_intensity_sun_stays_sun() -> None:
@@ -385,9 +375,7 @@ def test_moon_nonzero_intensity_invalidates_its_witness() -> None:
     lights = [_light_sample(NOW, "dac_a", "MOON", 12.5)]
     points, _ = build_photoperiod_history(_range(_m(-1), _h(1)), (), (), lights)
 
-    assert _shapes(points) == [
-        (_m(-1), "UNKNOWN", "recorded", "unavailable", None, None, None)
-    ]
+    assert _shapes(points) == [(_m(-1), "UNKNOWN", "recorded", "unavailable", None, None, None)]
 
 
 def test_conflicting_supported_witnesses_resolve_only_their_own_spans() -> None:
@@ -418,9 +406,7 @@ def test_tied_contradictory_light_rows_return_unknown() -> None:
     ]
     points, _ = build_photoperiod_history(_range(_m(-1), _h(1)), (), (), lights)
 
-    assert _shapes(points) == [
-        (_m(-1), "UNKNOWN", "recorded", "unavailable", None, None, None)
-    ]
+    assert _shapes(points) == [(_m(-1), "UNKNOWN", "recorded", "unavailable", None, None, None)]
 
 
 def test_tied_contradictory_legacy_samples_return_unknown() -> None:
@@ -433,9 +419,7 @@ def test_tied_contradictory_legacy_samples_return_unknown() -> None:
     ]
     points, _ = build_photoperiod_history(_range(_m(-1), _h(1)), rows, (), [])
 
-    assert _shapes(points) == [
-        (_m(-1), "UNKNOWN", "recorded", "unavailable", None, None, None)
-    ]
+    assert _shapes(points) == [(_m(-1), "UNKNOWN", "recorded", "unavailable", None, None, None)]
 
 
 def test_missing_effective_intensity_invalidates_light_witness() -> None:
@@ -445,9 +429,7 @@ def test_missing_effective_intensity_invalidates_light_witness() -> None:
     lights = [_light_sample(NOW, "dac_a", "SUN", None)]
     points, _ = build_photoperiod_history(_range(_m(-1), _h(1)), (), (), lights)
 
-    assert _shapes(points) == [
-        (_m(-1), "UNKNOWN", "recorded", "unavailable", None, None, None)
-    ]
+    assert _shapes(points) == [(_m(-1), "UNKNOWN", "recorded", "unavailable", None, None, None)]
 
 
 def test_non_canonical_light_cluster_is_not_evidence() -> None:
@@ -456,9 +438,7 @@ def test_non_canonical_light_cluster_is_not_evidence() -> None:
     # Then: no band is derived from other equipment.
     lights = [_light_sample(NOW, "dac_a", "SUN", 90.0, cluster="front")]
     points, _ = build_photoperiod_history(_range(_m(-1), _h(1)), (), (), lights)
-    assert [(point.phase, point.timestamp) for point in points] == [
-        ("UNKNOWN", _m(-1))
-    ]
+    assert [(point.phase, point.time) for point in points] == [("UNKNOWN", _m(-1))]
 
 
 def test_unrecognized_source_cannot_establish_transition_continuity() -> None:
@@ -471,11 +451,9 @@ def test_unrecognized_source_cannot_establish_transition_continuity() -> None:
         _transition(2, _h(1), "MOON"),
     ]
     coverage = [_coverage(5, NOW, "available")]
-    points, versions = build_photoperiod_history(
-        _range(_m(-1), _h(2)), rows, coverage, []
-    )
+    points, versions = build_photoperiod_history(_range(_m(-1), _h(2)), rows, coverage, [])
 
-    assert [(point.phase, point.timestamp) for point in points] == [
+    assert [(point.phase, point.time) for point in points] == [
         ("UNKNOWN", _m(-1)),
         ("MOON", _h(1)),
     ]
@@ -486,9 +464,7 @@ def test_dedicated_unknown_observation_supplies_span_metadata() -> None:
     # Given: a committed UNKNOWN phase change with profile metadata present.
     # When: the span resolves through that dedicated observation.
     # Then: the metadata is preserved while the span stays unavailable.
-    rows = [
-        _transition(10, NOW, "UNKNOWN", mode_id=4, submode_id=None, version=5)
-    ]
+    rows = [_transition(10, NOW, "UNKNOWN", mode_id=4, submode_id=None, version=5)]
     points, versions = build_photoperiod_history(
         _range(_m(-1), _h(1)), rows, [_coverage(1, NOW, "available")], []
     )
@@ -508,9 +484,7 @@ def test_transition_exactly_at_exclusive_end_is_never_emitted() -> None:
     coverage = [_coverage(1, _m(-10), "available")]
     points, _ = build_photoperiod_history(_range(_m(-10), _h(1)), rows, coverage, [])
 
-    assert _shapes(points) == [
-        (_m(-10), "UNKNOWN", "recorded", "unavailable", None, None, None)
-    ]
+    assert _shapes(points) == [(_m(-10), "UNKNOWN", "recorded", "unavailable", None, None, None)]
 
 
 @final
@@ -596,9 +570,7 @@ async def test_repository_without_any_evidence_anchors_explicit_unknown() -> Non
     repository = ControlHistoryRepository(PhotoperiodHistoryDatabase())
     envelope = await repository.read("Flower Room", _range(_m(-30), _m(0)))
 
-    assert [(point.phase, point.timestamp) for point in envelope.photoperiod] == [
-        ("UNKNOWN", _m(-30))
-    ]
+    assert [(point.phase, point.time) for point in envelope.photoperiod] == [("UNKNOWN", _m(-30))]
     anchor = envelope.photoperiod[0]
     assert anchor.provenance.origin == "recorded"
     assert anchor.provenance.quality == "unavailable"

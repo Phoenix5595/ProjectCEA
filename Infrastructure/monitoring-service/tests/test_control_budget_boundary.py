@@ -16,6 +16,8 @@ class TransitionDatabase:
     async def fetch(
         self, query: str, *_: str | int | float | datetime
     ) -> list[dict[str, str | float | datetime | int | None]]:
+        if "AS materialization_watermark" in query:
+            return [{"materialization_watermark": NOW + timedelta(minutes=11)}]
         if "monitoring_automation_state" in query:
             return [
                 {

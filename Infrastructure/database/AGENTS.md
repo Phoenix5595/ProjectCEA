@@ -19,7 +19,12 @@ PostgreSQL + TimescaleDB for normalized metadata, time-series measurements, cont
 ## Versioned migrations
 
 Schema changes ship as `migrations/NNNN_name.sql` files applied by `Infrastructure/scripts/db_migrate.py` during `deploy.sh` (rules in [`migrations/README.md`](migrations/README.md)); the ledger is `public.schema_migration`. Each deploy also runs `alembic upgrade heads` for automation-service; automation startup only verifies the head. `0001_alembic_stamp_side_branch` records `010_canonicalize_device_names` on databases (production) that applied the `009→010` alembic branch without recording it, so alembic never re-runs `009_seed_device_registry`; alembic `011_merge_heads` then joins the two heads. Do not edit applied migration files (SHA-256 checked).
-- Alembic `001_baseline` still describes `control_history` with an id-only primary key; migration `0002_control_history_hypertable` rebuilds it as a 7-day hypertable with `PRIMARY KEY (id, "timestamp")`. IDs remain sequence-generated, but only the composite key enforces row uniqueness; do not use id-only conflict targets. Do not edit the applied Alembic revision to resolve this schema transition.
+- Alembic `001_baseline` still describes `control_history` with an id-only primary key; migration `0002_control_history_hypertable` rebuilds it as a 7-day hypertable with `PRIMARY KEY (id, "timestamp")`. Migration `0007_time_column_rename` renames that event column to `"time"` without changing the key order or uniqueness rule. IDs remain sequence-generated; do not use id-only conflict targets. Do not edit the applied Alembic revision to resolve this schema transition.
+- Phase 4 migration `0007_time_column_rename` renames the event-time columns of the eight history tables to `"time"`; `measurement.time`, aggregate `bucket`/`last_observed_at`, live fields and publication contracts are unchanged. Compression-enabled hypertables keep the bounds CHECK `NOT VALID`: the migration verifies every existing non-NULL event time before adding it, PostgreSQL enforces it on new writes, and TimescaleDB 2.28.3 cannot validate a CHECK on a columnstore-enabled hypertable.
+- Monitoring `last(x, "time")` ordering uses the production one-row-per-device-per-tick invariant. The 2026-10-19 disposable 2.28.3 proof refreshed three daily chunks successfully, matched all 18 rows against raw latest rows with zero mismatches, and found zero duplicate device/tick groups; `monitoring_order_key` failed to refresh, while the reported anonymous-`ROW` failure was not reproduced.
+- `0007_time_column_rename` rebuilds eleven affected aggregates, including the measurement hierarchy, keeps `monitoring_measurement_1min` and `monitoring_relay_duration_1day`, and enables three-month compression for all thirteen. Its scheduled `monitoring_backfill_aggregates` job refreshes one UTC day per run, oldest-first, then schedules the eleven view policies and restores the four overview jobs from their snapshot. Readers keep using `max(bucket)` as the materialized frontier and serve raw rows above it. The down migration restores the saved pre-0007 canonical SQL and rematerializes its `ROW(...)` aggregates one source day at a time.
+- `monitoring_measurement_5min` and `monitoring_measurement_1hour` are hierarchical on `monitoring_measurement_1min`; `monitoring_measurement_1day` remains on the hourly parent. `test-time-rename-migration.sh` proves the rename, compressed-source CHECK behavior, three-month aggregate compression, oldest-first backfill parity, job restoration, and down/apply cycle in a disposable database.
+- Phase 4 index-name exception: automation_state index names intentionally keep "timestamp".
 
 Historical note (2026-10-18): retired Grafana-only SQL migrations, views and verification scripts were removed: `grafana_performance_migration.sql`, `grafana_optimized_views.sql`, `grow_history_guards.sql`, `migrate_get_sensor_routing_1min_through_6h.sql`, `verify_get_sensor_routing.sql`, `verify_performance.sql`, `timescaledb_continuous_aggregates.sql`, and `timescaledb_compression.sql`. `latest_sensor_values` remains defined but has no in-repo consumer.
 
@@ -30,7 +35,7 @@ Historical note (2026-10-18): retired Grafana-only SQL migrations, views and ver
 - Iskra/Grafana decommission: replication slot `iskra_recovery`, roles `cea_repl`, `grafana`, `probe_role` and `monitoring_role_probe_rsnd`, the Iskra `pg_hba.conf` rules (backup `pg_hba.conf.bak-20261019-iskra`) and the leftover test databases (`cea_sensors_test`, `fullinstall_*`, `syntaxcheck*`, `monitoring_test_probe2`, `monitoring_test_rsnd_probe`) were removed. Only `postgres` and `sj_cea` remain.
 - Retired Grafana-era objects dropped from production: legacy CAGGs `measurement_1min/5min/hourly/daily`, views `measurement_*_grafana`, functions `get_sensor_data_optimized`/`get_sensor_stats`. Fresh installs still recreate the legacy CAGGs via alembic `005_phase5a_reconcile` and `cea_schema.sql` until a new revision removes them.
 - Restoring a dump of this TimescaleDB database: create an empty database owned by `cea_user`, `CREATE EXTENSION timescaledb; SELECT timescaledb_pre_restore();`, then `sudo -u postgres pg_restore -d <db> <dump>` **single-job** (`-j 2` breaks TimescaleDB catalog foreign keys), then `SELECT timescaledb_post_restore();` (~22 min for a 737 MB dump). Errors about the retired `grafana` role are expected.
-- TimescaleDB 2.28.3: `refresh_continuous_aggregate` on CAGGs ordering `last()` by an anonymous `ROW(...)` fails across more than one source chunk ("input of anonymous composite types is not implemented"); refresh such CAGGs per source chunk (`derived_refresh.py` does).
+- TimescaleDB 2.28.3 ordering proof (2026-10-19): a named `monitoring_order_key` failed with `could not find a > operator`; the earlier anonymous `ROW(...)` failure was not reproduced in the canonical multi-chunk test. The tested `last(value, "time")` fallback succeeded and matched the raw latest rows; keep the one-row-per-device-per-tick invariant explicit.
 
 ## Redis live vs Postgres time series
 
@@ -148,14 +153,15 @@ rewriting the archived ownership.
 Schema and disposable lifecycle proofs are run from the worktree root. Set
 `W` to the current worktree root, export the service and test import paths, and
 run one DB proof at a time; parallel proofs contend on the shared local
-PostgreSQL instance and can cause false timeouts. The lifecycle and purge
-harnesses take `/tmp/grow-lifecycle-harness.lock` themselves for the whole run;
-do not wrap them in `flock` (a nested lock on the same file deadlocks):
+PostgreSQL instance and can cause false timeouts. The lifecycle, time-rename and
+purge harnesses take `/tmp/grow-lifecycle-harness.lock` themselves for the whole
+run; do not wrap them in `flock` (a nested lock on the same file deadlocks):
 
 ```bash
 W="$(git rev-parse --show-toplevel)"
 export PYTHONPATH="$W/Infrastructure/grow-archive-service:$W/Infrastructure/automation-service:$W/Infrastructure:$W/Infrastructure/grow-archive-service/tests"
 bash "$W/Infrastructure/database/tests/test-grow-data-lifecycle.sh" --case <case>
+bash "$W/Infrastructure/database/tests/test-time-rename-migration.sh"
 ```
 
 The lifecycle harness cases are `schema`, `lossless`, `compressed-source`,
@@ -177,6 +183,7 @@ Database tests live in `Infrastructure/database/tests/`. They validate idempoten
 ```bash
 bash Infrastructure/database/tests/test-monitoring-read-models.sh --case reject-incompatible-and-destructive
 bash Infrastructure/database/tests/test-operational-history-retention.sh
+bash Infrastructure/database/tests/test-time-rename-migration.sh
 bash Infrastructure/database/tests/test-grow-data-lifecycle.sh --case schema
 ```
 
@@ -184,4 +191,4 @@ Run these locally against a disposable Postgres instance, never against producti
 
 ---
 
-*Last updated: 2026-10-18*
+*Last updated: 2026-10-19*

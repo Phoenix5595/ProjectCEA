@@ -48,7 +48,7 @@ function sensorSeries(points: SensorSeries['points']): SensorSeries[] {
 }
 
 function climateSeries(
-  points: Array<{ timestamp: Date; value: number | null; origin?: Origin }>
+  points: Array<{ time: Date; value: number | null; origin?: Origin }>
 ): ClimateTimelineSeries {
   return {
     name: 'Heating Setpoint',
@@ -56,7 +56,7 @@ function climateSeries(
     projection: null,
     warnings: [],
     points: points.map(p => ({
-      timestamp: p.timestamp,
+      time: p.time,
       value: p.value,
       nominal_value: p.value,
       metric: 'heating_setpoint',
@@ -87,9 +87,9 @@ function controlResponse(
 
 describe('alignSeries', () => {
   it('aligns max Flower fixture within five thousand x points', () => {
-    const dense: Array<{ timestamp: Date; value: number }> = []
+    const dense: Array<{ time: Date; value: number }> = []
     for (let i = 0; i < 6000; i++) {
-      dense.push({ timestamp: new Date(START.getTime() + i * 1000), value: 22 + (i % 10) * 0.1 })
+      dense.push({ time: new Date(START.getTime() + i * 1000), value: 22 + (i % 10) * 0.1 })
     }
     const input: AlignInput = {
       series: sensorSeries([
@@ -131,9 +131,9 @@ describe('alignSeries', () => {
       ]),
       controlHistory: controlResponse([
         climateSeries([
-          { timestamp: t0, value: 22 },
-          { timestamp: t1, value: null },
-          { timestamp: t2, value: 23 },
+          { time: t0, value: 22 },
+          { time: t1, value: null },
+          { time: t2, value: 23 },
         ]),
       ]),
       projectionHistory: null,
@@ -154,9 +154,9 @@ describe('alignSeries', () => {
     const controlPoint = out.series.find(s => s.metric === 'heating_setpoint' && s.role === 'point')
     expect(controlPoint?.y[t1Index]).toBeNull()
 
-    const dense: Array<{ timestamp: Date; value: number }> = []
+    const dense: Array<{ time: Date; value: number }> = []
     for (let i = 0; i < 2000; i++) {
-      dense.push({ timestamp: new Date(t0.getTime() + i * 1000), value: 22 })
+      dense.push({ time: new Date(t0.getTime() + i * 1000), value: 22 })
     }
     const big = alignSeries({
       ...input,
@@ -178,7 +178,7 @@ describe('alignSeries', () => {
           ...climateSeries([]),
           steps: [
             {
-              timestamp: START,
+              time: START,
               value: 22,
               provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false },
             },
@@ -219,10 +219,10 @@ describe('alignSeries', () => {
       series: [],
       controlHistory: controlResponse([
         {
-          ...climateSeries([{ timestamp: START, value: 22 }]),
+          ...climateSeries([{ time: START, value: 22 }]),
           steps: [
             {
-              timestamp: START,
+              time: START,
               value: 22,
               provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false },
             },
@@ -247,7 +247,7 @@ describe('alignSeries', () => {
   it('assigns co2_setpoint to the co2 family instead of temperature', () => {
     const input: AlignInput = {
       series: [],
-      controlHistory: controlResponse([climateSeries([{ timestamp: START, value: 600 }])], {
+      controlHistory: controlResponse([climateSeries([{ time: START, value: 600 }])], {
         climate: [
           {
             name: 'CO2 Setpoint',
@@ -256,7 +256,7 @@ describe('alignSeries', () => {
             warnings: [],
             points: [
               {
-                timestamp: START,
+                time: START,
                 value: 600,
                 nominal_value: 600,
                 metric: 'co2_setpoint',
@@ -288,8 +288,8 @@ describe('alignSeries', () => {
       ]),
       controlHistory: controlResponse([
         climateSeries([
-          { timestamp: START, value: 22 },
-          { timestamp: END, value: 23 },
+          { time: START, value: 22 },
+          { time: END, value: 23 },
         ]),
       ]),
       projectionHistory: null,
@@ -363,10 +363,10 @@ describe('alignSeries', () => {
     const input: AlignInput = {
       series: [],
       controlHistory: controlResponse([
-        climateSeries([{ timestamp: t, value: 22, origin: 'recorded' }]),
+        climateSeries([{ time: t, value: 22, origin: 'recorded' }]),
       ]),
       projectionHistory: controlResponse([
-        climateSeries([{ timestamp: t, value: 99, origin: 'projected' }]),
+        climateSeries([{ time: t, value: 99, origin: 'projected' }]),
       ]),
       photoperiod: [],
       live: [],
@@ -384,8 +384,8 @@ describe('alignSeries', () => {
   it('continues a recorded setpoint into the projected scheduled trajectory', () => {
     const recorded = controlResponse([
       climateSeries([
-        { timestamp: START, value: 22 },
-        { timestamp: NOW, value: 23 },
+        { time: START, value: 22 },
+        { time: NOW, value: 23 },
       ]),
     ])
     const scheduled = {
@@ -424,7 +424,7 @@ describe('alignSeries', () => {
       provenance: prov,
       points: [
         {
-          timestamp: t0,
+          time: t0,
           provenance: prov,
           device_name: 'Heater Flower',
           device_state: 0,
@@ -432,7 +432,7 @@ describe('alignSeries', () => {
           control_reason: 'schedule',
         },
         {
-          timestamp: t1,
+          time: t1,
           provenance: prov,
           device_name: 'Heater Flower',
           device_state: 1,
@@ -440,7 +440,7 @@ describe('alignSeries', () => {
           control_reason: 'pid',
         },
         {
-          timestamp: t2,
+          time: t2,
           provenance: prov,
           device_name: 'Heater Flower',
           device_state: 1,
@@ -455,21 +455,21 @@ describe('alignSeries', () => {
       provenance: prov,
       points: [
         {
-          timestamp: t0,
+          time: t0,
           provenance: prov,
           device_name: 'Heater Flower',
           pid_output: 0,
           duty_cycle_percent: 0,
         },
         {
-          timestamp: t1,
+          time: t1,
           provenance: prov,
           device_name: 'Heater Flower',
           pid_output: 25,
           duty_cycle_percent: 25,
         },
         {
-          timestamp: t2,
+          time: t2,
           provenance: prov,
           device_name: 'Heater Flower',
           pid_output: 50,
@@ -514,8 +514,8 @@ describe('alignSeries', () => {
       ]),
       controlHistory: controlResponse([
         climateSeries([
-          { timestamp: START, value: 22 },
-          { timestamp: END, value: 23 },
+          { time: START, value: 22 },
+          { time: END, value: 23 },
         ]),
       ]),
       projectionHistory: null,
@@ -596,8 +596,8 @@ describe('alignSeries', () => {
         name: 'light_f_1', metric: 'light_f_1', provenance: recorded, warnings: [],
         points: [], linear: [],
         steps: [
-          { timestamp: offAt, value: 0, provenance: recorded },
-          { timestamp: onAt, value: 10, provenance: recorded },
+          { time: offAt, value: 0, provenance: recorded },
+          { time: onAt, value: 10, provenance: recorded },
         ],
       }],
     })
@@ -634,7 +634,7 @@ describe('alignSeries', () => {
       warnings: [],
       points: [
         {
-          timestamp: at(0),
+          time: at(0),
           value: 40,
           nominal_value: 40,
           device_name: 'light_f_1',
@@ -652,9 +652,9 @@ describe('alignSeries', () => {
       warnings: [],
       points: [],
       steps: [
-        { timestamp: at(10), value: 40, provenance: projected },
-        { timestamp: at(40), value: null, provenance: unavailable },
-        { timestamp: at(50), value: 0, provenance: projected },
+        { time: at(10), value: 40, provenance: projected },
+        { time: at(40), value: null, provenance: unavailable },
+        { time: at(50), value: 0, provenance: projected },
       ],
       linear: [
         {
@@ -727,7 +727,7 @@ describe('alignSeries', () => {
       phase: PhotoperiodTimelinePoint['phase'],
       origin: Origin = 'recorded'
     ): PhotoperiodTimelinePoint => ({
-      timestamp: new Date(timestamp),
+      time: new Date(timestamp),
       phase,
       provenance: {
         origin,
@@ -1125,7 +1125,7 @@ describe('bucketed control extrema', () => {
       projection: null,
       warnings: [],
       steps: [0, 15, 30, 45, 60, 75, 90, 105].map(minute => ({
-        timestamp: at(minute),
+        time: at(minute),
         value: 22,
         minimum: minute === 45 ? 18 : 21,
         maximum: minute === 45 ? 30 : 23,

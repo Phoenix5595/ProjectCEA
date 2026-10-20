@@ -32,11 +32,10 @@ class _AggregateTier:
 
     * ``monitoring_measurement_1min`` / ``monitoring_measurement_5min``
       (``monitoring_read_models.sql``) bucket the raw hypertable by
-      1/5 minutes per sensor.
+      1/5 minutes per sensor; the latter is a child of the former.
     * ``monitoring_measurement_1hour`` / ``monitoring_measurement_1day``
-      (``monitoring_history_overview.sql``) carry mergeable hourly
-      sufficient statistics, with the daily tier rolling up its hourly
-      parent, both per sensor.
+      (``monitoring_history_overview.sql``) roll up the 5-minute and hourly
+      parents, respectively, preserving mergeable sufficient statistics.
 
     Tier ``name`` values (``daily``/``hourly``/``5min``/``1min``/``raw``)
     are part of the public soil-history response contract and stay as
@@ -80,7 +79,11 @@ _AGGREGATE_LADDER: list[tuple[float, _AggregateTier]] = [
             name="daily",
             table="monitoring_measurement_1day",
             width="1 day",
-            chain=("monitoring_measurement_1day", "monitoring_measurement_1hour"),
+            chain=(
+                "monitoring_measurement_1day",
+                "monitoring_measurement_1hour",
+                "monitoring_measurement_1min",
+            ),
         ),
     ),
     (
@@ -89,7 +92,7 @@ _AGGREGATE_LADDER: list[tuple[float, _AggregateTier]] = [
             name="hourly",
             table="monitoring_measurement_1hour",
             width="1 hour",
-            chain=("monitoring_measurement_1hour",),
+            chain=("monitoring_measurement_1hour", "monitoring_measurement_1min"),
         ),
     ),
     (
@@ -98,7 +101,7 @@ _AGGREGATE_LADDER: list[tuple[float, _AggregateTier]] = [
             name="5min",
             table="monitoring_measurement_5min",
             width="5 minutes",
-            chain=("monitoring_measurement_5min",),
+            chain=("monitoring_measurement_5min", "monitoring_measurement_1min"),
         ),
     ),
     (
@@ -143,11 +146,14 @@ def _tier_source_sql(tier: _AggregateTier, start: str = "$2", end: str = "$3") -
 
     return f"""
         WITH coverage AS (
-            SELECT COALESCE(_timescaledb_functions.to_timestamp(
-                       _timescaledb_functions.cagg_watermark(c.mat_hypertable_id)),
-                       '-infinity'::timestamptz) AS through
+            SELECT COALESCE(
+                       MIN(_timescaledb_functions.to_timestamp(
+                           _timescaledb_functions.cagg_watermark(c.mat_hypertable_id)
+                       )),
+                       '-infinity'::timestamptz
+                   ) AS through
               FROM _timescaledb_catalog.continuous_agg c
-             WHERE c.user_view_schema = 'public' AND c.user_view_name = '{tier.table}'
+             WHERE c.user_view_schema = 'public' AND c.user_view_name IN ({chain})
         ), stale AS (
             SELECT {endpoint("lowest_modified_value")} AS lo,
                    {endpoint("greatest_modified_value")} AS hi

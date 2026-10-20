@@ -93,7 +93,7 @@ def test_resolve_interval_seconds_snaps_budget_to_safe_ladder(
     (
         (timedelta(hours=1), Tier.RAW, 0),
         (timedelta(hours=6), Tier.ONE_MINUTE, 1),
-        (timedelta(days=7), Tier.FIVE_MINUTES, 1),
+        (timedelta(days=7), Tier.FIVE_MINUTES, 2),
     ),
 )
 async def test_series_without_budget_preserves_characterized_snapshot(

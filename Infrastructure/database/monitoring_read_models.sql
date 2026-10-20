@@ -1,6 +1,10 @@
 \set ON_ERROR_STOP on
 
+\if :{?monitoring_time_rename_migration}
+-- The phase-4 migration owns this transaction when it includes this file.
+\else
 BEGIN;
+\endif
 
 CREATE OR REPLACE FUNCTION monitoring_assert_timescaledb_catalog()
 RETURNS void
@@ -151,22 +155,22 @@ WITH NO DATA;
 CREATE MATERIALIZED VIEW IF NOT EXISTS monitoring_measurement_5min
 WITH (timescaledb.continuous, timescaledb.materialized_only = true) AS
 SELECT
-    time_bucket(INTERVAL '5 minutes', time) AS bucket,
-    sensor_id,
-    count(value) AS sample_count,
-    sum(value::NUMERIC) AS value_sum,
-    sum(value::NUMERIC * value::NUMERIC) AS value_sum_squares,
-    min(value::NUMERIC) AS min_value,
-    max(value::NUMERIC) AS max_value,
-    max(time) AS last_observed_at
-FROM measurement
-GROUP BY bucket, sensor_id
+    time_bucket(INTERVAL '5 minutes', minute.bucket) AS bucket,
+    minute.sensor_id,
+    sum(minute.sample_count)::BIGINT AS sample_count,
+    sum(minute.value_sum) AS value_sum,
+    sum(minute.value_sum_squares) AS value_sum_squares,
+    min(minute.min_value) AS min_value,
+    max(minute.max_value) AS max_value,
+    max(minute.last_observed_at) AS last_observed_at
+FROM monitoring_measurement_1min AS minute
+GROUP BY 1, minute.sensor_id
 WITH NO DATA;
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS monitoring_effective_setpoints_1min
 WITH (timescaledb.continuous, timescaledb.materialized_only = true) AS
 SELECT
-    time_bucket(INTERVAL '1 minute', timestamp) AS bucket,
+    time_bucket(INTERVAL '1 minute', "time") AS bucket,
     location,
     cluster,
     device_name,
@@ -176,38 +180,38 @@ SELECT
     sum(effective_heating_setpoint::NUMERIC * effective_heating_setpoint::NUMERIC) AS effective_heating_setpoint_sum_squares,
     min(effective_heating_setpoint::NUMERIC) AS effective_heating_setpoint_min,
     max(effective_heating_setpoint::NUMERIC) AS effective_heating_setpoint_max,
-    last(effective_heating_setpoint, ROW(timestamp, COALESCE(monitoring_ingest_id, 0))) AS effective_heating_setpoint_last,
+    last(effective_heating_setpoint, "time") AS effective_heating_setpoint_last,
     count(effective_cooling_setpoint) AS effective_cooling_setpoint_count,
     sum(effective_cooling_setpoint::NUMERIC) AS effective_cooling_setpoint_sum,
     sum(effective_cooling_setpoint::NUMERIC * effective_cooling_setpoint::NUMERIC) AS effective_cooling_setpoint_sum_squares,
     min(effective_cooling_setpoint::NUMERIC) AS effective_cooling_setpoint_min,
     max(effective_cooling_setpoint::NUMERIC) AS effective_cooling_setpoint_max,
-    last(effective_cooling_setpoint, ROW(timestamp, COALESCE(monitoring_ingest_id, 0))) AS effective_cooling_setpoint_last,
+    last(effective_cooling_setpoint, "time") AS effective_cooling_setpoint_last,
     count(effective_humidity_setpoint) AS effective_humidity_setpoint_count,
     sum(effective_humidity_setpoint::NUMERIC) AS effective_humidity_setpoint_sum,
     sum(effective_humidity_setpoint::NUMERIC * effective_humidity_setpoint::NUMERIC) AS effective_humidity_setpoint_sum_squares,
     min(effective_humidity_setpoint::NUMERIC) AS effective_humidity_setpoint_min,
     max(effective_humidity_setpoint::NUMERIC) AS effective_humidity_setpoint_max,
-    last(effective_humidity_setpoint, ROW(timestamp, COALESCE(monitoring_ingest_id, 0))) AS effective_humidity_setpoint_last,
+    last(effective_humidity_setpoint, "time") AS effective_humidity_setpoint_last,
     count(effective_co2_setpoint) AS effective_co2_setpoint_count,
     sum(effective_co2_setpoint::NUMERIC) AS effective_co2_setpoint_sum,
     sum(effective_co2_setpoint::NUMERIC * effective_co2_setpoint::NUMERIC) AS effective_co2_setpoint_sum_squares,
     min(effective_co2_setpoint::NUMERIC) AS effective_co2_setpoint_min,
     max(effective_co2_setpoint::NUMERIC) AS effective_co2_setpoint_max,
-    last(effective_co2_setpoint, ROW(timestamp, COALESCE(monitoring_ingest_id, 0))) AS effective_co2_setpoint_last,
+    last(effective_co2_setpoint, "time") AS effective_co2_setpoint_last,
     count(effective_vpd_setpoint) AS effective_vpd_setpoint_count,
     sum(effective_vpd_setpoint::NUMERIC) AS effective_vpd_setpoint_sum,
     sum(effective_vpd_setpoint::NUMERIC * effective_vpd_setpoint::NUMERIC) AS effective_vpd_setpoint_sum_squares,
     min(effective_vpd_setpoint::NUMERIC) AS effective_vpd_setpoint_min,
     max(effective_vpd_setpoint::NUMERIC) AS effective_vpd_setpoint_max,
-    last(effective_vpd_setpoint, ROW(timestamp, COALESCE(monitoring_ingest_id, 0))) AS effective_vpd_setpoint_last,
+    last(effective_vpd_setpoint, "time") AS effective_vpd_setpoint_last,
     count(effective_light_intensity) AS effective_light_intensity_count,
     sum(effective_light_intensity::NUMERIC) AS effective_light_intensity_sum,
     sum(effective_light_intensity::NUMERIC * effective_light_intensity::NUMERIC) AS effective_light_intensity_sum_squares,
     min(effective_light_intensity::NUMERIC) AS effective_light_intensity_min,
     max(effective_light_intensity::NUMERIC) AS effective_light_intensity_max,
-    last(effective_light_intensity, ROW(timestamp, COALESCE(monitoring_ingest_id, 0))) AS effective_light_intensity_last,
-    max(timestamp) AS last_observed_at
+    last(effective_light_intensity, "time") AS effective_light_intensity_last,
+    max("time") AS last_observed_at
 FROM effective_setpoints
 GROUP BY bucket, location, cluster, device_name, mode
 WITH NO DATA;
@@ -215,7 +219,7 @@ WITH NO DATA;
 CREATE MATERIALIZED VIEW IF NOT EXISTS monitoring_effective_setpoints_5min
 WITH (timescaledb.continuous, timescaledb.materialized_only = true) AS
 SELECT
-    time_bucket(INTERVAL '5 minutes', timestamp) AS bucket,
+    time_bucket(INTERVAL '5 minutes', "time") AS bucket,
     location,
     cluster,
     device_name,
@@ -225,38 +229,38 @@ SELECT
     sum(effective_heating_setpoint::NUMERIC * effective_heating_setpoint::NUMERIC) AS effective_heating_setpoint_sum_squares,
     min(effective_heating_setpoint::NUMERIC) AS effective_heating_setpoint_min,
     max(effective_heating_setpoint::NUMERIC) AS effective_heating_setpoint_max,
-    last(effective_heating_setpoint, ROW(timestamp, COALESCE(monitoring_ingest_id, 0))) AS effective_heating_setpoint_last,
+    last(effective_heating_setpoint, "time") AS effective_heating_setpoint_last,
     count(effective_cooling_setpoint) AS effective_cooling_setpoint_count,
     sum(effective_cooling_setpoint::NUMERIC) AS effective_cooling_setpoint_sum,
     sum(effective_cooling_setpoint::NUMERIC * effective_cooling_setpoint::NUMERIC) AS effective_cooling_setpoint_sum_squares,
     min(effective_cooling_setpoint::NUMERIC) AS effective_cooling_setpoint_min,
     max(effective_cooling_setpoint::NUMERIC) AS effective_cooling_setpoint_max,
-    last(effective_cooling_setpoint, ROW(timestamp, COALESCE(monitoring_ingest_id, 0))) AS effective_cooling_setpoint_last,
+    last(effective_cooling_setpoint, "time") AS effective_cooling_setpoint_last,
     count(effective_humidity_setpoint) AS effective_humidity_setpoint_count,
     sum(effective_humidity_setpoint::NUMERIC) AS effective_humidity_setpoint_sum,
     sum(effective_humidity_setpoint::NUMERIC * effective_humidity_setpoint::NUMERIC) AS effective_humidity_setpoint_sum_squares,
     min(effective_humidity_setpoint::NUMERIC) AS effective_humidity_setpoint_min,
     max(effective_humidity_setpoint::NUMERIC) AS effective_humidity_setpoint_max,
-    last(effective_humidity_setpoint, ROW(timestamp, COALESCE(monitoring_ingest_id, 0))) AS effective_humidity_setpoint_last,
+    last(effective_humidity_setpoint, "time") AS effective_humidity_setpoint_last,
     count(effective_co2_setpoint) AS effective_co2_setpoint_count,
     sum(effective_co2_setpoint::NUMERIC) AS effective_co2_setpoint_sum,
     sum(effective_co2_setpoint::NUMERIC * effective_co2_setpoint::NUMERIC) AS effective_co2_setpoint_sum_squares,
     min(effective_co2_setpoint::NUMERIC) AS effective_co2_setpoint_min,
     max(effective_co2_setpoint::NUMERIC) AS effective_co2_setpoint_max,
-    last(effective_co2_setpoint, ROW(timestamp, COALESCE(monitoring_ingest_id, 0))) AS effective_co2_setpoint_last,
+    last(effective_co2_setpoint, "time") AS effective_co2_setpoint_last,
     count(effective_vpd_setpoint) AS effective_vpd_setpoint_count,
     sum(effective_vpd_setpoint::NUMERIC) AS effective_vpd_setpoint_sum,
     sum(effective_vpd_setpoint::NUMERIC * effective_vpd_setpoint::NUMERIC) AS effective_vpd_setpoint_sum_squares,
     min(effective_vpd_setpoint::NUMERIC) AS effective_vpd_setpoint_min,
     max(effective_vpd_setpoint::NUMERIC) AS effective_vpd_setpoint_max,
-    last(effective_vpd_setpoint, ROW(timestamp, COALESCE(monitoring_ingest_id, 0))) AS effective_vpd_setpoint_last,
+    last(effective_vpd_setpoint, "time") AS effective_vpd_setpoint_last,
     count(effective_light_intensity) AS effective_light_intensity_count,
     sum(effective_light_intensity::NUMERIC) AS effective_light_intensity_sum,
     sum(effective_light_intensity::NUMERIC * effective_light_intensity::NUMERIC) AS effective_light_intensity_sum_squares,
     min(effective_light_intensity::NUMERIC) AS effective_light_intensity_min,
     max(effective_light_intensity::NUMERIC) AS effective_light_intensity_max,
-    last(effective_light_intensity, ROW(timestamp, COALESCE(monitoring_ingest_id, 0))) AS effective_light_intensity_last,
-    max(timestamp) AS last_observed_at
+    last(effective_light_intensity, "time") AS effective_light_intensity_last,
+    max("time") AS last_observed_at
 FROM effective_setpoints
 GROUP BY bucket, location, cluster, device_name, mode
 WITH NO DATA;
@@ -264,25 +268,25 @@ WITH NO DATA;
 CREATE MATERIALIZED VIEW IF NOT EXISTS monitoring_automation_state_1min
 WITH (timescaledb.continuous, timescaledb.materialized_only = true) AS
 SELECT
-    time_bucket(INTERVAL '1 minute', timestamp) AS bucket,
+    time_bucket(INTERVAL '1 minute', "time") AS bucket,
     location,
     cluster,
     device_name,
     count(*) AS sample_count,
     min(device_state) AS device_state_min,
     max(device_state) AS device_state_max,
-    last(device_state, ROW(timestamp, id)) AS device_state_last,
-    last(device_mode, ROW(timestamp, id)) AS device_mode_last,
+    last(device_state, "time") AS device_state_last,
+    last(device_mode, "time") AS device_mode_last,
     count(pid_output) AS pid_output_count,
     min(pid_output) AS pid_output_min,
     max(pid_output) AS pid_output_max,
-    last(pid_output, ROW(timestamp, id)) AS pid_output_last,
+    last(pid_output, "time") AS pid_output_last,
     count(duty_cycle_percent) AS duty_cycle_percent_count,
     min(duty_cycle_percent) AS duty_cycle_percent_min,
     max(duty_cycle_percent) AS duty_cycle_percent_max,
-    last(duty_cycle_percent, ROW(timestamp, id)) AS duty_cycle_percent_last,
-    last(control_reason, ROW(timestamp, id)) AS control_reason_last,
-    max(timestamp) AS last_observed_at
+    last(duty_cycle_percent, "time") AS duty_cycle_percent_last,
+    last(control_reason, "time") AS control_reason_last,
+    max("time") AS last_observed_at
 FROM automation_state
 GROUP BY bucket, location, cluster, device_name
 WITH NO DATA;
@@ -290,32 +294,32 @@ WITH NO DATA;
 CREATE MATERIALIZED VIEW IF NOT EXISTS monitoring_automation_state_5min
 WITH (timescaledb.continuous, timescaledb.materialized_only = true) AS
 SELECT
-    time_bucket(INTERVAL '5 minutes', timestamp) AS bucket,
+    time_bucket(INTERVAL '5 minutes', "time") AS bucket,
     location,
     cluster,
     device_name,
     count(*) AS sample_count,
     min(device_state) AS device_state_min,
     max(device_state) AS device_state_max,
-    last(device_state, ROW(timestamp, id)) AS device_state_last,
-    last(device_mode, ROW(timestamp, id)) AS device_mode_last,
+    last(device_state, "time") AS device_state_last,
+    last(device_mode, "time") AS device_mode_last,
     count(pid_output) AS pid_output_count,
     min(pid_output) AS pid_output_min,
     max(pid_output) AS pid_output_max,
-    last(pid_output, ROW(timestamp, id)) AS pid_output_last,
+    last(pid_output, "time") AS pid_output_last,
     count(duty_cycle_percent) AS duty_cycle_percent_count,
     min(duty_cycle_percent) AS duty_cycle_percent_min,
     max(duty_cycle_percent) AS duty_cycle_percent_max,
-    last(duty_cycle_percent, ROW(timestamp, id)) AS duty_cycle_percent_last,
-    last(control_reason, ROW(timestamp, id)) AS control_reason_last,
-    max(timestamp) AS last_observed_at
+    last(duty_cycle_percent, "time") AS duty_cycle_percent_last,
+    last(control_reason, "time") AS control_reason_last,
+    max("time") AS last_observed_at
 FROM automation_state
 GROUP BY bucket, location, cluster, device_name
 WITH NO DATA;
 
 CREATE TABLE IF NOT EXISTS monitoring_room_photoperiod (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    observed_at TIMESTAMPTZ NOT NULL,
+    "time" TIMESTAMPTZ NOT NULL,
     location TEXT NOT NULL,
     cluster TEXT NOT NULL,
     phase TEXT NOT NULL CHECK (phase IN ('SUN', 'MOON', 'UNKNOWN')),
@@ -325,7 +329,7 @@ CREATE TABLE IF NOT EXISTS monitoring_room_photoperiod (
     source TEXT NOT NULL CHECK (btrim(source) <> '')
 );
 CREATE INDEX IF NOT EXISTS monitoring_room_photoperiod_room_time_idx
-    ON monitoring_room_photoperiod (location, cluster, observed_at DESC);
+    ON monitoring_room_photoperiod (location, cluster, "time" DESC);
 CREATE INDEX IF NOT EXISTS monitoring_room_photoperiod_snapshot_idx
     ON monitoring_room_photoperiod (runtime_snapshot_version);
 
@@ -333,7 +337,7 @@ CREATE INDEX IF NOT EXISTS monitoring_room_photoperiod_snapshot_idx
 -- source='photoperiod' rows remain bounded legacy observations, not transitions.
 CREATE TABLE IF NOT EXISTS monitoring_photoperiod_coverage (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    observed_at TIMESTAMPTZ NOT NULL,
+    "time" TIMESTAMPTZ NOT NULL,
     location TEXT NOT NULL,
     cluster TEXT NOT NULL,
     state TEXT NOT NULL CHECK (state IN ('available', 'unavailable')),
@@ -342,10 +346,10 @@ CREATE TABLE IF NOT EXISTS monitoring_photoperiod_coverage (
         'recording_gap', 'recovered', 'unclean_restart'
     )),
     runtime_snapshot_version BIGINT NOT NULL CHECK (runtime_snapshot_version >= 0),
-    UNIQUE (location, cluster, observed_at, state)
+    UNIQUE (location, cluster, "time", state)
 );
 CREATE INDEX IF NOT EXISTS monitoring_photoperiod_coverage_room_time_idx
-    ON monitoring_photoperiod_coverage (location, cluster, observed_at DESC, id DESC);
+    ON monitoring_photoperiod_coverage (location, cluster, "time" DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS monitoring_cagg_backfill_marker (
     cagg_name TEXT PRIMARY KEY,
@@ -528,7 +532,7 @@ BEGIN
     PERFORM monitoring_assert_relation_columns(
         'monitoring_room_photoperiod',
         ARRAY[
-            'id', 'observed_at', 'location', 'cluster', 'phase', 'mode_id',
+            'id', 'time', 'location', 'cluster', 'phase', 'mode_id',
             'submode_id', 'runtime_snapshot_version', 'source'
         ],
         ARRAY[
@@ -539,7 +543,7 @@ BEGIN
     PERFORM monitoring_assert_relation_columns(
         'monitoring_photoperiod_coverage',
         ARRAY[
-            'id', 'observed_at', 'location', 'cluster', 'state', 'reason',
+            'id', 'time', 'location', 'cluster', 'state', 'reason',
             'runtime_snapshot_version'
         ],
         ARRAY[
@@ -558,6 +562,9 @@ $column_compatibility$;
 DO $compatibility$
 DECLARE
     incompatible_count INTEGER;
+    source_hypertable_id INTEGER;
+    minute_record RECORD;
+    five_minute_record RECORD;
 BEGIN
     SELECT count(*)
     INTO incompatible_count
@@ -591,7 +598,32 @@ BEGIN
     ) <> 6 THEN
         RAISE EXCEPTION 'monitoring continuous aggregate catalog is incomplete';
     END IF;
+    SELECT id INTO source_hypertable_id
+    FROM _timescaledb_catalog.hypertable
+    WHERE schema_name = 'public' AND table_name = 'measurement';
+    SELECT mat_hypertable_id, parent_mat_hypertable_id, raw_hypertable_id
+    INTO minute_record
+    FROM _timescaledb_catalog.continuous_agg
+    WHERE user_view_schema = 'public'
+      AND user_view_name = 'monitoring_measurement_1min';
+    SELECT parent_mat_hypertable_id, raw_hypertable_id
+    INTO five_minute_record
+    FROM _timescaledb_catalog.continuous_agg
+    WHERE user_view_schema = 'public'
+      AND user_view_name = 'monitoring_measurement_5min';
+    IF source_hypertable_id IS NULL OR minute_record IS NULL
+       OR five_minute_record IS NULL
+       OR minute_record.parent_mat_hypertable_id IS NOT NULL
+       OR minute_record.raw_hypertable_id IS DISTINCT FROM source_hypertable_id
+       OR five_minute_record.parent_mat_hypertable_id IS DISTINCT FROM minute_record.mat_hypertable_id
+       OR five_minute_record.raw_hypertable_id IS DISTINCT FROM minute_record.mat_hypertable_id THEN
+        RAISE EXCEPTION 'monitoring measurement 5-minute aggregate hierarchy drifted';
+    END IF;
 END
 $compatibility$;
 
+\if :{?monitoring_time_rename_migration}
+-- The phase-4 migration commits after all canonical definitions are included.
+\else
 COMMIT;
+\endif

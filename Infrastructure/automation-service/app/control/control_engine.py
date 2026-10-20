@@ -835,7 +835,7 @@ class ControlEngine:
 
                     records.append(
                         {
-                            "timestamp": current_time,
+                            "time": current_time,
                             "location": location,
                             "cluster": cluster,
                             "device_name": device_name,

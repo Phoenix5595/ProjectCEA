@@ -29,12 +29,14 @@ The backend historical endpoint uses its own ladder in `app/repositories/sensor_
 | >= 7 d | `monitoring_measurement_1hour` |
 | >= 30 d | `monitoring_measurement_1day` |
 
-The native views are materialized-only. Sensor and soil history read a view
-bucket only below that CAGG's watermark with no overlapping pending
-invalidation in its refresh chain; other buckets (live tail, late corrections,
-never-refreshed ranges) are recomputed from raw `measurement` with the same
-`sum(value::NUMERIC)/count(value)` statistic. Proof:
-`test-grow-data-lifecycle.sh --case native-readers`.
+The measurement hierarchy is `monitoring_measurement_1min` →
+`monitoring_measurement_5min` / `monitoring_measurement_1hour` →
+`monitoring_measurement_1day` (the daily view rolls up hourly). Sensor and
+soil-history readers accept an aggregate bucket only below the minimum
+watermark across that tier's ancestors and with no overlapping pending
+invalidation anywhere in the chain; other buckets are recomputed from raw
+`measurement` using the exact `sum(value::NUMERIC)/count(value)` statistic.
+Proof: `test-grow-data-lifecycle.sh --case native-readers`.
 
 The monitoring service uses its own duration ladder (`compute_tier`: raw ≤1 h, `monitoring_measurement_1min` ≤6 h, `monitoring_measurement_5min` above) in `Infrastructure/monitoring-service/monitoring_service/sensor_models.py`. Do not conflate the two consumers.
 

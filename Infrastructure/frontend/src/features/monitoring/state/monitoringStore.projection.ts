@@ -84,14 +84,14 @@ function intervalProjectionTimeline(
   if (validUntil) {
     for (const series of [...climate.values(), ...lights.values()]) {
       series.steps.push({
-        timestamp: validUntil,
+        time: validUntil,
         value: null,
         provenance: { ...PROJECTED, quality: 'unavailable' },
       })
     }
   }
   if (validUntil)
-    photoperiod.push({ timestamp: validUntil, phase: 'UNKNOWN', provenance: PROJECTED })
+    photoperiod.push({ time: validUntil, phase: 'UNKNOWN', provenance: PROJECTED })
 
   return {
     history: {
@@ -143,13 +143,13 @@ export function richProjectionTimeline(trajectory: RichTrajectoryEnvelope): Proj
   const validUntil = trajectory.window.end
   for (const series of [...climate.values(), ...lights.values()]) {
     series.steps.push({
-      timestamp: validUntil,
+      time: validUntil,
       value: null,
       provenance: { ...PROJECTED, quality: 'unavailable' },
     })
   }
   if (photoperiod.length > 0)
-    photoperiod.push({ timestamp: validUntil, phase: 'UNKNOWN', provenance: PROJECTED })
+    photoperiod.push({ time: validUntil, phase: 'UNKNOWN', provenance: PROJECTED })
   return {
     history: {
       range: { start: trajectory.window.start, end: validUntil },
@@ -252,7 +252,7 @@ function appendRichPhotoperiod(
   if (segment.shape === 'linear') return
   const phase = segment.shape === 'unavailable' ? 'UNKNOWN' : segment.value === 1 ? 'SUN' : 'MOON'
   photoperiod.push({
-    timestamp: segment.start,
+    time: segment.start,
     phase,
     provenance: { ...PROJECTED, quality: segment.quality },
   })
@@ -265,7 +265,7 @@ function appendRichSegment(
   const provenance = { ...PROJECTED, quality: segment.quality }
   switch (segment.shape) {
     case 'step':
-      series.steps.push({ timestamp: segment.start, value: segment.value, provenance })
+      series.steps.push({ time: segment.start, value: segment.value, provenance })
       return
     case 'linear':
       series.linear.push({
@@ -277,7 +277,7 @@ function appendRichSegment(
       })
       return
     case 'unavailable':
-      series.steps.push({ timestamp: segment.start, value: null, provenance })
+      series.steps.push({ time: segment.start, value: null, provenance })
       return
     default:
       return assertNever(segment)
@@ -307,7 +307,7 @@ function appendInterval(
     if (climateDefinition) {
       const series = climate.get(climateDefinition.metric) ?? climateSeries(climateDefinition.name)
       series.steps.push({
-        timestamp: point.valid_from,
+        time: point.valid_from,
         value: point.value,
         provenance: { ...PROJECTED, quality: point.quality },
       })
@@ -320,7 +320,7 @@ function appendInterval(
     if (lightName) {
       const series = lights.get(lightName) ?? lightSeries(lightName)
       series.steps.push({
-        timestamp: point.valid_from,
+        time: point.valid_from,
         value: point.value,
         provenance: { ...PROJECTED, quality: point.quality },
       })
@@ -329,7 +329,7 @@ function appendInterval(
     }
     if (point.series_id.value === 'light.photoperiod') {
       photoperiod.push({
-        timestamp: point.valid_from,
+        time: point.valid_from,
         phase:
           point.quality === 'estimated' && point.value === 1
             ? 'SUN'

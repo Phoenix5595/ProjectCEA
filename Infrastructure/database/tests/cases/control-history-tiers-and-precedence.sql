@@ -3,12 +3,12 @@
 \ir ../../monitoring_read_models.sql
 
 INSERT INTO monitoring_photoperiod_coverage
-    (observed_at, location, cluster, state, reason, runtime_snapshot_version)
+    ("time", location, cluster, state, reason, runtime_snapshot_version)
 VALUES ('2026-01-01T00:00:00Z', 'Flower Room', 'main', 'available', 'initial', 1)
 ON CONFLICT DO NOTHING;
 \ir ../../monitoring_read_models.sql
 INSERT INTO monitoring_photoperiod_coverage
-    (observed_at, location, cluster, state, reason, runtime_snapshot_version)
+    ("time", location, cluster, state, reason, runtime_snapshot_version)
 VALUES ('2026-01-01T00:00:00Z', 'Flower Room', 'main', 'available', 'initial', 1)
 ON CONFLICT DO NOTHING;
 
@@ -19,21 +19,21 @@ BEGIN
     END IF;
     BEGIN
         INSERT INTO monitoring_photoperiod_coverage
-            (observed_at, location, cluster, state, reason, runtime_snapshot_version)
+            ("time", location, cluster, state, reason, runtime_snapshot_version)
         VALUES ('2026-01-01T00:01:00Z', 'Flower Room', 'main', 'invalid', 'initial', 1);
         RAISE EXCEPTION 'invalid coverage state was accepted';
     EXCEPTION WHEN check_violation THEN NULL;
     END;
     BEGIN
         INSERT INTO monitoring_photoperiod_coverage
-            (observed_at, location, cluster, state, reason, runtime_snapshot_version)
+            ("time", location, cluster, state, reason, runtime_snapshot_version)
         VALUES ('2026-01-01T00:01:00Z', 'Flower Room', 'main', 'unavailable', 'heartbeat', 1);
         RAISE EXCEPTION 'invalid coverage reason was accepted';
     EXCEPTION WHEN check_violation THEN NULL;
     END;
     BEGIN
         INSERT INTO monitoring_photoperiod_coverage
-            (observed_at, location, cluster, state, reason, runtime_snapshot_version)
+            ("time", location, cluster, state, reason, runtime_snapshot_version)
         VALUES ('2026-01-01T00:01:00Z', 'Flower Room', 'main', 'unavailable', 'stopped', -1);
         RAISE EXCEPTION 'negative coverage snapshot version was accepted';
     EXCEPTION WHEN check_violation THEN NULL;

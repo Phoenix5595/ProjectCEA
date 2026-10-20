@@ -38,7 +38,7 @@ function observation(
 ): RelayTimelineTransition {
   return {
     observation_id: observationId,
-    observed_at: new Date(BASE_MS + seconds * 1_000),
+    time: new Date(BASE_MS + seconds * 1_000),
     channel,
     observed_state: observedState,
     reason,
@@ -333,7 +333,7 @@ describe('requested PID output step segments', () => {
   ): RelayTimelineLoadPoint => ({
     device_id: deviceId,
     device_name: deviceName,
-    timestamp: new Date(BASE_MS + seconds * 1_000),
+    time: new Date(BASE_MS + seconds * 1_000),
     requested_percent: percent,
     aggregated: false,
     interval_seconds: 30,
@@ -399,7 +399,7 @@ describe('requested PID output step segments', () => {
         {
           device_id: 103,
           device_name: 'veg_co2',
-          timestamp: new Date(BASE_MS + 60_000),
+          time: new Date(BASE_MS + 60_000),
           requested_percent: 50,
           aggregated: true,
           interval_seconds: 60,
@@ -420,7 +420,7 @@ describe('requested PID output step segments', () => {
         {
           device_id: DEVICE.deviceId,
           device_name: DEVICE.deviceName,
-          timestamp: new Date(BASE_MS + 60_000),
+          time: new Date(BASE_MS + 60_000),
           requested_percent: 50,
           requested_min_percent: 30,
           requested_max_percent: 80,
@@ -430,7 +430,7 @@ describe('requested PID output step segments', () => {
         {
           device_id: DEVICE.deviceId,
           device_name: DEVICE.deviceName,
-          timestamp: new Date(BASE_MS + 120_000),
+          time: new Date(BASE_MS + 120_000),
           requested_percent: 25,
           requested_min_percent: 25,
           requested_max_percent: 25,
@@ -469,7 +469,7 @@ describe('requested PID output step segments', () => {
         {
           device_id: DEVICE.deviceId,
           device_name: DEVICE.deviceName,
-          timestamp: new Date(BASE_MS + 60_000),
+          time: new Date(BASE_MS + 60_000),
           requested_percent: 40,
           requested_min_percent: null,
           requested_max_percent: null,

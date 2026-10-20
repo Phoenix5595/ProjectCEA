@@ -574,7 +574,7 @@ async def get_pid_parameter_history_v2(
         limit: Maximum number of history entries to return (default: 100)
 
     Returns:
-        List of history entries with timestamp, kp, ki, kd, updated_by, source
+        List of history entries with changed_at, kp, ki, kd, updated_by, source
     """
     return await _get_pid_parameter_history(location, cluster, device_type, limit, database)
 

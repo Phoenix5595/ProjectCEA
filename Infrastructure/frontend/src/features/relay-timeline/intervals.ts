@@ -114,7 +114,7 @@ const VALID_BASELINE_REASONS: Record<string, true> = {
 }
 
 function compareTransition(a: RelayTimelineTransition, b: RelayTimelineTransition): number {
-  const timeDelta = a.observed_at.getTime() - b.observed_at.getTime()
+  const timeDelta = a.time.getTime() - b.time.getTime()
   return timeDelta || a.observation_id - b.observation_id
 }
 
@@ -186,7 +186,7 @@ export function buildRelayLaneIntervals(input: {
 
   const anchorCandidates = [
     ...input.anchors,
-    ...input.transitions.filter(transition => transition.observed_at.getTime() < start),
+    ...input.transitions.filter(transition => transition.time.getTime() < start),
   ]
   const channelAnchor = latestTransition(
     anchorCandidates,
@@ -194,7 +194,7 @@ export function buildRelayLaneIntervals(input: {
   )
   const heartbeatAnchor = latestTransition(
     anchorCandidates,
-    transition => transition.reason === 'heartbeat' && transition.observed_at.getTime() <= start
+    transition => transition.reason === 'heartbeat' && transition.time.getTime() <= start
   )
   const anchorMatches =
     channelAnchor !== null &&
@@ -205,8 +205,8 @@ export function buildRelayLaneIntervals(input: {
     anchorMatches &&
     heartbeatAnchor !== null &&
     heartbeatAnchor.session_id === channelAnchor.session_id &&
-    heartbeatAnchor.observed_at.getTime() <= start &&
-    start - heartbeatAnchor.observed_at.getTime() <= HEARTBEAT_MAX_GAP_MS
+    heartbeatAnchor.time.getTime() <= start &&
+    start - heartbeatAnchor.time.getTime() <= HEARTBEAT_MAX_GAP_MS
 
   let cursor = start
   let state: boolean | null = heartbeatSupportsAnchor
@@ -214,7 +214,7 @@ export function buildRelayLaneIntervals(input: {
     : null
   let sessionId: string | null = heartbeatAnchor?.session_id ?? channelAnchor?.session_id ?? null
   let lastSupportAt = heartbeatSupportsAnchor
-    ? (heartbeatAnchor?.observed_at.getTime() ?? null)
+    ? (heartbeatAnchor?.time.getTime() ?? null)
     : null
   let partialStart = state !== null
   let activeReason: string | null = state === null ? 'no supported baseline' : null
@@ -290,7 +290,7 @@ export function buildRelayLaneIntervals(input: {
 
   const observations = input.transitions
     .filter(transition => {
-      const instant = transition.observed_at.getTime()
+      const instant = transition.time.getTime()
       return (
         instant >= start &&
         instant < dataEnd &&
@@ -301,7 +301,7 @@ export function buildRelayLaneIntervals(input: {
     .sort(compareTransition)
 
   for (const transition of observations) {
-    const instant = transition.observed_at.getTime()
+    const instant = transition.time.getTime()
     expireBefore(instant)
 
     if (sessionId !== null && transition.session_id !== sessionId) {
@@ -455,18 +455,18 @@ export function buildRequestedOutputSegments(input: {
       point =>
         point.device_id === input.deviceId &&
         point.device_name === input.deviceName &&
-        point.timestamp.getTime() < end
+        point.time.getTime() < end
     )
     .slice()
-    .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+    .sort((a, b) => a.time.getTime() - b.time.getTime())
   const segments: RequestedOutputSegment[] = []
 
   for (let index = 0; index < points.length; index += 1) {
     const point = points[index]
     if (!point || point.requested_percent === null) continue
-    const pointAt = point.timestamp.getTime()
+    const pointAt = point.time.getTime()
     const next = points[index + 1]
-    const nextAt = next?.timestamp.getTime()
+    const nextAt = next?.time.getTime()
     const maxHoldEnd = pointAt + point.interval_seconds * 2_000
     const segmentEnd = nextAt !== undefined && nextAt <= maxHoldEnd ? nextAt : maxHoldEnd
     const clippedStart = Math.max(start, pointAt)

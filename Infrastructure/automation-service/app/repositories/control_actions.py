@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 # Source: Infrastructure/database/cea_schema.sql (automation_state table).
 # If a migration adds/removes columns, update this list.
 AUTOMATION_STATE_COLUMNS = [
-    "timestamp",
+    "time",
     "location",
     "cluster",
     "device_name",
@@ -73,7 +73,7 @@ class ControlActionRepository(BaseRepository):
                 await conn.execute(
                     """
                     INSERT INTO control_history
-                    (timestamp, location, cluster, device_name, channel, old_state, new_state, mode, reason, sensor_value, setpoint, load_percent, manual_expires_at)
+                    ("time", location, cluster, device_name, channel, old_state, new_state, mode, reason, sensor_value, setpoint, load_percent, manual_expires_at)
                     VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                 """,
                     location,
@@ -111,7 +111,7 @@ class ControlActionRepository(BaseRepository):
                 await conn.execute(
                     """
                     INSERT INTO control_history
-                    (timestamp, location, cluster, device_name, channel, old_state, new_state, mode, reason)
+                    ("time", location, cluster, device_name, channel, old_state, new_state, mode, reason)
                     VALUES (NOW(), $1, $2, $3, $4, $5, $5, $6, $7)
                     """,
                     location,
@@ -142,7 +142,7 @@ class ControlActionRepository(BaseRepository):
                 await conn.execute(
                     """
                     INSERT INTO control_history
-                    (timestamp, location, cluster, device_name, channel, old_state, new_state, mode, reason)
+                    ("time", location, cluster, device_name, channel, old_state, new_state, mode, reason)
                     VALUES (NOW(), $1, $2, $3, $4, $5, $5, $6, 'relay_observation_recovered')
                     """,
                     location,
@@ -180,7 +180,7 @@ class ControlActionRepository(BaseRepository):
                 await conn.execute(
                     """
                     INSERT INTO control_history
-                    (timestamp, location, cluster, device_name, channel, old_state, new_state, mode, reason)
+                    ("time", location, cluster, device_name, channel, old_state, new_state, mode, reason)
                     VALUES (NOW(), $1, $2, $3, -1, $4, $5, $6, $7)
                     """,
                     location or "system",
@@ -214,10 +214,10 @@ class ControlActionRepository(BaseRepository):
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(
                     """
-                    SELECT timestamp, location, cluster, device_name, old_state, new_state, mode, reason, load_percent
+                    SELECT "time", location, cluster, device_name, old_state, new_state, mode, reason, load_percent
                     FROM control_history
                     WHERE location = $1 AND cluster = $2 AND channel >= 0
-                    ORDER BY timestamp DESC
+                    ORDER BY "time" DESC
                     LIMIT $3
                     """,
                     location,
@@ -226,10 +226,10 @@ class ControlActionRepository(BaseRepository):
                 )
                 out: list[dict[str, Any]] = []
                 for row in rows:
-                    ts = row["timestamp"]
+                    ts = row["time"]
                     out.append(
                         {
-                            "timestamp": ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
+                            "time": ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
                             "location": row["location"],
                             "cluster": row["cluster"],
                             "device_name": row["device_name"],
@@ -269,7 +269,7 @@ class ControlActionRepository(BaseRepository):
                 conn.transaction(isolation="repeatable_read", readonly=True),
             ):
                 query = """
-                    SELECT timestamp, location, cluster, device_name, old_state, new_state, mode, reason, load_percent, channel
+                    SELECT "time", location, cluster, device_name, old_state, new_state, mode, reason, load_percent, channel
                     FROM control_history
                     WHERE location = $1 AND cluster = $2 AND channel >= 0
                 """
@@ -281,20 +281,20 @@ class ControlActionRepository(BaseRepository):
                     params.append(channel)
                     param_idx += 1
                 if since is not None:
-                    query += f" AND timestamp >= ${param_idx}"
+                    query += f' AND "time" >= ${param_idx}'
                     params.append(since_at)
                     param_idx += 1
                 if until is not None:
-                    query += f" AND timestamp <= ${param_idx}"
+                    query += f' AND "time" <= ${param_idx}'
                     params.append(until_at)
                     param_idx += 1
 
-                query += f" ORDER BY timestamp DESC LIMIT ${param_idx}"
+                query += f' ORDER BY "time" DESC LIMIT ${param_idx}'
                 params.append(limit)
 
                 rows = await conn.fetch(query, *params)
                 oldest = min(
-                    (row["timestamp"] for row in rows), default=datetime.min.replace(tzinfo=UTC)
+                    (row["time"] for row in rows), default=datetime.min.replace(tzinfo=UTC)
                 )
                 await require_local_history(
                     conn,
@@ -305,10 +305,10 @@ class ControlActionRepository(BaseRepository):
                 )
                 out: list[dict[str, Any]] = []
                 for row in rows:
-                    ts = row["timestamp"]
+                    ts = row["time"]
                     out.append(
                         {
-                            "timestamp": ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
+                            "time": ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
                             "location": row["location"],
                             "cluster": row["cluster"],
                             "device_name": row["device_name"],
@@ -342,10 +342,10 @@ class ControlActionRepository(BaseRepository):
         try:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch("""
-                    SELECT channel, MAX(timestamp) AS last_changed
+                    SELECT channel, MAX("time") AS last_changed
                     FROM control_history
                     WHERE channel BETWEEN 0 AND 15
-                      AND timestamp > NOW() - INTERVAL '30 days'
+                      AND "time" > NOW() - INTERVAL '30 days'
                     GROUP BY channel
                     ORDER BY channel
                 """)
@@ -443,7 +443,7 @@ class ControlActionRepository(BaseRepository):
                     await conn.execute(
                         """
                         INSERT INTO automation_state
-                        (timestamp, location, cluster, device_name, device_state, device_mode,
+                        ("time", location, cluster, device_name, device_state, device_mode,
                          pid_output, duty_cycle_percent, active_rule_ids, active_schedule_ids,
                          control_reason, schedule_ramp_up_duration, schedule_ramp_down_duration,
                          schedule_photoperiod_hours, pid_kp, pid_ki, pid_kd, updated_at)
@@ -471,7 +471,7 @@ class ControlActionRepository(BaseRepository):
                     await conn.execute(
                         """
                         INSERT INTO automation_state
-                        (timestamp, location, cluster, device_name, device_state, device_mode,
+                        ("time", location, cluster, device_name, device_state, device_mode,
                          pid_output, duty_cycle_percent, active_rule_ids, active_schedule_ids,
                          control_reason, updated_at)
                         VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
@@ -520,7 +520,7 @@ class ControlActionRepository(BaseRepository):
                 for r in records:
                     rows.append(
                         (
-                            r.get("timestamp", datetime.now()),
+                            r.get("time", datetime.now()),
                             r["location"],
                             r["cluster"],
                             r["device_name"],

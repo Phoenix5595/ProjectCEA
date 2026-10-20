@@ -20,11 +20,11 @@ export function lightRangeHistoryFixture(room: string, start: string, end: strin
       points: [],
       steps: index === 0
         ? [
-            { timestamp: start, value: 10, provenance: recorded },
-            { timestamp: timestamp(-30), value: null, provenance: { ...recorded, quality: 'unavailable' } },
-            { timestamp: timestamp(-1), value: 70, provenance: recorded },
+            { time: start, value: 10, provenance: recorded },
+            { time: timestamp(-30), value: null, provenance: { ...recorded, quality: 'unavailable' } },
+            { time: timestamp(-1), value: 70, provenance: recorded },
           ]
-        : [{ timestamp: start, value: index === 1 ? 25 : 60, provenance: recorded }],
+        : [{ time: start, value: index === 1 ? 25 : 60, provenance: recorded }],
       linear: index === 0
         ? [
             // Wide enough to exercise actual hovering at the 7d pixel scale.

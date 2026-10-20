@@ -56,7 +56,7 @@ describe('relay timeline Zod contract', () => {
         transitions: [
           {
             observation_id: 1,
-            observed_at: START,
+            time: START,
             channel: 0,
             observed_state: false,
             reason: 'heartbeat',
@@ -77,7 +77,7 @@ describe('relay timeline Zod contract', () => {
     const load = (bounds?: { min: number | null; max: number | null }): unknown => ({
       device_id: 101,
       device_name: 'veg_heater',
-      timestamp: START,
+      time: START,
       requested_percent: 40,
       aggregated: true,
       interval_seconds: 60,

@@ -68,6 +68,8 @@ class CaggStatisticsDatabase:
         self, query: str, *_: str | int | float | datetime | timedelta
     ) -> list[asyncpg.Record]:
         self.queries.append(query)
+        if "materialization_watermark" in query:
+            return [{"materialization_watermark": None}]
         return [
             {
                 "sensor": "dry_bulb",
@@ -125,7 +127,7 @@ async def test_long_window_statistics_serialize_the_exact_quality_label() -> Non
     statistics = await repository.statistics("Flower Room", monitoring_range)
 
     # Then: sufficient-stat results are labelled exact in the serialized UI contract
-    assert len(database.queries) == 1
+    assert len(database.queries) == 3
     assert statistics[0].model_dump(mode="json")["stddev_quality"] == "exact"
     assert statistics[0].stddev_samp == pytest.approx(2**0.5, rel=1e-9)
 
@@ -195,7 +197,29 @@ async def test_cagg_watermark_cache_isolated_by_relation_name() -> None:
 
 
 @pytest.mark.anyio
-async def test_cagg_series_rejects_insufficient_coverage_before_querying_series() -> None:
+async def test_five_minute_frontier_is_limited_by_its_one_minute_parent() -> None:
+    # Given: the five-minute child is ahead of its one-minute source parent
+    child_watermark = datetime(2026, 8, 24, 14, 0, tzinfo=UTC)
+    parent_watermark = child_watermark - timedelta(minutes=15)
+    database = WatermarkDatabase([child_watermark, parent_watermark])
+    relations = frozenset({"monitoring_measurement_5min", "monitoring_measurement_1min"})
+    cache = CaggWatermarkCache(relations, clock=MonotonicClock())
+    repository = SensorMonitoringRepository(database, UnusedRedis(), watermark_cache=cache)
+    monitoring_range = MonitoringRange(
+        start=child_watermark - timedelta(days=7), end=child_watermark
+    )
+
+    # When: the effective five-minute materialization frontier is selected
+    frontier = await repository._require_cagg_coverage(Tier.FIVE_MINUTES, monitoring_range)
+
+    # Then: the lagging parent, not the ahead child, limits aggregate reads
+    assert frontier == parent_watermark - timedelta(minutes=1)
+    assert "monitoring_measurement_5min" in database.calls[0][0]
+    assert "monitoring_measurement_1min" in database.calls[1][0]
+
+
+@pytest.mark.anyio
+async def test_cagg_series_uses_raw_rows_when_range_starts_after_frontier() -> None:
     # Given: a watermark that does not extend beyond the requested start
     watermark = datetime(2026, 8, 24, 14, 0, tzinfo=UTC)
     database = WatermarkDatabase([watermark])
@@ -203,13 +227,15 @@ async def test_cagg_series_rejects_insufficient_coverage_before_querying_series(
     repository = SensorMonitoringRepository(database, UnusedRedis(), watermark_cache=cache)
     monitoring_range = MonitoringRange(start=watermark, end=watermark + timedelta(hours=6))
 
-    # When: a CAGG series request requires coverage
-    with pytest.raises(MonitoringUnavailableError) as error:
-        await repository.series("Flower Room", monitoring_range)
+    # When: the requested range lies at and above the materialization frontier
+    tier, _ = await repository.series("Flower Room", monitoring_range)
 
-    # Then: it retains the 503 contract and never submits a series statement
-    assert error.value.status_code == 503
-    assert len(database.calls) == 1
+    # Then: the response is served through the tiered query's exact raw fallback
+    assert tier is Tier.ONE_MINUTE
+    assert len(database.calls) == 2
+    query, arguments = database.calls[1]
+    assert "FROM measurement" in query
+    assert arguments[-1] == watermark - timedelta(minutes=1)
 
 
 @pytest.mark.anyio

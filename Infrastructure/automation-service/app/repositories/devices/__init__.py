@@ -113,7 +113,7 @@ class DeviceRepository(BaseRepository, RegistryMixin, LightRegistryMixin):
                 row = await conn.fetchrow(
                     """SELECT effective_light_intensity FROM effective_setpoints
                        WHERE location = $1 AND cluster = $2 AND device_name = $3
-                       ORDER BY timestamp DESC LIMIT 1""",
+                       ORDER BY "time" DESC LIMIT 1""",
                     location,
                     cluster,
                     device_name,

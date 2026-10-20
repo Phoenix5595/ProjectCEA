@@ -121,7 +121,7 @@ function latestRequestedPoint(
 ): RelayTimelineResponse['load'][number] | null {
   let latest: RelayTimelineResponse['load'][number] | null = null
   for (const point of points) {
-    const timestamp = point.timestamp.getTime()
+    const timestamp = point.time.getTime()
     if (
       point.device_id !== lane.deviceId ||
       point.device_name !== lane.deviceName ||
@@ -129,7 +129,7 @@ function latestRequestedPoint(
     ) {
       continue
     }
-    if (latest === null || timestamp > latest.timestamp.getTime()) latest = point
+    if (latest === null || timestamp > latest.time.getTime()) latest = point
   }
   return latest
 }
@@ -458,7 +458,7 @@ function RelayTimelineDetail({
           ageSeconds:
             point === null
               ? null
-              : Math.max(0, (outputReferenceMs - point.timestamp.getTime()) / 1000),
+              : Math.max(0, (outputReferenceMs - point.time.getTime()) / 1000),
         }
       })
   }, [currentHistory, currentLanes, outputReferenceMs])

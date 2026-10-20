@@ -22,6 +22,14 @@ It may read TimescaleDB and Redis publication data; it never writes either.
 - `GET /health` is process liveness only.
 - `GET /ready` returns independent `database` and `redis` check results and
   uses HTTP 503 when either read dependency is unavailable.
+- Recorded control/tail and relay-timeline row facts expose event times as
+  `time`; live-publication and sensor-series time fields retain their existing
+  contracts.
+- Aggregate-backed control and relay-PID reads split at each CAGG materialization
+  watermark and use raw source rows at or above it while backfill is incomplete.
+- Sensor series and long-window statistics use the five-minute CAGG only below
+  the minimum watermark of its five-minute/one-minute chain and replace
+  above-frontier or parent-invalidated buckets with exact raw rows.
 - Keep package imports direct (`monitoring_service.*`), not sibling-service or
   `sys.path` imports.
 

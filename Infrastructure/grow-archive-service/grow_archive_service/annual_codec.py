@@ -7,6 +7,7 @@ container through the ordinary single-dataset ZIP verifier would recurse once
 the codec dispatch is installed, and extracting children would create an
 unbounded copy of a potentially multi-GiB archive.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping
@@ -25,6 +26,7 @@ from . import parquet_codec as _codec
 from .arrow_fields import arrow_schema, binary_rows_from_batch
 from .binary_codec import canonical
 from .manifest import ArchiveManifest
+from .annual import schema_descriptors_compatible
 
 FORMAT = _codec.FORMAT
 MAX_MANIFEST = _codec.MAX_MANIFEST
@@ -180,17 +182,21 @@ def _merge_schema(target: dict[str, Any], value: Any, label: str) -> None:
         if _TABLE.fullmatch(table) is None or not isinstance(descriptor, Mapping):
             _bad(f"invalid {label} schema descriptor")
         existing = target.get(table)
-        if existing is not None and _canonical_json(existing) != _canonical_json(descriptor):
+        if existing is not None and not schema_descriptors_compatible(existing, descriptor):
             _bad(f"annual child {label} schema mismatch")
         target[table] = descriptor
 
 
-def _child_specs(manifest: Mapping[str, Any]) -> tuple[tuple[Mapping[str, Any], Mapping[str, Any], str], ...]:
+def _child_specs(
+    manifest: Mapping[str, Any],
+) -> tuple[tuple[Mapping[str, Any], Mapping[str, Any], str], ...]:
     """Validate the annual envelope and return trusted (component, child, prefix) triples."""
     if manifest.get("format") != FORMAT or manifest.get("kind") != "veg_year":
         _bad("not an sj-cea-history/1 annual Veg manifest")
     _canonical_uuid(manifest.get("dataset_id"), "annual dataset")
-    if not _positive_int(manifest.get("revision")) or not _positive_int(manifest.get("calendar_revision")):
+    if not _positive_int(manifest.get("revision")) or not _positive_int(
+        manifest.get("calendar_revision")
+    ):
         _bad("invalid annual revision")
     year = manifest.get("calendar_year")
     if type(year) is not int or not 1 <= year <= 9998:
@@ -224,16 +230,25 @@ def _child_specs(manifest: Mapping[str, Any]) -> tuple[tuple[Mapping[str, Any], 
         if not _positive_int(component.get("revision")):
             _bad("invalid component revision")
         revision = component["revision"]
-        if (child.get("format") != FORMAT or child.get("kind") != "veg_quarter"
-                or child.get("dataset_id") != str(child_id) or child.get("revision") != revision
-                or child.get("timezone") != "America/Toronto" or child.get("room") != room):
+        if (
+            child.get("format") != FORMAT
+            or child.get("kind") != "veg_quarter"
+            or child.get("dataset_id") != str(child_id)
+            or child.get("revision") != revision
+            or child.get("timezone") != "America/Toronto"
+            or child.get("room") != room
+        ):
             _bad("component manifest identity, kind, room, or timezone mismatch")
         if not _positive_int(revision) or not _positive_int(child.get("revision")):
             _bad("invalid component manifest revision")
         year_in_child = child.get("calendar_year", year)
         quarter_in_child = child.get("quarter", index)
-        if (type(year_in_child) is not int or type(quarter_in_child) is not int
-                or year_in_child != year or quarter_in_child != index):
+        if (
+            type(year_in_child) is not int
+            or type(quarter_in_child) is not int
+            or year_in_child != year
+            or quarter_in_child != index
+        ):
             _bad("component calendar year/quarter mismatch")
         _digest(component.get("sha256"), "component ZIP")
         if not _positive_int(component.get("byte_size")) or component["byte_size"] > MAX_TOTAL:
@@ -264,8 +279,9 @@ def _child_specs(manifest: Mapping[str, Any]) -> tuple[tuple[Mapping[str, Any], 
     return tuple(result)
 
 
-def annual_component(manifest: Mapping[str, Any] | ArchiveManifest,
-                     component_dataset_id: UUID) -> tuple[Mapping[str, Any], str]:
+def annual_component(
+    manifest: Mapping[str, Any] | ArchiveManifest, component_dataset_id: UUID
+) -> tuple[Mapping[str, Any], str]:
     """Resolve a child by immutable catalog UUID, never by a caller-supplied prefix.
 
     ``manifest`` must come from a completed annual verification. The returned
@@ -275,15 +291,19 @@ def annual_component(manifest: Mapping[str, Any] | ArchiveManifest,
     if not isinstance(component_dataset_id, UUID):
         _bad("component lookup requires a UUID")
     specs = _child_specs(_mapping(data, "annual manifest"))
-    found = [(child, prefix) for component, child, prefix in specs
-             if UUID(str(component["dataset_id"])) == component_dataset_id]
+    found = [
+        (child, prefix)
+        for component, child, prefix in specs
+        if UUID(str(component["dataset_id"])) == component_dataset_id
+    ]
     if len(found) != 1:
         _bad("annual component dataset is absent or ambiguous")
     return found[0]
 
 
-def annual_member_inventory(manifest: Mapping[str, Any] | ArchiveManifest
-                            ) -> tuple[tuple[Mapping[str, Any], Mapping[str, Any], str], ...]:
+def annual_member_inventory(
+    manifest: Mapping[str, Any] | ArchiveManifest,
+) -> tuple[tuple[Mapping[str, Any], Mapping[str, Any], str], ...]:
     """Return trusted (component, child inventory entry, prefixed name) triples."""
     data = manifest.data if isinstance(manifest, ArchiveManifest) else manifest
     specs = _child_specs(_mapping(data, "annual manifest"))
@@ -317,20 +337,29 @@ def _validated_member_entry(value: Any, manifest: Mapping[str, Any]) -> Mapping[
     role = entry.get("record_role")
     if role not in ("schema", "observation", "context", "graph"):
         _bad("invalid component record role")
-    if not _nonnegative_int(entry.get("row_count")) or not _nonnegative_int(entry.get("decoded_bytes")):
+    if not _nonnegative_int(entry.get("row_count")) or not _nonnegative_int(
+        entry.get("decoded_bytes")
+    ):
         _bad("invalid component row/decoded count")
     if not _positive_int(entry.get("byte_size")) or entry["byte_size"] > MAX_MEMBER:
         _bad("component member size limit exceeded")
     for key in ("sha256", "canonical_sha256", "schema_sha256"):
         _digest(entry.get(key), f"component member {key}")
     if role == "schema":
-        if (name != "schema.json" or entry.get("source_table") is not None
-                or entry["row_count"] != 0 or entry["decoded_bytes"] != entry["byte_size"]
-                or entry["sha256"] != entry["canonical_sha256"]
-                or entry["sha256"] != entry["schema_sha256"]):
+        if (
+            name != "schema.json"
+            or entry.get("source_table") is not None
+            or entry["row_count"] != 0
+            or entry["decoded_bytes"] != entry["byte_size"]
+            or entry["sha256"] != entry["canonical_sha256"]
+            or entry["sha256"] != entry["schema_sha256"]
+        ):
             _bad("invalid component schema inventory entry")
     else:
-        if not isinstance(entry.get("source_table"), str) or _TABLE.fullmatch(entry["source_table"]) is None:
+        if (
+            not isinstance(entry.get("source_table"), str)
+            or _TABLE.fullmatch(entry["source_table"]) is None
+        ):
             _bad("invalid component source table")
         if not isinstance(entry.get("partition_field", False), bool):
             _bad("invalid component partition flag")
@@ -349,8 +378,9 @@ def _validated_member_entry(value: Any, manifest: Mapping[str, Any]) -> Mapping[
     return entry
 
 
-def _validate_annual_metadata(manifest: Mapping[str, Any], annual_schema_size: int) -> tuple[
-        tuple[tuple[Mapping[str, Any], Mapping[str, Any], str], ...], dict[str, Any]]:
+def _validate_annual_metadata(
+    manifest: Mapping[str, Any], annual_schema_size: int
+) -> tuple[tuple[tuple[Mapping[str, Any], Mapping[str, Any], str], ...], dict[str, Any]]:
     specs = _child_specs(manifest)
     annual_observations: dict[str, int] = {}
     annual_contexts: dict[str, int] = {}
@@ -402,7 +432,10 @@ def _validate_annual_metadata(manifest: Mapping[str, Any], annual_schema_size: i
         _bad("annual source schema differs from its components")
     if _canonical_json(manifest.get("graph_schema")) != _canonical_json(graph_schema):
         _bad("annual graph schema differs from its components")
-    if _count_map(manifest.get("observation_counts"), "annual observation counts") != annual_observations:
+    if (
+        _count_map(manifest.get("observation_counts"), "annual observation counts")
+        != annual_observations
+    ):
         _bad("annual observation totals differ from its components")
     if _count_map(manifest.get("context_counts"), "annual context counts") != annual_contexts:
         _bad("annual context totals differ from its components")
@@ -416,14 +449,18 @@ def _validate_annual_metadata(manifest: Mapping[str, Any], annual_schema_size: i
     if manifest.get("coverage") != coverage:
         _bad("annual coverage differs from its components")
     expected_decoded = child_decoded_total + annual_schema_size
-    if (expected_decoded > MAX_TOTAL or not _nonnegative_int(manifest.get("decoded_bytes"))
-            or manifest["decoded_bytes"] != expected_decoded):
+    if (
+        expected_decoded > MAX_TOTAL
+        or not _nonnegative_int(manifest.get("decoded_bytes"))
+        or manifest["decoded_bytes"] != expected_decoded
+    ):
         _bad("annual decoded byte total mismatch")
     return specs, schema_document
 
 
-def _read_limited(archive: zipfile.ZipFile, name: str, info: zipfile.ZipInfo,
-                  limit: int, label: str) -> bytes:
+def _read_limited(
+    archive: zipfile.ZipFile, name: str, info: zipfile.ZipInfo, limit: int, label: str
+) -> bytes:
     if info.file_size > limit:
         _bad(f"{label} size limit exceeded")
     with archive.open(name, "r") as member:
@@ -447,7 +484,9 @@ def _parse_canonical_json(data: bytes, label: str) -> Any:
     return value
 
 
-def _validate_zip_inventory(archive: zipfile.ZipFile) -> tuple[list[zipfile.ZipInfo], dict[str, zipfile.ZipInfo]]:
+def _validate_zip_inventory(
+    archive: zipfile.ZipFile,
+) -> tuple[list[zipfile.ZipInfo], dict[str, zipfile.ZipInfo]]:
     entries = archive.infolist()
     names = [entry.filename for entry in entries]
     if len(entries) > 100000 or len(names) != len(set(names)):
@@ -456,9 +495,14 @@ def _validate_zip_inventory(archive: zipfile.ZipFile) -> tuple[list[zipfile.ZipI
     by_name: dict[str, zipfile.ZipInfo] = {}
     for entry in entries:
         mode = stat.S_IFMT(entry.external_attr >> 16)
-        if (not _codec._safe_member(entry.filename) or mode == stat.S_IFLNK
-                or mode not in (0, stat.S_IFREG) or entry.flag_bits & 0x1
-                or entry.file_size > MAX_MEMBER or entry.compress_type != zipfile.ZIP_STORED):
+        if (
+            not _codec._safe_member(entry.filename)
+            or mode == stat.S_IFLNK
+            or mode not in (0, stat.S_IFREG)
+            or entry.flag_bits & 0x1
+            or entry.file_size > MAX_MEMBER
+            or entry.compress_type != zipfile.ZIP_STORED
+        ):
             _bad("unsafe or unsupported annual ZIP member")
         total += entry.file_size
         if total > MAX_TOTAL:
@@ -466,13 +510,17 @@ def _validate_zip_inventory(archive: zipfile.ZipFile) -> tuple[list[zipfile.ZipI
         by_name[entry.filename] = entry
     if len(entries) < 2 or names[-1] != "manifest.json" or "schema.json" not in by_name:
         _bad("annual manifest must be last and schema.json must exist")
-    if by_name["manifest.json"].file_size > MAX_MANIFEST or by_name["schema.json"].file_size > MAX_MANIFEST:
+    if (
+        by_name["manifest.json"].file_size > MAX_MANIFEST
+        or by_name["schema.json"].file_size > MAX_MANIFEST
+    ):
         _bad("annual manifest/schema limit exceeded")
     return entries, by_name
 
 
-def _hash_member_steps(archive: zipfile.ZipFile, name: str,
-                       checkpoint: Callable[[], None] | None) -> Iterator[dict[str, Any]]:
+def _hash_member_steps(
+    archive: zipfile.ZipFile, name: str, checkpoint: Callable[[], None] | None
+) -> Iterator[dict[str, Any]]:
     digest = hashlib.sha256()
     size = 0
     with archive.open(name, "r") as member:
@@ -486,10 +534,15 @@ def _hash_member_steps(archive: zipfile.ZipFile, name: str,
     return size, digest.hexdigest()
 
 
-def _verify_parquet_member_steps(archive: zipfile.ZipFile, name: str,
-                                 entry: Mapping[str, Any], child: Mapping[str, Any],
-                                 dataset_id: UUID, revision: int,
-                                 checkpoint: Callable[[], None] | None) -> Iterator[dict[str, Any]]:
+def _verify_parquet_member_steps(
+    archive: zipfile.ZipFile,
+    name: str,
+    entry: Mapping[str, Any],
+    child: Mapping[str, Any],
+    dataset_id: UUID,
+    revision: int,
+    checkpoint: Callable[[], None] | None,
+) -> Iterator[dict[str, Any]]:
     pa, pq = _codec._arrow()
     role = entry["record_role"]
     table = entry["source_table"]
@@ -497,16 +550,25 @@ def _verify_parquet_member_steps(archive: zipfile.ZipFile, name: str,
     schema_set = child["graph_schema"] if role == "graph" else child["source_schema"]
     descriptor = schema_set[table]
     columns = _codec._columns(descriptor, entry.get("partition_field", False))
-    expected_schema = arrow_schema(pa, columns, descriptor, dataset_id=dataset_id,
-                                   revision=revision, source_table=table, record_role=role)
+    expected_schema = arrow_schema(
+        pa,
+        columns,
+        descriptor,
+        dataset_id=dataset_id,
+        revision=revision,
+        source_table=table,
+        record_role=role,
+    )
     inverse = hashlib.sha256()
     count = 0
     decoded_bytes = 0
     with archive.open(name, "r") as member:
         parquet = pq.ParquetFile(member)
-        if (not parquet.schema_arrow.equals(expected_schema, check_metadata=True)
-                or hashlib.sha256(parquet.schema_arrow.serialize().to_pybytes()).hexdigest()
-                != entry["schema_sha256"]):
+        if (
+            not parquet.schema_arrow.equals(expected_schema, check_metadata=True)
+            or hashlib.sha256(parquet.schema_arrow.serialize().to_pybytes()).hexdigest()
+            != entry["schema_sha256"]
+        ):
             _bad("annual child typed schema mismatch")
         if parquet.metadata.num_rows != entry["row_count"]:
             _bad("annual child Parquet row count mismatch")
@@ -525,35 +587,50 @@ def _verify_parquet_member_steps(archive: zipfile.ZipFile, name: str,
                 count += 1
             _checkpoint(checkpoint)
             yield {"phase": "binary_roundtrip", "member": name, "rows": count}
-    if (count != entry["row_count"] or decoded_bytes != entry["decoded_bytes"]
-            or inverse.hexdigest() != entry["canonical_sha256"]):
+    if (
+        count != entry["row_count"]
+        or decoded_bytes != entry["decoded_bytes"]
+        or inverse.hexdigest() != entry["canonical_sha256"]
+    ):
         _bad("annual child original binary fields, multiplicity, or decoded bytes changed")
     return count, decoded_bytes
 
 
-def _verify_child_member_steps(archive: zipfile.ZipFile, name: str,
-                               entry: Mapping[str, Any], child: Mapping[str, Any],
-                               dataset_id: UUID, revision: int,
-                               checkpoint: Callable[[], None] | None
-                               ) -> Iterator[dict[str, Any]]:
+def _verify_child_member_steps(
+    archive: zipfile.ZipFile,
+    name: str,
+    entry: Mapping[str, Any],
+    child: Mapping[str, Any],
+    dataset_id: UUID,
+    revision: int,
+    checkpoint: Callable[[], None] | None,
+) -> Iterator[dict[str, Any]]:
     member_size, member_sha = yield from _hash_member_steps(archive, name, checkpoint)
     if member_size != entry["byte_size"] or member_sha != entry["sha256"]:
         _bad("annual child original member hash/size mismatch")
     if entry["record_role"] == "schema":
-        expected = _canonical_json({"source_schema": child["source_schema"],
-                                    "graph_schema": child["graph_schema"]})
+        expected = _canonical_json(
+            {"source_schema": child["source_schema"], "graph_schema": child["graph_schema"]}
+        )
         info = archive.getinfo(name)
         actual = _read_limited(archive, name, info, MAX_MANIFEST, "child schema")
         if actual != expected:
             _bad("annual child schema member differs from its manifest")
         return 0, member_size
-    return (yield from _verify_parquet_member_steps(
-        archive, name, entry, child, dataset_id, revision, checkpoint))
+    return (
+        yield from _verify_parquet_member_steps(
+            archive, name, entry, child, dataset_id, revision, checkpoint
+        )
+    )
 
 
-def _verify_child_totals(child: Mapping[str, Any], observed: dict[str, int],
-                         contexts: dict[str, int], per_day: dict[str, dict[str, int]],
-                         decoded: int) -> None:
+def _verify_child_totals(
+    child: Mapping[str, Any],
+    observed: dict[str, int],
+    contexts: dict[str, int],
+    per_day: dict[str, dict[str, int]],
+    decoded: int,
+) -> None:
     if observed != _count_map(child.get("observation_counts"), "component observations"):
         _bad("component observation counts differ from Parquet rows")
     if contexts != _count_map(child.get("context_counts"), "component contexts"):
@@ -564,9 +641,9 @@ def _verify_child_totals(child: Mapping[str, Any], observed: dict[str, int],
         _bad("component decoded byte total differs from Parquet rows")
 
 
-def iter_verify_annual_archive(path: Path, expected_sha256: str | None = None,
-                               checkpoint: Callable[[], None] | None = None
-                               ) -> Iterator[dict[str, Any]]:
+def iter_verify_annual_archive(
+    path: Path, expected_sha256: str | None = None, checkpoint: Callable[[], None] | None = None
+) -> Iterator[dict[str, Any]]:
     """Yield bounded annual ZIP verification steps; consume through ``complete``.
 
     The verifier hashes the whole file and each original child member, checks
@@ -613,18 +690,22 @@ def iter_verify_annual_archive(path: Path, expected_sha256: str | None = None,
     try:
         with archive:
             _entries, by_name = _validate_zip_inventory(archive)
-            manifest_raw = _read_limited(archive, "manifest.json", by_name["manifest.json"],
-                                         MAX_MANIFEST, "annual manifest")
+            manifest_raw = _read_limited(
+                archive, "manifest.json", by_name["manifest.json"], MAX_MANIFEST, "annual manifest"
+            )
             manifest_value = _parse_canonical_json(manifest_raw, "annual manifest")
             manifest = _mapping(manifest_value, "annual manifest")
             if not is_annual_archive_manifest(manifest) or manifest.get("kind") != "veg_year":
                 _bad("annual manifest dispatch mismatch")
             specs = _child_specs(manifest)
 
-            annual_schema_raw = _read_limited(archive, "schema.json", by_name["schema.json"],
-                                              MAX_MANIFEST, "annual schema")
+            annual_schema_raw = _read_limited(
+                archive, "schema.json", by_name["schema.json"], MAX_MANIFEST, "annual schema"
+            )
             annual_schema = _parse_canonical_json(annual_schema_raw, "annual schema")
-            _annual_specs, expected_schema_doc = _validate_annual_metadata(manifest, len(annual_schema_raw))
+            _annual_specs, expected_schema_doc = _validate_annual_metadata(
+                manifest, len(annual_schema_raw)
+            )
             if annual_schema != expected_schema_doc:
                 _bad("annual schema document mismatch")
             if annual_schema_raw != _canonical_json(expected_schema_doc):
@@ -651,7 +732,8 @@ def iter_verify_annual_archive(path: Path, expected_sha256: str | None = None,
                     if name not in by_name:
                         _bad("annual prefixed child member missing")
                     count, decoded = yield from _verify_child_member_steps(
-                        archive, name, entry, child, child_id, revision, checkpoint)
+                        archive, name, entry, child, child_id, revision, checkpoint
+                    )
                     child_decoded += decoded
                     if entry["record_role"] == "observation":
                         table = entry["source_table"]
@@ -662,20 +744,34 @@ def iter_verify_annual_archive(path: Path, expected_sha256: str | None = None,
                     elif entry["record_role"] == "context":
                         table = entry["source_table"]
                         child_contexts[table] = child_contexts.get(table, 0) + count
-                _verify_child_totals(child, child_observations, child_contexts, child_days, child_decoded)
+                _verify_child_totals(
+                    child, child_observations, child_contexts, child_days, child_decoded
+                )
                 _checkpoint(checkpoint)
-                yield {"phase": "component_verified", "dataset_id": str(child_id),
-                       "revision": revision, "member_prefix": prefix}
-            yield {"complete": True, "manifest": manifest, "sha256": sha256,
-                   "byte_size": byte_size}
+                yield {
+                    "phase": "component_verified",
+                    "dataset_id": str(child_id),
+                    "revision": revision,
+                    "member_prefix": prefix,
+                }
+            yield {"complete": True, "manifest": manifest, "sha256": sha256, "byte_size": byte_size}
     except _CheckpointFailure as failure:
         raise failure.original
     except AnnualIntegrityError:
         raise
     except _codec.ArchiveIntegrityError:
         raise
-    except (KeyError, TypeError, ValueError, OverflowError, UnicodeError,
-            zipfile.BadZipFile, RuntimeError, EOFError, OSError) as error:
+    except (
+        KeyError,
+        TypeError,
+        ValueError,
+        OverflowError,
+        UnicodeError,
+        zipfile.BadZipFile,
+        RuntimeError,
+        EOFError,
+        OSError,
+    ) as error:
         raise AnnualIntegrityError("invalid annual structure or typed member") from error
 
 
@@ -692,17 +788,27 @@ def verify_annual_archive(path: Path, expected_sha256: str | None = None) -> Arc
 
 def _zip_member_matches(info: zipfile.ZipInfo, expected_name: str) -> None:
     mode = stat.S_IFMT(info.external_attr >> 16)
-    if (info.filename != expected_name or not _codec._safe_member(info.filename)
-            or mode not in (0, stat.S_IFREG) or info.flag_bits & 0x1
-            or info.compress_type != zipfile.ZIP_STORED or info.file_size > MAX_MEMBER):
+    if (
+        info.filename != expected_name
+        or not _codec._safe_member(info.filename)
+        or mode not in (0, stat.S_IFREG)
+        or info.flag_bits & 0x1
+        or info.compress_type != zipfile.ZIP_STORED
+        or info.file_size > MAX_MEMBER
+    ):
         _bad("annual reader member is unsafe or changed")
 
 
-def _iter_component_binary_rows(path: Path, verified: ArchiveManifest, component_dataset_id: UUID,
-                                *, source_table: str | None = None, graph_kind: str | None = None,
-                                include_member_info: bool = False,
-                                checkpoint: Callable[[], None] | None = None
-                                ) -> Iterator[Any]:
+def _iter_component_binary_rows(
+    path: Path,
+    verified: ArchiveManifest,
+    component_dataset_id: UUID,
+    *,
+    source_table: str | None = None,
+    graph_kind: str | None = None,
+    include_member_info: bool = False,
+    checkpoint: Callable[[], None] | None = None,
+) -> Iterator[Any]:
     if Path(path).is_symlink() or Path(path).stat().st_size != verified.byte_size:
         _bad("verified annual ZIP size changed")
     if not isinstance(verified.sha256, str) or _HEX.fullmatch(verified.sha256) is None:
@@ -725,28 +831,44 @@ def _iter_component_binary_rows(path: Path, verified: ArchiveManifest, component
                 if not _codec._safe_member(member_name):
                     _bad("unsafe annual reader path")
             expected_names = {"manifest.json", "schema.json"}
-            expected_names.update(name for _component, _entry, name in annual_member_inventory(verified))
+            expected_names.update(
+                name for _component, _entry, name in annual_member_inventory(verified)
+            )
             if set(names) != expected_names:
                 _bad("annual reader member allowlist changed")
             # Recheck small manifest/schema metadata so a changed same-size
             # container cannot redirect a catalogued UUID after verification.
-            manifest_raw = _read_limited(archive, "manifest.json", archive.getinfo("manifest.json"),
-                                         MAX_MANIFEST, "annual manifest")
+            manifest_raw = _read_limited(
+                archive,
+                "manifest.json",
+                archive.getinfo("manifest.json"),
+                MAX_MANIFEST,
+                "annual manifest",
+            )
             if manifest_raw != _canonical_json(verified.data):
                 _bad("annual manifest changed after verification")
-            global_schema = _read_limited(archive, "schema.json", archive.getinfo("schema.json"),
-                                          MAX_MANIFEST, "annual schema")
-            schema_document = {"source_schema": verified.data["source_schema"],
-                               "graph_schema": verified.data["graph_schema"]}
+            global_schema = _read_limited(
+                archive,
+                "schema.json",
+                archive.getinfo("schema.json"),
+                MAX_MANIFEST,
+                "annual schema",
+            )
+            schema_document = {
+                "source_schema": verified.data["source_schema"],
+                "graph_schema": verified.data["graph_schema"],
+            }
             if global_schema != _canonical_json(schema_document):
                 _bad("annual schema changed after verification")
             child_schema_name = prefix + "schema.json"
             child_schema_info = archive.getinfo(child_schema_name)
             _zip_member_matches(child_schema_info, child_schema_name)
-            child_schema = _read_limited(archive, child_schema_name, child_schema_info,
-                                         MAX_MANIFEST, "child schema")
-            if child_schema != _canonical_json({"source_schema": child["source_schema"],
-                                                "graph_schema": child["graph_schema"]}):
+            child_schema = _read_limited(
+                archive, child_schema_name, child_schema_info, MAX_MANIFEST, "child schema"
+            )
+            if child_schema != _canonical_json(
+                {"source_schema": child["source_schema"], "graph_schema": child["graph_schema"]}
+            ):
                 _bad("annual child schema changed after verification")
 
             for entry_value in child["members"]:
@@ -755,7 +877,10 @@ def _iter_component_binary_rows(path: Path, verified: ArchiveManifest, component
                 if role == "schema":
                     continue
                 if source_table is not None:
-                    if role not in ("observation", "context") or entry.get("source_table") != source_table:
+                    if (
+                        role not in ("observation", "context")
+                        or entry.get("source_table") != source_table
+                    ):
                         continue
                 else:
                     if role != "graph" or not entry["path"].startswith(f"graph/{graph_kind}/"):
@@ -770,14 +895,26 @@ def _iter_component_binary_rows(path: Path, verified: ArchiveManifest, component
                         member_digest.update(block)
                         member_size += len(block)
                         _checkpoint(checkpoint)
-                if member_size != entry["byte_size"] or member_digest.hexdigest() != entry["sha256"]:
+                if (
+                    member_size != entry["byte_size"]
+                    or member_digest.hexdigest() != entry["sha256"]
+                ):
                     _bad("annual selected child member hash changed")
 
                 table = entry["source_table"]
-                descriptor = (child["graph_schema"] if role == "graph" else child["source_schema"])[table]
+                descriptor = (child["graph_schema"] if role == "graph" else child["source_schema"])[
+                    table
+                ]
                 columns = _codec._columns(descriptor, entry.get("partition_field", False))
-                schema = arrow_schema(pa, columns, descriptor, dataset_id=dataset_id,
-                                      revision=revision, source_table=table, record_role=role)
+                schema = arrow_schema(
+                    pa,
+                    columns,
+                    descriptor,
+                    dataset_id=dataset_id,
+                    revision=revision,
+                    source_table=table,
+                    record_role=role,
+                )
                 member_info: Mapping[str, Any] = entry
                 if include_member_info:
                     described = dict(entry)
@@ -793,10 +930,12 @@ def _iter_component_binary_rows(path: Path, verified: ArchiveManifest, component
                 buffered_size = 0
                 with archive.open(name, "r") as member:
                     parquet = pq.ParquetFile(member)
-                    if (not parquet.schema_arrow.equals(schema, check_metadata=True)
-                            or hashlib.sha256(parquet.schema_arrow.serialize().to_pybytes()).hexdigest()
-                            != entry["schema_sha256"]
-                            or parquet.metadata.num_rows != entry["row_count"]):
+                    if (
+                        not parquet.schema_arrow.equals(schema, check_metadata=True)
+                        or hashlib.sha256(parquet.schema_arrow.serialize().to_pybytes()).hexdigest()
+                        != entry["schema_sha256"]
+                        or parquet.metadata.num_rows != entry["row_count"]
+                    ):
                         _bad("annual selected child schema/count changed")
                     for group in range(parquet.num_row_groups):
                         metadata = parquet.metadata.row_group(group)
@@ -804,13 +943,22 @@ def _iter_component_binary_rows(path: Path, verified: ArchiveManifest, component
                             _bad("annual selected child row-group limit exceeded")
                     for batch in parquet.iter_batches(batch_size=MAX_ROWS):
                         for binary in binary_rows_from_batch(batch, columns):
-                            _codec._validate_row(binary, columns, descriptor, dataset_id, revision,
-                                                  role, entry.get("toronto_date"))
+                            _codec._validate_row(
+                                binary,
+                                columns,
+                                descriptor,
+                                dataset_id,
+                                revision,
+                                role,
+                                entry.get("toronto_date"),
+                            )
                             encoded = canonical(binary)
                             if len(encoded) > MAX_BATCH_BYTES:
                                 _bad("annual selected row exceeds streaming batch limit")
-                            if buffered and (len(buffered) >= MAX_ROWS
-                                             or buffered_size + len(encoded) > MAX_BATCH_BYTES):
+                            if buffered and (
+                                len(buffered) >= MAX_ROWS
+                                or buffered_size + len(encoded) > MAX_BATCH_BYTES
+                            ):
                                 if include_member_info:
                                     yield member_info, buffered
                                 else:
@@ -823,8 +971,11 @@ def _iter_component_binary_rows(path: Path, verified: ArchiveManifest, component
                             decoded_size += len(encoded)
                             count += 1
                         _checkpoint(checkpoint)
-                    if (count != entry["row_count"] or decoded_size != entry["decoded_bytes"]
-                            or digest.hexdigest() != entry["canonical_sha256"]):
+                    if (
+                        count != entry["row_count"]
+                        or decoded_size != entry["decoded_bytes"]
+                        or digest.hexdigest() != entry["canonical_sha256"]
+                    ):
                         _bad("annual selected child binary fields or multiplicity changed")
                     if buffered:
                         if include_member_info:
@@ -837,15 +988,28 @@ def _iter_component_binary_rows(path: Path, verified: ArchiveManifest, component
         raise
     except _codec.ArchiveIntegrityError:
         raise
-    except (KeyError, TypeError, ValueError, OverflowError, UnicodeError,
-            zipfile.BadZipFile, RuntimeError, EOFError, OSError) as error:
+    except (
+        KeyError,
+        TypeError,
+        ValueError,
+        OverflowError,
+        UnicodeError,
+        zipfile.BadZipFile,
+        RuntimeError,
+        EOFError,
+        OSError,
+    ) as error:
         raise AnnualIntegrityError("invalid annual component reader input") from error
 
 
-def iter_annual_binary_rows(path: Path, verified: ArchiveManifest, source_table: str, *,
-                            component_dataset_id: UUID,
-                            checkpoint: Callable[[], None] | None = None
-                            ) -> Iterator[list[tuple[bytes | None, ...]]]:
+def iter_annual_binary_rows(
+    path: Path,
+    verified: ArchiveManifest,
+    source_table: str,
+    *,
+    component_dataset_id: UUID,
+    checkpoint: Callable[[], None] | None = None,
+) -> Iterator[list[tuple[bytes | None, ...]]]:
     """Stream raw observation/context PG-binary tuples for one catalogued quarter.
 
     ``component_dataset_id`` selects the embedded child and therefore its only
@@ -854,14 +1018,19 @@ def iter_annual_binary_rows(path: Path, verified: ArchiveManifest, source_table:
     before accepting results; each selected member's ZIP SHA and binary-field
     multiplicity digest is checked before its final batch is yielded.
     """
-    yield from _iter_component_binary_rows(path, verified, component_dataset_id,
-                                          source_table=source_table, checkpoint=checkpoint)
+    yield from _iter_component_binary_rows(
+        path, verified, component_dataset_id, source_table=source_table, checkpoint=checkpoint
+    )
 
 
-def iter_annual_graph_rows(path: Path, verified: ArchiveManifest, graph_kind: str, *,
-                           component_dataset_id: UUID,
-                           checkpoint: Callable[[], None] | None = None
-                           ) -> Iterator[tuple[Mapping[str, Any], list[tuple[bytes | None, ...]]]]:
+def iter_annual_graph_rows(
+    path: Path,
+    verified: ArchiveManifest,
+    graph_kind: str,
+    *,
+    component_dataset_id: UUID,
+    checkpoint: Callable[[], None] | None = None,
+) -> Iterator[tuple[Mapping[str, Any], list[tuple[bytes | None, ...]]]]:
     """Yield verified child member metadata plus bounded graph-role binary batches.
 
     Each member descriptor is a fresh mapping copied from the child inventory,
@@ -869,6 +1038,11 @@ def iter_annual_graph_rows(path: Path, verified: ArchiveManifest, graph_kind: st
     ``graph_kind`` added. The tuple shape lets the graph reader select source
     columns without looking up arbitrary paths itself.
     """
-    yield from _iter_component_binary_rows(path, verified, component_dataset_id,
-                                          graph_kind=graph_kind, include_member_info=True,
-                                          checkpoint=checkpoint)
+    yield from _iter_component_binary_rows(
+        path,
+        verified,
+        component_dataset_id,
+        graph_kind=graph_kind,
+        include_member_info=True,
+        checkpoint=checkpoint,
+    )

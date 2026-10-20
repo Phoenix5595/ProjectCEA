@@ -6,11 +6,13 @@ INSERT INTO measurement (time, sensor_id, value)
 VALUES
     ('2026-01-02T01:00:00Z', 1, 30.0),
     ('2026-01-03T01:00:00Z', 1, 32.0);
+-- The 5-minute aggregate now reads the 1-minute aggregate, so materialize the
+-- parent's full test window before refreshing the child.
 
 CALL refresh_continuous_aggregate(
     'monitoring_measurement_1min',
     '2025-12-31T00:00:00Z',
-    '2026-01-01T06:01:00Z'
+    '2026-01-10T00:01:00Z'
 );
 CALL refresh_continuous_aggregate(
     'monitoring_measurement_5min',
@@ -82,7 +84,7 @@ eligible_5min AS (
     WHERE NOT EXISTS (
         SELECT 1
         FROM monitoring_cagg_watermark AS pending
-        WHERE pending.cagg_name = 'monitoring_measurement_5min'
+        WHERE pending.cagg_name IN ('monitoring_measurement_5min', 'monitoring_measurement_1min')
           AND pending.invalidation_source IS NOT NULL
           AND pending.invalidation_start < cagg.bucket + ranges.bucket_width
           AND pending.invalidation_end >= cagg.bucket

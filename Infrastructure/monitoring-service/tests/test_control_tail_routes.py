@@ -48,7 +48,7 @@ class DenseTailDatabase:
         start = datetime(2026, 8, 20, 11, tzinfo=UTC)
         return [
             {
-                "timestamp": start + timedelta(seconds=index),
+                "time": start + timedelta(seconds=index),
                 "mode": "day",
                 "effective_heating_setpoint": float(index),
                 "nominal_heating_setpoint": float(index),
@@ -142,7 +142,7 @@ class PhotoperiodTailDatabase:
             return [
                 {
                     "id": 3,
-                    "observed_at": datetime(2026, 8, 20, 10, tzinfo=UTC),
+                    "time": datetime(2026, 8, 20, 10, tzinfo=UTC),
                     "location": "Veg Room",
                     "cluster": "main",
                     "state": "available",
@@ -154,7 +154,7 @@ class PhotoperiodTailDatabase:
             return [
                 {
                     "id": 2,
-                    "observed_at": datetime(2026, 8, 20, 9, tzinfo=UTC),
+                    "time": datetime(2026, 8, 20, 9, tzinfo=UTC),
                     "location": "Veg Room",
                     "cluster": "main",
                     "phase": "MOON",
@@ -189,7 +189,7 @@ async def test_control_tail_and_history_agree_on_photoperiod_carry_in() -> None:
     assert history.status_code == tail.status_code == 200
     assert tail.json()["photoperiod"] == [
         {
-            "timestamp": "2026-08-20T11:00:00Z",
+            "time": "2026-08-20T11:00:00Z",
             "phase": "MOON",
             "provenance": {"origin": "recorded", "quality": "exact", "is_aggregated": False},
             "mode_id": 3,
@@ -226,6 +226,9 @@ async def test_control_tail_thins_series_when_max_points_is_supplied() -> None:
         max(len(item["points"]) + len(item["steps"]) + (2 * len(item["linear"])) for item in series)
         <= 1000
     )
+    first_step = payload["climate"][0]["steps"][0]
+    assert "time" in first_step
+    assert "timestamp" not in first_step
 
 
 @pytest.mark.anyio
@@ -292,7 +295,7 @@ class LightTailDatabase:
         if "effective_light_intensity" in query:
             return [
                 {
-                    "timestamp": datetime(2026, 8, 20, 11, 30, tzinfo=UTC),
+                    "time": datetime(2026, 8, 20, 11, 30, tzinfo=UTC),
                     "mode": "day",
                     "device_name": "light_f_1",
                     "effective_light_intensity": 65.0,

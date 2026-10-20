@@ -31,6 +31,8 @@ from monitoring_service.cagg_watermarks import CaggWatermarkCache, watermark_sql
 from monitoring_service.query_observation import request_observation
 from monitoring_service.sensor_rows import node_mapping_args, series_from_rows, statistics_from_rows
 from monitoring_service.sensor_sql import (
+    CAGG_BUCKET_SECONDS as _CAGG_BUCKET_SECONDS,
+    CAGG_CHAINS as _CAGG_CHAINS,
     CAGGS as _CAGGS,
     RAW_BUCKETED_SERIES_SQL,
     RAW_SERIES_SQL as _RAW_SERIES_SQL,
@@ -46,7 +48,18 @@ _LIVE_MAX_AGE: Final[timedelta] = timedelta(
     seconds=float(os.getenv("MONITORING_LIVE_STALENESS_SECONDS", "900"))
 )
 STATS_CAGG_MIN_DURATION: Final[timedelta] = timedelta(hours=48)
-_CAGG_RELATIONS: Final[frozenset[str]] = frozenset(relation for relation, _ in _CAGGS.values())
+_CAGG_RELATIONS: Final[frozenset[str]] = frozenset(
+    relation for relation, _ in _CAGGS.values()
+) | frozenset(
+    {
+        "monitoring_effective_setpoints_1min",
+        "monitoring_effective_setpoints_5min",
+        "monitoring_automation_state_1min",
+        "monitoring_automation_state_5min",
+    }
+)
+
+_NO_MATERIALIZED_DATA: Final[datetime] = datetime.min.replace(tzinfo=UTC) + timedelta(days=1)
 
 
 class _SensorDatabase(Protocol):
@@ -90,8 +103,11 @@ class SensorMonitoringRepository:
         metadata = resolve_room_metadata(room)
         tier = resolve_tier(monitoring_range.duration, max_points)
         node_mapping = node_mapping_args(room, metadata.nodes)
-        async with request_observation(tier=tier.value), local_history_scope(
-            room, monitoring_range.start, monitoring_range.end, ("measurement",)
+        async with (
+            request_observation(tier=tier.value),
+            local_history_scope(
+                room, monitoring_range.start, monitoring_range.end, ("measurement",)
+            ),
         ):
             complete_bucket_upper_bound = (
                 None
@@ -152,23 +168,24 @@ class SensorMonitoringRepository:
     async def _require_cagg_coverage(
         self, tier: Tier, monitoring_range: MonitoringRange
     ) -> datetime:
-        relation, _ = _CAGGS[tier]
+        del monitoring_range
+        bounds: list[datetime] = []
+        for relation in _CAGG_CHAINS[tier]:
 
-        async def fetch() -> datetime:
-            rows = await self._database.fetch(watermark_sql(relation))
-            if not rows:
-                raise MonitoringUnavailableError(f"required CAGG is unavailable: {relation}")
-            watermark = rows[0]["materialization_watermark"]
-            if not isinstance(watermark, datetime):
-                raise MonitoringUnavailableError(f"required CAGG lacks coverage: {relation}")
-            return watermark
+            async def fetch(relation: str = relation) -> datetime:
+                rows = await self._database.fetch(watermark_sql(relation))
+                if not rows:
+                    raise MonitoringUnavailableError(f"required CAGG is unavailable: {relation}")
+                watermark = rows[0]["materialization_watermark"]
+                if watermark is None:
+                    return _NO_MATERIALIZED_DATA
+                if not isinstance(watermark, datetime) or watermark.utcoffset() is None:
+                    raise MonitoringUnavailableError(f"required CAGG lacks coverage: {relation}")
+                return watermark.astimezone(UTC)
 
-        watermark = await self._watermark_cache.get(relation, fetch)
-        if watermark <= monitoring_range.start:
-            raise MonitoringUnavailableError(
-                f"required CAGG lacks coverage for this range: {relation}"
-            )
-        return watermark - timedelta(seconds=source_bucket_seconds(tier))
+            watermark = await self._watermark_cache.get(relation, fetch)
+            bounds.append(watermark - timedelta(seconds=_CAGG_BUCKET_SECONDS[relation]))
+        return min(bounds)
 
     async def statistics(
         self, room: str, monitoring_range: MonitoringRange
@@ -182,16 +199,22 @@ class SensorMonitoringRepository:
         )
         stddev_quality = StddevQuality.EXACT
         tier = "5min" if statement == _STATISTICS_CAGG_SQL else "raw"
-        async with request_observation(tier=tier), local_history_scope(
-            room, monitoring_range.start, monitoring_range.end, ("measurement",)
+        async with (
+            request_observation(tier=tier),
+            local_history_scope(
+                room, monitoring_range.start, monitoring_range.end, ("measurement",)
+            ),
         ):
-            rows = await self._database.fetch(
-                statement,
+            query_args = (
                 room,
                 *node_mapping,
                 monitoring_range.start,
                 monitoring_range.end,
             )
+            if statement == _STATISTICS_CAGG_SQL:
+                frontier = await self._require_cagg_coverage(Tier.FIVE_MINUTES, monitoring_range)
+                query_args = (*query_args, frontier)
+            rows = await self._database.fetch(statement, *query_args)
             return statistics_from_rows(rows, metadata.nodes, stddev_quality)
 
     async def live(self, room: str, node: str) -> tuple[LiveSensorValue, ...]:

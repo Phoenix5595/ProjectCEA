@@ -87,7 +87,7 @@ describe('projectionTimeline', () => {
         },
         steps: [
           {
-            timestamp: NOW,
+            time: NOW,
             value: 99,
             provenance: {
               origin: 'recorded' as const,

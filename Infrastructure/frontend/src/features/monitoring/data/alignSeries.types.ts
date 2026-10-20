@@ -217,13 +217,13 @@ export interface NormPidSeries {
 }
 
 export interface RawControlPoint {
-  timestamp: Date
+  time: Date
   value: number | null
   provenance?: { origin: Origin; quality: Quality; is_aggregated: boolean }
 }
 
 export interface RawControlStep {
-  timestamp: Date
+  time: Date
   value: number | null
   provenance?: { origin: Origin; quality: Quality }
 }
@@ -247,13 +247,13 @@ export interface RawControlSeries {
 export interface RawDeviceSeries {
   name: string
   provenance: { origin: Origin; quality: Quality; is_aggregated: boolean }
-  points: { timestamp: Date; device_state: number; device_mode: string }[]
+  points: { time: Date; device_state: number; device_mode: string }[]
 }
 
 export interface RawPidSeries {
   name: string
   provenance: { origin: Origin; quality: Quality; is_aggregated: boolean }
-  points: { timestamp: Date; pid_output: number | null; duty_cycle_percent: number | null }[]
+  points: { time: Date; pid_output: number | null; duty_cycle_percent: number | null }[]
 }
 
 export interface ControlSeriesBundle {

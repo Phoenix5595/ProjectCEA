@@ -12,10 +12,13 @@ from pydantic import ValidationError
 
 from monitoring_service.database import ReadOnlyDatabase
 from monitoring_service.redis_resources import RedisReadClient
+from monitoring_service.cagg_watermarks import CaggWatermarkCache, watermark_sql
 from monitoring_service.control_history_queries import (
     PHOTOPERIOD_COVERAGE_SQL,
     PHOTOPERIOD_LIGHT_PREDECESSORS_SQL,
     PHOTOPERIOD_SQL,
+    _RAW_SETPOINTS_SQL,
+    _STATE_RAW_SQL,
     select_control_history_sources,
 )
 from monitoring_service.control_models import (
@@ -77,6 +80,16 @@ from monitoring_service.sensor_models import (
 )
 
 
+_CONTROL_CAGG_RELATIONS = frozenset(
+    {
+        "monitoring_effective_setpoints_1min",
+        "monitoring_effective_setpoints_5min",
+        "monitoring_automation_state_1min",
+        "monitoring_automation_state_5min",
+    }
+)
+
+
 class ControlHistoryDatabase(Protocol):
     """The parameterized read capability required for recorded history."""
 
@@ -91,12 +104,56 @@ class PublicationRedis(Protocol):
     def mget(self, keys: list[str]) -> Awaitable[list[str | None]]: ...
 
 
+async def _materialization_watermark(
+    database: ControlHistoryDatabase,
+    cache: CaggWatermarkCache,
+    relation: str,
+) -> datetime:
+    async def fetch() -> datetime:
+        rows = await database.fetch(watermark_sql(relation))
+        value = rows[0].get("materialization_watermark") if rows else None
+        if not isinstance(value, datetime) or value.utcoffset() is None:
+            return datetime.min.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+
+    return await cache.get(relation, fetch)
+
+
+async def _fetch_watermark_split(
+    database: ControlHistoryDatabase,
+    cache: CaggWatermarkCache,
+    relation: str,
+    aggregate_sql: str,
+    raw_sql: str,
+    location: str,
+    start: datetime,
+    end: datetime,
+) -> list[Mapping[str, object] | asyncpg.Record]:
+    watermark = await _materialization_watermark(database, cache, relation)
+    split = min(end, max(start, watermark))
+    rows: list[Mapping[str, object] | asyncpg.Record] = []
+    if start < split:
+        rows.extend(await database.fetch(aggregate_sql, location, start, split))
+    if split < end:
+        rows.extend(await database.fetch(raw_sql, location, split, end))
+    return rows
+
+
 @final
 class ControlHistoryRepository:
     """Load recorded control timelines solely from committed read-model facts."""
 
-    def __init__(self, database: ControlHistoryDatabase) -> None:
+    def __init__(
+        self,
+        database: ControlHistoryDatabase,
+        watermark_cache: CaggWatermarkCache | None = None,
+    ) -> None:
         self._database = database
+        self._watermark_cache = (
+            CaggWatermarkCache(_CONTROL_CAGG_RELATIONS)
+            if watermark_cache is None
+            else watermark_cache
+        )
 
     async def read(
         self,
@@ -114,26 +171,69 @@ class ControlHistoryRepository:
         """
         sources = select_control_history_sources(history_range, max_points, scope)
         try:
-            async with request_observation(), local_history_scope(
-                location, history_range.start, history_range.end,
-                ("effective_setpoints", "monitoring_room_photoperiod", "monitoring_photoperiod_coverage")
-                if scope == "lights" else
-                ("effective_setpoints", "automation_state",
-                 "monitoring_room_photoperiod", "monitoring_photoperiod_coverage"),
+            async with (
+                request_observation(),
+                local_history_scope(
+                    location,
+                    history_range.start,
+                    history_range.end,
+                    (
+                        "effective_setpoints",
+                        "monitoring_room_photoperiod",
+                        "monitoring_photoperiod_coverage",
+                    )
+                    if scope == "lights"
+                    else (
+                        "effective_setpoints",
+                        "automation_state",
+                        "monitoring_room_photoperiod",
+                        "monitoring_photoperiod_coverage",
+                    ),
+                ),
             ):
                 setpoint_rows: Sequence[Mapping[str, object] | asyncpg.Record] = ()
                 state_rows: Sequence[Mapping[str, object] | asyncpg.Record] = ()
                 if sources.setpoints_sql is not None:
-                    setpoint_rows = await self._database.fetch(
-                        sources.setpoints_sql, location, history_range.start, history_range.end
-                    )
+                    if sources.setpoints_relation is None:
+                        setpoint_rows = await self._database.fetch(
+                            sources.setpoints_sql,
+                            location,
+                            history_range.start,
+                            history_range.end,
+                        )
+                    else:
+                        setpoint_rows = await _fetch_watermark_split(
+                            self._database,
+                            self._watermark_cache,
+                            sources.setpoints_relation,
+                            sources.setpoints_sql,
+                            _RAW_SETPOINTS_SQL,
+                            location,
+                            history_range.start,
+                            history_range.end,
+                        )
                 light_rows = await self._database.fetch(
                     sources.light_sql, location, history_range.start, history_range.end
                 )
                 if sources.state_sql is not None:
-                    state_rows = await self._database.fetch(
-                        sources.state_sql, location, history_range.start, history_range.end
-                    )
+                    if sources.state_relation is None:
+                        state_rows = await self._database.fetch(
+                            sources.state_sql,
+                            location,
+                            history_range.start,
+                            history_range.end,
+                        )
+                    else:
+                        state_rows = await _fetch_watermark_split(
+                            self._database,
+                            self._watermark_cache,
+                            sources.state_relation,
+                            sources.state_sql,
+                            _STATE_RAW_SQL,
+                            location,
+                            history_range.start,
+                            history_range.end,
+                        )
                 photoperiod_rows = await self._database.fetch(
                     PHOTOPERIOD_SQL, location, history_range.start, history_range.end
                 )
@@ -177,8 +277,17 @@ class ControlHistoryRepository:
 class RelayTimelineRepository:
     """Read exact relay facts plus event-time-associated requested PID output."""
 
-    def __init__(self, database: ControlHistoryDatabase) -> None:
+    def __init__(
+        self,
+        database: ControlHistoryDatabase,
+        watermark_cache: CaggWatermarkCache | None = None,
+    ) -> None:
         self._database = database
+        self._watermark_cache = (
+            CaggWatermarkCache(_CONTROL_CAGG_RELATIONS)
+            if watermark_cache is None
+            else watermark_cache
+        )
 
     async def read(
         self,
@@ -196,9 +305,14 @@ class RelayTimelineRepository:
             else None
         )
         try:
-            async with request_observation(), local_history_scope(
-                location, history_range.start, history_range.end,
-                ("relay_observation", "automation_state"),
+            async with (
+                request_observation(),
+                local_history_scope(
+                    location,
+                    history_range.start,
+                    history_range.end,
+                    ("relay_observation", "automation_state"),
+                ),
             ):
                 if cursor_state is None:
                     watermark_rows = await self._database.fetch(RELAY_WATERMARK_SQL)
@@ -286,7 +400,7 @@ class RelayTimelineRepository:
                             location=location,
                             start=history_range.start,
                             end=history_range.end,
-                            last_at=last_transition.observed_at,
+                            last_at=last_transition.time,
                             last_id=last_transition.observation_id,
                             watermark=watermark,
                             last_heartbeat_at=last_heartbeat_at,
@@ -337,24 +451,73 @@ class RelayTimelineRepository:
             )
             return raw_load_points(rows)
         if duration < timedelta(hours=24):
-            rows = await self._database.fetch(
+            return await self._read_aggregated_load(
+                location,
+                history_range,
+                watermark,
+                "monitoring_automation_state_1min",
                 RELAY_1MIN_PID_LOAD_SQL,
-                *arguments,
+                60,
+            )
+        return await self._read_aggregated_load(
+            location,
+            history_range,
+            watermark,
+            "monitoring_automation_state_5min",
+            RELAY_5MIN_PID_LOAD_SQL,
+            300,
+        )
+
+    async def _read_aggregated_load(
+        self,
+        location: str,
+        history_range: RelayTimelineRange,
+        watermark: int,
+        relation: str,
+        aggregate_sql: str,
+        interval_seconds: int,
+    ) -> tuple[tuple[RelayTimelineLoadPoint, ...], bool]:
+        frontier = await _materialization_watermark(self._database, self._watermark_cache, relation)
+        split = min(history_range.end, max(history_range.start, frontier))
+        aggregate_rows: Sequence[Mapping[str, object] | asyncpg.Record] = ()
+        raw_rows: Sequence[Mapping[str, object] | asyncpg.Record] = ()
+        if history_range.start < split:
+            aggregate_rows = await self._database.fetch(
+                aggregate_sql,
+                watermark,
+                history_range.start,
+                split,
+                location,
                 MAX_RELAY_LOAD_ROWS + 1,
             )
-            return aggregate_load_points(rows, 60)
-        rows = await self._database.fetch(
-            RELAY_5MIN_PID_LOAD_SQL,
-            *arguments,
-            MAX_RELAY_LOAD_ROWS + 1,
+        if split < history_range.end:
+            raw_rows = await self._database.fetch(
+                RELAY_RAW_PID_LOAD_SQL,
+                watermark,
+                split,
+                history_range.end,
+                location,
+                MAX_RELAY_LOAD_ROWS + 1,
+            )
+        aggregate_points, aggregate_truncated = aggregate_load_points(
+            aggregate_rows, interval_seconds
         )
-        return aggregate_load_points(rows, 300)
+        raw_points, raw_truncated = raw_load_points(raw_rows)
+        points = sorted(
+            (*aggregate_points, *raw_points),
+            key=lambda point: (
+                point.time,
+                point.device_id if point.device_id is not None else -1,
+                point.device_name,
+            ),
+        )
+        truncated = aggregate_truncated or raw_truncated or len(points) > MAX_RELAY_LOAD_ROWS
+        return tuple(points[:MAX_RELAY_LOAD_ROWS]), truncated
 
 
 def _relay_transition(row: Mapping[str, object]) -> RelayTimelineTransition:
     fields = (
         "observation_id",
-        "observed_at",
         "channel",
         "observed_state",
         "reason",
@@ -366,7 +529,9 @@ def _relay_transition(row: Mapping[str, object]) -> RelayTimelineTransition:
         "location",
         "cluster",
     )
-    return RelayTimelineTransition.model_validate({field: row[field] for field in fields})
+    values = {field: row[field] for field in fields}
+    values["time"] = row["observed_at"]
+    return RelayTimelineTransition.model_validate(values)
 
 
 def _integer_value(value: object) -> int:
@@ -493,6 +658,7 @@ class RuntimeControlReads:
 
     def __init__(self, resources: RuntimeReadResources) -> None:
         self._resources = resources
+        self._watermark_cache = CaggWatermarkCache(_CONTROL_CAGG_RELATIONS)
 
     async def overview(
         self,
@@ -520,7 +686,7 @@ class RuntimeControlReads:
         database = self._resources.database
         if database is None:
             raise RuntimeError("monitoring database resource is unavailable")
-        return await ControlHistoryRepository(database).read(
+        return await ControlHistoryRepository(database, self._watermark_cache).read(
             location, history_range, max_points, scope
         )
 
@@ -535,7 +701,9 @@ class RuntimeControlReads:
         database = self._resources.database
         if database is None:
             raise RuntimeError("monitoring database resource is unavailable")
-        return await RelayTimelineRepository(database).read(location, history_range, limit, cursor)
+        return await RelayTimelineRepository(database, self._watermark_cache).read(
+            location, history_range, limit, cursor
+        )
 
     async def publications(self, location: str) -> ControlPublicationResponse:
         """Read shared publications only when the service Redis client is available."""

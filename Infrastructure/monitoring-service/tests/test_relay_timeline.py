@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Mapping, Sequence
+from typing import Sequence
 from uuid import UUID
 
 import httpx
@@ -32,7 +32,7 @@ START = datetime(2026, 8, 20, 12, 0, tzinfo=UTC)
 SESSION = UUID("1728e11a-7b38-472a-8d60-65084fb64928")
 TRANSITION_FIELDS = {
     "observation_id",
-    "observed_at",
+    "time",
     "channel",
     "observed_state",
     "reason",
@@ -108,10 +108,7 @@ def _healthy_database(
     while cursor < end:
         fact_times.append(cursor)
         cursor += timedelta(seconds=30)
-    facts.extend(
-        _heartbeat(0, at)
-        for at in fact_times
-    )
+    facts.extend(_heartbeat(0, at) for at in fact_times)
     if off_at is not None:
         facts.append(
             _observation(
@@ -150,14 +147,47 @@ class FakeRelayDatabase:
             "has_owner_change": False,
         }
         self.queries: list[str] = []
+        self.calls: list[tuple[str, tuple[object, ...]]] = []
+        self.aggregate_watermarks: dict[str, datetime] = {}
         self.fail = False
 
     async def fetch(self, query: str, *arguments: object) -> list[dict[str, object]]:
         if self.fail:
             raise RuntimeError("fake read database unavailable")
         self.queries.append(query)
+        self.calls.append((query, arguments))
+        if "AS materialization_watermark" in query:
+            relation = next(
+                (
+                    name
+                    for name in (
+                        "monitoring_automation_state_1min",
+                        "monitoring_automation_state_5min",
+                    )
+                    if f'"{name}"' in query
+                ),
+                None,
+            )
+            frontier = self.aggregate_watermarks.get(relation) if relation else None
+            if frontier is None and relation is not None and self.aggregate_samples:
+                interval = timedelta(minutes=1 if relation.endswith("1min") else 5)
+                frontier = (
+                    max(
+                        sample["timestamp"]
+                        for sample in self.aggregate_samples
+                        if isinstance(sample.get("timestamp"), datetime)
+                    )
+                    + interval
+                )
+            return [{"materialization_watermark": frontier}]
         if query == RELAY_WATERMARK_SQL:
-            return [{"watermark": max((int(row["observation_id"]) for row in self.observations), default=0)}]
+            return [
+                {
+                    "watermark": max(
+                        (int(row["observation_id"]) for row in self.observations), default=0
+                    )
+                }
+            ]
         if query in {RELAY_TRANSITIONS_FIRST_PAGE_SQL, RELAY_TRANSITIONS_AFTER_CURSOR_SQL}:
             return self._transition_page(query, arguments)
         if "WITH relay_heartbeat_before_range" in query:
@@ -199,11 +229,7 @@ class FakeRelayDatabase:
             visible = (
                 reason == "heartbeat"
                 or reason in {"stale", "recovered", "recording_gap", "assignment_changed"}
-                or (
-                    target
-                    and source["channel"] is not None
-                    and source["device_type"] != "light"
-                )
+                or (target and source["channel"] is not None and source["device_type"] != "light")
             )
             if not visible:
                 continue
@@ -236,16 +262,27 @@ class FakeRelayDatabase:
         ]
         before = [row for row in heartbeats if row["observed_at"] < start]
         window = [row for row in heartbeats if start <= row["observed_at"] < end]
-        rows = ([max(before, key=lambda row: (row["observed_at"], row["observation_id"]))] if before else [])
+        rows = (
+            [max(before, key=lambda row: (row["observed_at"], row["observation_id"]))]
+            if before
+            else []
+        )
         rows.extend(window)
-        return [dict(row, window_count=len(window)) for row in sorted(rows, key=lambda item: (item["observed_at"], item["observation_id"]))]
+        return [
+            dict(row, window_count=len(window))
+            for row in sorted(rows, key=lambda item: (item["observed_at"], item["observation_id"]))
+        ]
 
     def _channel_anchors(self, arguments: tuple[object, ...]) -> list[dict[str, object]]:
         start, watermark, location = arguments
         latest: dict[int, dict[str, object]] = {}
         for row in self.observations:
             channel = row["channel"]
-            if channel is None or row["observed_at"] >= start or int(row["observation_id"]) > watermark:
+            if (
+                channel is None
+                or row["observed_at"] >= start
+                or int(row["observation_id"]) > watermark
+            ):
                 continue
             current = latest.get(int(channel))
             if current is None or (row["observed_at"], row["observation_id"]) > (
@@ -325,7 +362,9 @@ class FakeRelayDatabase:
                     "owner_count": owner_count,
                 }
             )
-        associated.sort(key=lambda row: (row["timestamp"], row["device_id"] or -1, row["device_name"]))
+        associated.sort(
+            key=lambda row: (row["timestamp"], row["device_id"] or -1, row["device_name"])
+        )
         total = len(associated)
         return [dict(row, total_count=total) for row in associated[: int(limit)]]
 
@@ -399,11 +438,12 @@ async def test_route_returns_strict_sample_time_transitions_and_predecessor_anch
     off = [row for row in payload["transitions"] if row["reason"] == "state_changed"]
     assert [(row["channel"], row["observed_state"]) for row in off] == [(0, False)]
     assert set(payload["transitions"][0]) == TRANSITION_FIELDS
+    assert "time" in payload["transitions"][0]
+    assert "observed_at" not in payload["transitions"][0]
     route = next(
         route
         for route in create_app(control_reads=FakeControlReads(database)).routes
-        if getattr(route, "path", None)
-        == "/api/monitoring/control/{location}/relay-timeline"
+        if getattr(route, "path", None) == "/api/monitoring/control/{location}/relay-timeline"
     )
     assert route.methods == {"GET"}
 
@@ -444,11 +484,36 @@ async def test_raw_pid_output_is_percent_and_owner_changes_do_not_leak_predecess
     database.coverage["has_coverage_break"] = True
     database.coverage["has_owner_change"] = True
     database.raw_samples = [
-        {"id": 1, "timestamp": START + timedelta(minutes=1), "device_name": "heater-a", "pid_output": 0.0},
-        {"id": 2, "timestamp": START + timedelta(minutes=2), "device_name": "heater-a", "pid_output": 0.5},
-        {"id": 3, "timestamp": START + timedelta(minutes=3), "device_name": "heater-a", "pid_output": None},
-        {"id": 4, "timestamp": START + timedelta(minutes=5), "device_name": "heater-a", "pid_output": 0.9},
-        {"id": 5, "timestamp": START + timedelta(minutes=5), "device_name": "heater-b", "pid_output": 1.0},
+        {
+            "id": 1,
+            "timestamp": START + timedelta(minutes=1),
+            "device_name": "heater-a",
+            "pid_output": 0.0,
+        },
+        {
+            "id": 2,
+            "timestamp": START + timedelta(minutes=2),
+            "device_name": "heater-a",
+            "pid_output": 0.5,
+        },
+        {
+            "id": 3,
+            "timestamp": START + timedelta(minutes=3),
+            "device_name": "heater-a",
+            "pid_output": None,
+        },
+        {
+            "id": 4,
+            "timestamp": START + timedelta(minutes=5),
+            "device_name": "heater-a",
+            "pid_output": 0.9,
+        },
+        {
+            "id": 5,
+            "timestamp": START + timedelta(minutes=5),
+            "device_name": "heater-b",
+            "pid_output": 1.0,
+        },
     ]
 
     response = await _get_timeline(database)
@@ -513,18 +578,25 @@ async def test_cursor_pages_are_stable_ordered_and_do_not_repeat_anchors_or_load
         )
     ]
     expected.sort(key=lambda row: (row["observed_at"], row["observation_id"]))
-    assert [(row.observed_at, row.observation_id) for row in received] == [
+    assert [(row.time, row.observation_id) for row in received] == [
         (row["observed_at"], row["observation_id"]) for row in expected
     ]
     assert len({row.observation_id for row in received}) == len(received)
     assert sum(query == RELAY_CHANNEL_ANCHORS_SQL for query in database.queries) == 1
     assert sum(query == RELAY_RAW_PID_LOAD_SQL for query in database.queries) == 1
-    assert all(query == RELAY_TRANSITIONS_FIRST_PAGE_SQL or query == RELAY_TRANSITIONS_AFTER_CURSOR_SQL or query in {
-        RELAY_WATERMARK_SQL,
-        RELAY_HEARTBEAT_HISTORY_SQL,
-        RELAY_CHANNEL_ANCHORS_SQL,
-        RELAY_RAW_PID_LOAD_SQL,
-    } or "relay_candidate_channels" in query for query in database.queries)
+    assert all(
+        query == RELAY_TRANSITIONS_FIRST_PAGE_SQL
+        or query == RELAY_TRANSITIONS_AFTER_CURSOR_SQL
+        or query
+        in {
+            RELAY_WATERMARK_SQL,
+            RELAY_HEARTBEAT_HISTORY_SQL,
+            RELAY_CHANNEL_ANCHORS_SQL,
+            RELAY_RAW_PID_LOAD_SQL,
+        }
+        or "relay_candidate_channels" in query
+        for query in database.queries
+    )
 
 
 @pytest.mark.anyio
@@ -545,7 +617,7 @@ async def test_coarse_pid_load_does_not_replace_exact_physical_transitions() -> 
     )
 
     physical = [row for row in response.transitions if row.reason == "state_changed"]
-    assert [(row.observed_at, row.observed_state) for row in physical] == [
+    assert [(row.time, row.observed_state) for row in physical] == [
         (START + timedelta(minutes=30), False)
     ]
     assert len(response.load) == 1
@@ -555,6 +627,67 @@ async def test_coarse_pid_load_does_not_replace_exact_physical_transitions() -> 
     assert response.load[0].requested_min_percent == 50.0
     assert response.load[0].requested_max_percent == 50.0
     assert any("monitoring_automation_state_1min" in query for query in database.queries)
+
+
+@pytest.mark.anyio
+async def test_pid_aggregate_watermark_splits_at_boundary_without_gap_or_duplicate() -> None:
+    start = START
+    boundary = start + timedelta(hours=1)
+    end = start + timedelta(hours=2)
+    database = _healthy_database(duration=end - start, off_at=None)
+    database.aggregate_watermarks["monitoring_automation_state_1min"] = boundary
+    database.aggregate_samples = [
+        {
+            "timestamp": start + timedelta(minutes=30),
+            "device_name": "heater-a",
+            "pid_output": 0.25,
+            "pid_output_count": 1,
+        },
+        {
+            "timestamp": boundary,
+            "device_name": "heater-a",
+            "pid_output": 0.99,
+            "pid_output_count": 1,
+        },
+    ]
+    database.raw_samples = [
+        {
+            "id": 1,
+            "timestamp": boundary,
+            "device_name": "heater-a",
+            "pid_output": 0.75,
+        },
+        {
+            "id": 2,
+            "timestamp": boundary + timedelta(minutes=30),
+            "device_name": "heater-a",
+            "pid_output": 0.5,
+        },
+    ]
+
+    response = await RelayTimelineRepository(database).read(
+        "Flower Room",
+        RelayTimelineRange(start=start, end=end),
+        limit=2_000,
+    )
+
+    times = [point.time for point in response.load]
+    assert times == [
+        start + timedelta(minutes=30),
+        boundary,
+        boundary + timedelta(minutes=30),
+    ]
+    assert len(set(times)) == len(times)
+    assert [point.requested_percent for point in response.load] == [25.0, 75.0, 50.0]
+    assert [point.aggregated for point in response.load] == [True, False, False]
+    aggregate_call = next(
+        arguments for query, arguments in database.calls if query == RELAY_1MIN_PID_LOAD_SQL
+    )
+    raw_call = next(
+        arguments for query, arguments in database.calls if query == RELAY_RAW_PID_LOAD_SQL
+    )
+    assert aggregate_call[1:3] == (start, boundary)
+    assert raw_call[1:3] == (boundary, end)
 
 
 @pytest.mark.anyio
@@ -782,17 +915,15 @@ def test_raw_pid_downsampling_keeps_extrema_and_null_gap_edges() -> None:
 
     assert truncated is False
     assert len(points) < len(rows)
-    assert points[0].timestamp == START
-    assert points[-1].timestamp == START + timedelta(seconds=2_504)
+    assert points[0].time == START
+    assert points[-1].time == START + timedelta(seconds=2_504)
     assert {point.requested_percent for point in points} >= {0.0, 100.0}
     assert all(
         point.requested_min_percent == point.requested_percent
         and point.requested_max_percent == point.requested_percent
         for point in points
     )
-    null_times = {
-        point.timestamp for point in points if point.requested_percent is None
-    }
+    null_times = {point.time for point in points if point.requested_percent is None}
     assert {
         START + timedelta(seconds=1_500),
         START + timedelta(seconds=1_502),

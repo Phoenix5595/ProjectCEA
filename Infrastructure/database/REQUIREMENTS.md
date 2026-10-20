@@ -74,7 +74,7 @@ UNIQUE(location, cluster, mode)
 
 The older `cea_schema.sql` setpoints definition (room_id/variable/target) is not used by any service and should be ignored. Writes append; readers use `ORDER BY updated_at DESC LIMIT 1` for the latest value.
 
-The `effective_setpoints` hypertable logs the actual setpoint values used at every control tick, including ramp progress and light intensity. Columns include `effective_heating_setpoint`, `effective_cooling_setpoint`, `effective_vpd_setpoint`, `effective_light_intensity`, `nominal_heating_setpoint`, `nominal_cooling_setpoint`, `nominal_vpd_setpoint`, `ramp_progress_heating`, `ramp_progress_cooling`, `ramp_progress_vpd`, `timestamp`.
+The `effective_setpoints` hypertable logs the actual setpoint values used at every control tick, including ramp progress and light intensity. Columns include `effective_heating_setpoint`, `effective_cooling_setpoint`, `effective_vpd_setpoint`, `effective_light_intensity`, `nominal_heating_setpoint`, `nominal_cooling_setpoint`, `nominal_vpd_setpoint`, `ramp_progress_heating`, `ramp_progress_cooling`, `ramp_progress_vpd`, `time`.
 
 For native monitoring temperature/VPD series:
 
@@ -87,7 +87,7 @@ For native monitoring temperature/VPD series:
 For photoperiod chart overlays (DAY/NIGHT shading):
 
 - Combine `schedules` (`device_name = 'room_schedule'`) with `mode_transition_history`.
-- For each minute `t`, use the latest row with `triggered_at <= t` for that `location`/`cluster`, joining `new_mode_id` to `room_modes.name`.
+- For each minute `t`, use the latest row with `time <= t` for that `location`/`cluster`, joining `new_mode_id` to `room_modes.name`.
 - Moon-authority modes (`drying`, `sleep`) suppress the DAY band and show NIGHT for the full 24h. The SQL list `('drying', 'sleep')` must stay aligned with `Infrastructure/shared/room_light_authority.py` (`MOON_AUTHORITY_MODE_NAMES`).
 - Before the first `mode_transition_history` row for a room/cluster, overlays use schedule only.
 
@@ -101,7 +101,7 @@ FROM effective_setpoints
 WHERE location = '$room'
   AND cluster = 'main'
   AND effective_light_intensity IS NOT NULL
-  AND $__timeFilter(timestamp);
+  AND $__timeFilter("time");
 ```
 
 ## Time Zone

@@ -80,7 +80,7 @@ const controlPayload = {
       warnings: [],
       points: [
         {
-          timestamp: '2026-08-02T11:00:00.000Z',
+          time: '2026-08-02T11:00:00.000Z',
           value: 22,
           nominal_value: 22,
           metric: 'heating_setpoint',
@@ -96,7 +96,7 @@ const controlPayload = {
   pid: [],
   photoperiod: [
     {
-      timestamp: '2026-08-02T11:00:00.000Z',
+      time: '2026-08-02T11:00:00.000Z',
       phase: 'SUN',
       provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false },
       runtime_snapshot_version: 7,
@@ -116,7 +116,7 @@ const lightsControlPayload = {
       warnings: [],
       points: [
         {
-          timestamp: '2026-08-02T11:00:00.000Z',
+          time: '2026-08-02T11:00:00.000Z',
           value: 40,
           nominal_value: 40,
           device_name: 'light_f_1',
@@ -184,7 +184,7 @@ describe('monitoring api boundary', () => {
     const controlRange = await api.controlRange('Flower Room')
     expect(controlRange.runtime_snapshot_version).toBe(7)
     expect(controlRange.cursors[0].has_more).toBe(true)
-    expect(controlRange.climate[0].points[0].timestamp).toBeInstanceOf(Date)
+    expect(controlRange.climate[0].points[0].time).toBeInstanceOf(Date)
     expect(controlRange.photoperiod[0].phase).toBe('SUN')
 
     fetchMock.mockResolvedValueOnce(jsonResponse(controlProjectionPayload))
@@ -241,7 +241,7 @@ describe('monitoring api boundary', () => {
           warnings: [],
           points: [
             {
-              timestamp: '2026-08-02T11:00:00.000Z',
+              time: '2026-08-02T11:00:00.000Z',
               provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false },
               device_name: 'heater_f',
               pid_output: 15,

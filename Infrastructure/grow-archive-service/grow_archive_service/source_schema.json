@@ -1,11 +1,11 @@
 {
   "format": "sj-cea-source-schema/1",
-  "version": 2,
+  "version": 3,
   "description": "Checked-in lossless capture descriptors for every grow-lifecycle source stream. Repository DDL is the authority; production is never queried to build or validate this file. The per-stream fingerprint covers ordered columns plus type/nullability/generation, the primary key (and verified hybrid variants), unique constraints and the hypertable flag; the catalog fingerprint covers the whole stream list.",
   "timescaledb": {
     "minimum_version": "2.28.3"
   },
-  "catalog_fingerprint": "4c0bb8bcf9516d9e050d50fa4acb657d7b64fda12e8d8776bc36c64b79a44a6a",
+  "catalog_fingerprint": "342c04cf51558373923e5692fa6059bee38bea32283bf6737d9b0ec959ec7e3b",
   "streams": [
     {
       "name": "measurement",
@@ -123,7 +123,7 @@
       "source_files": [
         "Infrastructure/automation-service/alembic/versions/001_baseline.py:126-160"
       ],
-      "time_column": "timestamp",
+      "time_column": "time",
       "stable_ordering": [
         "id"
       ],
@@ -142,7 +142,7 @@
           "generation": "bigserial"
         },
         {
-          "name": "timestamp",
+          "name": "time",
           "type": "timestamp with time zone",
           "not_null": true,
           "generation": null
@@ -260,7 +260,7 @@
         {
           "name": "automation_state_pkey",
           "columns": [
-            "timestamp",
+            "time",
             "id"
           ],
           "partial": null,
@@ -269,7 +269,7 @@
         {
           "name": "automation_state_timestamp_idx",
           "columns": [
-            "timestamp DESC"
+            "time DESC"
           ],
           "partial": null
         },
@@ -284,7 +284,7 @@
         {
           "name": "idx_automation_state_timestamp",
           "columns": [
-            "timestamp DESC"
+            "time DESC"
           ],
           "partial": null
         },
@@ -305,11 +305,11 @@
           "partial": null
         }
       ],
-      "notes": "Repository baseline primary key (id) cannot coexist with this source's TimescaleDB hypertable. The verified disposable fixture uses primary key (timestamp, id); preflight accepts the baseline key or exactly the listed variant and blocks every other live shape until a verified descriptor is supplied. Column order, types and nullability are unchanged; all six automation_state indexes keep their names.",
-      "fingerprint": "80aae85d4471fcdee15541c4afb319a0403708fb09522da267f0a5d0aaeb4df5",
+      "notes": "Repository baseline primary key (id) cannot coexist with this source's TimescaleDB hypertable. The verified disposable fixture uses primary key (time, id); preflight accepts the baseline key or exactly the listed variant and blocks every other live shape until a verified descriptor is supplied. Column order, types and nullability are unchanged; all six automation_state indexes keep their names.",
+      "fingerprint": "b8f5e569e6a5e4dce59d2730020af13a9eb2bb8a09d8a05d61197bb33e1df394",
       "primary_key_variants": [
         [
-          "timestamp",
+          "time",
           "id"
         ]
       ],
@@ -319,7 +319,7 @@
         ],
         "reason": "repository primary key does not include the TimescaleDB partitioning column; create_hypertable rejects it",
         "disposable_variant": [
-          "timestamp",
+          "time",
           "id"
         ],
         "variance_verified_in": "Infrastructure/database/tests/fixtures/grow_data_lifecycle_fixture.sql"
@@ -334,7 +334,7 @@
         "Infrastructure/automation-service/alembic/versions/001_baseline.py:162-193",
         "Infrastructure/database/monitoring_read_models.sql:117-137"
       ],
-      "time_column": "timestamp",
+      "time_column": "time",
       "stable_ordering": [
         "monitoring_ingest_id"
       ],
@@ -347,7 +347,7 @@
       "chunk_interval": null,
       "columns": [
         {
-          "name": "timestamp",
+          "name": "time",
           "type": "timestamp with time zone",
           "not_null": true,
           "generation": null
@@ -511,9 +511,9 @@
           "partial": null
         },
         {
-          "name": "idx_effective_setpoints_timestamp",
+          "name": "idx_effective_setpoints_time",
           "columns": [
-            "timestamp DESC"
+            "time DESC"
           ],
           "partial": null
         },
@@ -523,7 +523,7 @@
             "location",
             "cluster",
             "device_name",
-            "timestamp DESC"
+            "time DESC"
           ],
           "partial": null
         },
@@ -543,7 +543,7 @@
         }
       ],
       "notes": "monitoring_ingest_id defaults from monitoring_effective_setpoints_ingest_id_seq; the cold store clones neither the default nor the sequence. The source table has no primary key or unique constraint, so capture must preserve row multiplicity with occurrence ordinals: monitoring_ingest_id is the plan's tie-breaker ordering column, not a unique key.",
-      "fingerprint": "41715a4dab74b813fb5fe82a87d673b7f2f29426c0110289364cfbad24ef763a"
+      "fingerprint": "c4a11c797a66785c268602a2dc1c9e7da0c2811306ab712597988f969b94591f"
     },
     {
       "name": "control_history",
@@ -555,7 +555,7 @@
         "Infrastructure/automation-service/alembic/versions/002_add_control_history_load_percent.py",
         "Infrastructure/automation-service/alembic/versions/006_add_control_history_manual_expires_at.py"
       ],
-      "time_column": "timestamp",
+      "time_column": "time",
       "stable_ordering": [
         "id"
       ],
@@ -574,7 +574,7 @@
           "generation": "bigserial"
         },
         {
-          "name": "timestamp",
+          "name": "time",
           "type": "timestamp with time zone",
           "not_null": true,
           "generation": null
@@ -680,7 +680,7 @@
           "name": "control_history_pkey",
           "columns": [
             "id",
-            "timestamp"
+            "time"
           ],
           "partial": null,
           "note": "Verified disposable-fixture shape; the documented baseline repository primary key cannot coexist with the TimescaleDB partitioning column."
@@ -694,9 +694,9 @@
           "partial": null
         },
         {
-          "name": "idx_control_history_timestamp",
+          "name": "idx_control_history_time",
           "columns": [
-            "timestamp DESC"
+            "time DESC"
           ],
           "partial": null
         },
@@ -708,12 +708,12 @@
           "partial": "manual_expires_at IS NOT NULL AND mode = 'manual'"
         }
       ],
-      "notes": "Repository baseline primary key (id) cannot coexist with this source's TimescaleDB hypertable. The verified disposable fixture uses primary key (id, timestamp); preflight accepts the baseline key or exactly the listed variant and blocks every other live shape until a verified descriptor is supplied. Column order, types and nullability are unchanged.",
-      "fingerprint": "7890937c71bb86e31f6945bd14eae4d20e86307004b2272e4aea9e9f82ae109b",
+      "notes": "Repository baseline primary key (id) cannot coexist with this source's TimescaleDB hypertable. The verified disposable fixture uses primary key (id, time); preflight accepts the baseline key or exactly the listed variant and blocks every other live shape until a verified descriptor is supplied. Column order, types and nullability are unchanged.",
+      "fingerprint": "9dda4b9ad552916eb21284cf9c876bd57fdf6b15e84eae7c42318e015158a981",
       "primary_key_variants": [
         [
           "id",
-          "timestamp"
+          "time"
         ]
       ],
       "baseline_incompatibility": {
@@ -723,7 +723,7 @@
         "reason": "repository primary key does not include the TimescaleDB partitioning column; create_hypertable rejects it",
         "disposable_variant": [
           "id",
-          "timestamp"
+          "time"
         ],
         "variance_verified_in": "Infrastructure/database/tests/fixtures/grow_data_lifecycle_fixture.sql"
       }
@@ -736,7 +736,7 @@
       "source_files": [
         "Infrastructure/automation-service/alembic/versions/05_relay_observation.py:18-58"
       ],
-      "time_column": "observed_at",
+      "time_column": "time",
       "stable_ordering": [
         "observation_id"
       ],
@@ -755,7 +755,7 @@
           "generation": "identity_always"
         },
         {
-          "name": "observed_at",
+          "name": "time",
           "type": "timestamp with time zone",
           "not_null": true,
           "generation": null
@@ -822,7 +822,7 @@
         }
       ],
       "primary_key": [
-        "observed_at",
+        "time",
         "observation_id"
       ],
       "unique_constraints": [],
@@ -849,7 +849,7 @@
         {
           "name": "pk_relay_observation",
           "columns": [
-            "observed_at",
+            "time",
             "observation_id"
           ],
           "partial": null
@@ -860,7 +860,7 @@
             "location",
             "cluster",
             "device_id",
-            "observed_at",
+            "time",
             "observation_id"
           ],
           "partial": null
@@ -869,14 +869,14 @@
           "name": "idx_relay_observation_channel_time",
           "columns": [
             "channel",
-            "observed_at",
+            "time",
             "observation_id"
           ],
           "partial": null
         }
       ],
       "notes": null,
-      "fingerprint": "f83aaa67abfe27e22857304d7d5b35f93f572d7707c1d15f9e0fe36c73703b48"
+      "fingerprint": "ade8004ac63f3f37d2b6a8d75da7641731da876efcd4039dd61c0437c0867769"
     },
     {
       "name": "monitoring_room_photoperiod",
@@ -886,7 +886,7 @@
       "source_files": [
         "Infrastructure/database/monitoring_read_models.sql:316-332"
       ],
-      "time_column": "observed_at",
+      "time_column": "time",
       "stable_ordering": [
         "id"
       ],
@@ -905,7 +905,7 @@
           "generation": "identity_always"
         },
         {
-          "name": "observed_at",
+          "name": "time",
           "type": "timestamp with time zone",
           "not_null": true,
           "generation": null
@@ -985,7 +985,7 @@
           "columns": [
             "location",
             "cluster",
-            "observed_at DESC"
+            "time DESC"
           ],
           "partial": null
         },
@@ -998,7 +998,7 @@
         }
       ],
       "notes": null,
-      "fingerprint": "4625cf859e3ff7f835ada965b126111e1a9e73ed140925dd98c97adf1f4cc06a"
+      "fingerprint": "47027e7a7c5487aa9fc969d982193b330da85ae1653ee9bb8ca2fbfc339afd7d"
     },
     {
       "name": "monitoring_photoperiod_coverage",
@@ -1008,7 +1008,7 @@
       "source_files": [
         "Infrastructure/database/monitoring_read_models.sql:334-349"
       ],
-      "time_column": "observed_at",
+      "time_column": "time",
       "stable_ordering": [
         "id"
       ],
@@ -1027,7 +1027,7 @@
           "generation": "identity_always"
         },
         {
-          "name": "observed_at",
+          "name": "time",
           "type": "timestamp with time zone",
           "not_null": true,
           "generation": null
@@ -1070,7 +1070,7 @@
         [
           "location",
           "cluster",
-          "observed_at",
+          "time",
           "state"
         ]
       ],
@@ -1098,11 +1098,11 @@
           "partial": null
         },
         {
-          "name": "monitoring_photoperiod_coverage_location_cluster_observed_at_state_key",
+          "name": "monitoring_photoperiod_coverage_location_cluster_time_state_key",
           "columns": [
             "location",
             "cluster",
-            "observed_at",
+            "time",
             "state"
           ],
           "partial": null
@@ -1112,14 +1112,14 @@
           "columns": [
             "location",
             "cluster",
-            "observed_at DESC",
+            "time DESC",
             "id DESC"
           ],
           "partial": null
         }
       ],
       "notes": null,
-      "fingerprint": "050885d076164e470247cba82b7212f5357a26ee78bfce6084d60f9405fcdca8"
+      "fingerprint": "b63189c78c0697df27d5adbcd2f6a33f65f7918dfb720db1137eb7884b2d22b7"
     },
     {
       "name": "mode_transition_history",
@@ -1129,7 +1129,7 @@
       "source_files": [
         "Infrastructure/database/add_mode_transition_history.sql:5-17"
       ],
-      "time_column": "triggered_at",
+      "time_column": "time",
       "stable_ordering": [
         "id"
       ],
@@ -1190,7 +1190,7 @@
           "generation": null
         },
         {
-          "name": "triggered_at",
+          "name": "time",
           "type": "timestamp with time zone",
           "not_null": false,
           "generation": null
@@ -1273,13 +1273,13 @@
           "columns": [
             "location",
             "cluster",
-            "triggered_at DESC"
+            "time DESC"
           ],
           "partial": null
         }
       ],
-      "notes": "Cold binding must keep the nullable triggered_at exactly as the source defines it and use the migration-owned _archive_partition_time TIMESTAMPTZ NOT NULL as the physical partition column; NULL-time rows are recorded as context and never strengthen source nullability. Source table shape here is repository authority and unchanged.",
-      "fingerprint": "7747661af7257148f6a018c8b0c4b72773354882b72920e24e3e16094f264309"
+      "notes": "Cold binding must keep the nullable time exactly as the source defines it and use the migration-owned _archive_partition_time TIMESTAMPTZ NOT NULL as the physical partition column; NULL-time rows are recorded as context and never strengthen source nullability. Source table shape here is repository authority and unchanged.",
+      "fingerprint": "c8dc8b4f9083e8042eec6f8b241afa60e773e1a60c6a66090404079666624952"
     },
     {
       "name": "pid_parameter_history",
@@ -1290,7 +1290,7 @@
         "Infrastructure/automation-service/alembic/versions/001_baseline.py:216-228",
         "Infrastructure/automation-service/alembic/versions/007_add_pid_parameters_per_room.py:40-48"
       ],
-      "time_column": "timestamp",
+      "time_column": "time",
       "stable_ordering": [
         "id"
       ],
@@ -1309,7 +1309,7 @@
           "generation": "bigserial"
         },
         {
-          "name": "timestamp",
+          "name": "time",
           "type": "timestamp with time zone",
           "not_null": true,
           "generation": null
@@ -1387,13 +1387,13 @@
           "name": "idx_pid_parameter_history_device_type",
           "columns": [
             "device_type",
-            "timestamp DESC"
+            "time DESC"
           ],
           "partial": null
         }
       ],
       "notes": "Positive: registry/core or present/bind keys and oss_bits_stream are part of the page-per-column mulberry ownership binding and core mark. Checked-in descriptors carry plan-level time/key/ownership metadata only, so schema.py cannot drift against your parameter or column renames. Plan-side wait: pid_parameter_history may carry a changed_at fact that no repository DDL defines; if the live relation has it, preflight blocks as an unknown column until a lossless descriptor is supplied.",
-      "fingerprint": "620d6776623cbc7cd8efbd42b5fa2afae020ec82f292e21ae7b20a9d6bf4c80a"
+      "fingerprint": "040b2ce84417f80d085cf3ec52c14c2fa93f655e1f351693cccf734c8c8247c0"
     },
     {
       "name": "config_versions",

@@ -192,7 +192,7 @@ def _emit_lifecycle_mutation(
 
 
 def _mode_event_dto(row: dict[str, Any]) -> dict[str, Any]:
-    ts = row["triggered_at"]
+    ts = row["time"]
     d = ts.date() if hasattr(ts, "date") else ts
     title = f"Mode: {row.get('new_mode_name', '')}"
     if row.get("new_submode_name"):

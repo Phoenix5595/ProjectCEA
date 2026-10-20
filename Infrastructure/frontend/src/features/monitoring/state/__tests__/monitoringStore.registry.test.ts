@@ -230,7 +230,7 @@ describe('monitoring store device registry', () => {
           warnings: [],
           points: [
             {
-              timestamp: start,
+              time: start,
               value: 40,
               nominal_value: 40,
               device_name: 'light_f_1',

@@ -181,7 +181,7 @@ def _entries(
         source = _optional_string(row.get("source"))
         if source not in (_TRANSITION_SOURCE, _LEGACY_SAMPLE_SOURCE):
             continue
-        observed_at = _aware(row.get("observed_at"))
+        observed_at = _aware(row.get("time"))
         entry = _Entry(
             kind="transition" if source == _TRANSITION_SOURCE else "sample",
             at=observed_at,
@@ -196,7 +196,7 @@ def _entries(
         state = _optional_string(row.get("state"))
         if state not in ("available", "unavailable"):
             continue
-        observed_at = _aware(row.get("observed_at"))
+        observed_at = _aware(row.get("time"))
         buckets.setdefault(observed_at, []).append(
             _Entry(
                 kind="coverage",
@@ -226,7 +226,7 @@ def _light_entries(
         if cluster is not None and cluster != _CANONICAL_CLUSTER:
             continue
         device = _optional_string(row.get("device_name"))
-        timestamp = row.get("timestamp")
+        timestamp = row.get("time")
         if device is None or not isinstance(timestamp, datetime):
             continue
         groups.setdefault((device, timestamp), []).append(row)
@@ -234,13 +234,16 @@ def _light_entries(
         phase, invalid = _light_witness_phase(tied)
         if phase is None and not invalid:
             continue
-        yield timestamp, (
-            _Entry(
-                kind="light",
-                at=timestamp,
-                phase=phase,
-                invalid=invalid,
-                device_name=device,
+        yield (
+            timestamp,
+            (
+                _Entry(
+                    kind="light",
+                    at=timestamp,
+                    phase=phase,
+                    invalid=invalid,
+                    device_name=device,
+                ),
             ),
         )
 
@@ -253,9 +256,7 @@ def _light_witness_phase(rows: Sequence[ControlRecord]) -> tuple[str | None, boo
     """
     recognized = {
         mode
-        for mode in (
-            _optional_string(row.get("mode")) for row in rows
-        )
+        for mode in (_optional_string(row.get("mode")) for row in rows)
         if mode in _LIGHT_PHASES
     }
     if len(recognized) > 1:
@@ -318,9 +319,7 @@ def _apply(
             witness
             for witness in state.light_witnesses
             if not (
-                witness.device_name == device
-                and witness.started_at < at
-                and witness.expiry > at
+                witness.device_name == device and witness.started_at < at and witness.expiry > at
             )
         ]
         state.light_witnesses.append(
@@ -420,7 +419,7 @@ def _point(
     runtime_snapshot_version: int | None,
 ) -> PhotoperiodTimelinePointOut:
     return PhotoperiodTimelinePointOut(
-        timestamp=timestamp,
+        time=timestamp,
         phase=cast(Phase, phase),
         provenance=provenance,
         mode_id=mode_id,

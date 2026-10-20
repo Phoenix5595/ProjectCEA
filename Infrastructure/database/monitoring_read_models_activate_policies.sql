@@ -36,9 +36,9 @@ BEGIN
         IF target_cagg_name LIKE 'monitoring_measurement_%' THEN
             SELECT max(time) INTO source_latest FROM measurement;
         ELSIF target_cagg_name LIKE 'monitoring_effective_setpoints_%' THEN
-            SELECT max(timestamp) INTO source_latest FROM effective_setpoints;
+            SELECT max("time") INTO source_latest FROM effective_setpoints;
         ELSE
-            SELECT max(timestamp) INTO source_latest FROM automation_state;
+            SELECT max("time") INTO source_latest FROM automation_state;
         END IF;
 
         IF catalog_watermark IS NULL

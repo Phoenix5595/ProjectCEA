@@ -102,7 +102,7 @@ async def _assert_jobs(
         "AND hypertable_name = ANY($1::text[]) "
         "AND proc_name = $2 "
         "AND scheduled "
-        "AND (config ->> $3)::interval = $4::interval",
+        "AND (config ->> $3)::interval = $4::text::interval",
         list(tables),
         proc_name,
         interval_key,
@@ -129,7 +129,7 @@ async def _prepare_fixture(conn: asyncpg.Connection) -> dict[str, tuple[bool, tu
     await conn.execute(
         "ALTER TABLE public.effective_setpoints SET (timescaledb.compress, "
         "timescaledb.compress_segmentby = 'location,cluster,device_name,mode', "
-        "timescaledb.compress_orderby = 'timestamp ASC')"
+        "timescaledb.compress_orderby = 'time ASC')"
     )
     prior_settings = {
         table: await _hypertable_options(conn, table)
@@ -167,16 +167,17 @@ async def _prepare_fixture(conn: asyncpg.Connection) -> dict[str, tuple[bool, tu
         expected_count=2,
     )
 
-    # Production has control_history as a plain PostgreSQL table. Recreate that
-    # fixture relation in the same shape so the migration's skip branch is
-    # exercised without changing the shared fixture used by other cases.
+    # Recreate control_history as a plain PostgreSQL relation solely to
+    # exercise the source-compression script's skip branch; production uses a
+    # hypertable.
     await conn.execute("DROP TABLE public.control_history CASCADE")
-    await conn.execute("CREATE TABLE public.control_history (id BIGINT, timestamp TIMESTAMPTZ)")
+    await conn.execute("CREATE TABLE public.control_history (id BIGINT, time TIMESTAMPTZ)")
     if await conn.fetchval(
         "SELECT EXISTS (SELECT 1 FROM timescaledb_information.hypertables "
         "WHERE hypertable_schema = 'public' AND hypertable_name = 'control_history')"
     ):
         raise CompressionProofFailure("public.control_history is still a hypertable in the proof fixture")
+    return prior_settings
 
 
 async def _run(url: str) -> None:

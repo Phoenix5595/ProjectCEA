@@ -69,7 +69,7 @@ def _phase_order(value: Any) -> int | None:
 
 
 _SETPOINT_PREDECESSOR_COLUMNS = (
-    "timestamp, location, cluster, device_name, mode, "
+    '"time", location, cluster, device_name, mode, '
     "effective_heating_setpoint, effective_cooling_setpoint, effective_humidity_setpoint, "
     "effective_co2_setpoint, effective_vpd_setpoint, effective_light_intensity, "
     "nominal_heating_setpoint, nominal_cooling_setpoint, nominal_humidity_setpoint, "
@@ -364,7 +364,7 @@ class LightSnapshotSource:
                 SELECT DISTINCT device_name, mode
                 FROM effective_setpoints
                 WHERE location = $1 AND cluster = $2
-                  AND timestamp >= $3::timestamptz - INTERVAL '48 hours' AND timestamp < $3::timestamptz
+                  AND "time" >= $3::timestamptz - INTERVAL '48 hours' AND "time" < $3::timestamptz
             )
             SELECT DISTINCT ON (r.device_name, r.mode)
                    {_COLUMNS}
@@ -374,8 +374,8 @@ class LightSnapshotSource:
                 FROM effective_setpoints e
                 WHERE e.location = $1 AND e.cluster = $2
                   AND e.device_name = r.device_name AND e.mode = r.mode
-                  AND e.timestamp < $3::timestamptz
-                ORDER BY e.timestamp DESC
+                  AND e."time" < $3::timestamptz
+                ORDER BY e."time" DESC
                 LIMIT 1
             ) e
             ORDER BY r.device_name, r.mode
@@ -398,7 +398,7 @@ class AnchorSnapshotSource:
                 SELECT DISTINCT device_name, mode
                 FROM effective_setpoints
                 WHERE location = $1 AND cluster = $2
-                  AND timestamp >= $3::timestamptz - INTERVAL '48 hours' AND timestamp < $3::timestamptz
+                  AND "time" >= $3::timestamptz - INTERVAL '48 hours' AND "time" < $3::timestamptz
                     AND effective_light_intensity IS NOT NULL
             )
             SELECT DISTINCT ON (r.device_name, r.mode)
@@ -409,8 +409,8 @@ class AnchorSnapshotSource:
                 FROM effective_setpoints e
                 WHERE e.location = $1 AND e.cluster = $2
                   AND e.device_name = r.device_name AND e.mode = r.mode
-                  AND e.timestamp < $3::timestamptz
-                ORDER BY e.timestamp DESC
+                  AND e."time" < $3::timestamptz
+                ORDER BY e."time" DESC
                 LIMIT 1
             ) e
             ORDER BY r.device_name, r.mode
@@ -426,18 +426,18 @@ class AnchorSnapshotSource:
                 SELECT DISTINCT device_name
                 FROM automation_state
                 WHERE location = $1 AND cluster = $2
-                  AND timestamp >= $3::timestamptz - INTERVAL '48 hours' AND timestamp < $3::timestamptz
+                  AND "time" >= $3::timestamptz - INTERVAL '48 hours' AND "time" < $3::timestamptz
             )
             SELECT DISTINCT ON (r.device_name)
-                   a.timestamp, a.location, a.cluster, a.device_name, a.device_state,
+                   a."time", a.location, a.cluster, a.device_name, a.device_state,
                    a.device_mode, a.pid_output, a.duty_cycle_percent, a.control_reason
             FROM recent r
             CROSS JOIN LATERAL (
                 SELECT *
                 FROM automation_state a
                 WHERE a.location = $1 AND a.cluster = $2
-                  AND a.device_name = r.device_name AND a.timestamp < $3::timestamptz
-                ORDER BY a.timestamp DESC
+                  AND a.device_name = r.device_name AND a."time" < $3::timestamptz
+                ORDER BY a."time" DESC
                 LIMIT 1
             ) a
             ORDER BY r.device_name
@@ -449,10 +449,10 @@ class AnchorSnapshotSource:
         self, location: str, cluster: str, start: datetime
     ) -> Mapping[str, Any] | None:
         query = """
-            SELECT observed_at, phase, mode_id, submode_id, runtime_snapshot_version
+            SELECT "time", phase, mode_id, submode_id, runtime_snapshot_version
             FROM monitoring_room_photoperiod
-            WHERE location = $1 AND cluster = $2 AND observed_at < $3::timestamptz
-            ORDER BY observed_at DESC
+            WHERE location = $1 AND cluster = $2 AND "time" < $3::timestamptz
+            ORDER BY "time" DESC
             LIMIT 1
         """
         async with self._pool.acquire() as connection:

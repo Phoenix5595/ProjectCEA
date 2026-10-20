@@ -38,7 +38,7 @@ const SampleExtrema = {
 
 /** A scalar control value on the shared UTC monitoring grid. */
 export const TimelinePoint = z.object({
-  timestamp: utcDate,
+  time: utcDate,
   value: z.number().nullable(),
   provenance: TimelineProvenance,
   aggregation: AggregationMetadata.nullable().optional(),
@@ -46,9 +46,9 @@ export const TimelinePoint = z.object({
 })
 export type TimelinePoint = z.infer<typeof TimelinePoint>
 
-/** A value that holds from `timestamp` until the following point. */
+/** A value that holds from `time` until the following point. */
 export const TimelineStep = z.object({
-  timestamp: utcDate,
+  time: utcDate,
   value: z.number().nullable(),
   provenance: TimelineProvenance,
   ...SampleExtrema,
@@ -86,7 +86,7 @@ export type LightTimelinePoint = z.infer<typeof LightTimelinePoint>
 
 /** Historical automation-state observation; future device state is never fabricated. */
 export const DeviceTimelinePoint = z.object({
-  timestamp: utcDate,
+  time: utcDate,
   provenance: TimelineProvenance,
   device_name: z.string().min(1),
   device_state: z.number(),
@@ -97,7 +97,7 @@ export type DeviceTimelinePoint = z.infer<typeof DeviceTimelinePoint>
 
 /** Historical PID output observation; null output stays null. */
 export const PidTimelinePoint = z.object({
-  timestamp: utcDate,
+  time: utcDate,
   provenance: TimelineProvenance,
   device_name: z.string().min(1),
   pid_output: z.number().nullable().optional(),
@@ -113,7 +113,7 @@ export type PidTimelinePoint = z.infer<typeof PidTimelinePoint>
 
 /** A historical or projected room photoperiod phase transition. */
 export const PhotoperiodTimelinePoint = z.object({
-  timestamp: utcDate,
+  time: utcDate,
   phase: Phase,
   provenance: TimelineProvenance,
   mode_id: z.number().nullable().optional(),

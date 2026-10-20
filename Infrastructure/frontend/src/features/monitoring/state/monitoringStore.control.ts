@@ -138,9 +138,9 @@ export function lastControlTimestamp(data: StoreData): Date | null {
   const history = data.controlHistory
   if (!history) return null
   let last: Date | null = null
-  const scan = (points: readonly { timestamp: Date }[]): void => {
+  const scan = (points: readonly { time: Date }[]): void => {
     for (const point of points) {
-      if (last === null || point.timestamp > last) last = point.timestamp
+      if (last === null || point.time > last) last = point.time
     }
   }
   for (const series of [...history.climate, ...history.lights]) {

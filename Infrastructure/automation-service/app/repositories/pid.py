@@ -186,16 +186,16 @@ class PIDRepository(BaseRepository):
                 conn.transaction(isolation="repeatable_read", readonly=True),
             ):
                 times = await conn.fetch(
-                    "SELECT timestamp FROM pid_parameter_history "
+                    'SELECT "time" FROM pid_parameter_history '
                     "WHERE location=$1 AND cluster=$2 AND device_type=$3 "
-                    "ORDER BY timestamp DESC LIMIT $4",
+                    'ORDER BY "time" DESC LIMIT $4',
                     location,
                     cluster,
                     device_type,
                     limit,
                 )
                 oldest = min(
-                    (row["timestamp"] for row in times), default=datetime.min.replace(tzinfo=UTC)
+                    (row["time"] for row in times), default=datetime.min.replace(tzinfo=UTC)
                 )
                 await require_local_history(
                     conn,
@@ -570,7 +570,7 @@ class PIDRepository(BaseRepository):
                     await conn.execute(
                         """
                         INSERT INTO pid_parameter_history
-                            (location, cluster, device_type, timestamp, kp, ki, kd, binary_hysteresis, updated_by, source, change_reason)
+                            (location, cluster, device_type, "time", kp, ki, kd, binary_hysteresis, updated_by, source, change_reason)
                         VALUES ($1, $2, $3, NOW(), $4, $5, $6, $7, $8, $9, $10)
                     """,
                         location,

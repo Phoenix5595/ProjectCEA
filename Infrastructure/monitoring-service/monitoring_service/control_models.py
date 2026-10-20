@@ -89,7 +89,7 @@ class TimelineProvenanceModel(ControlReadModel):
 
 
 class TimelineStepOut(ControlReadModel):
-    timestamp: AwareDatetime
+    time: AwareDatetime
     value: float | None
     provenance: TimelineProvenanceModel
     # Extrema of every recorded sample the step represents, including samples
@@ -107,7 +107,7 @@ class TimelineLinearOut(ControlReadModel):
 
 
 class ClimateTimelinePointOut(ControlReadModel):
-    timestamp: AwareDatetime
+    time: AwareDatetime
     value: float | None
     provenance: TimelineProvenanceModel
     metric: str
@@ -121,7 +121,7 @@ class ClimateTimelinePointOut(ControlReadModel):
 
 
 class LightTimelinePointOut(ControlReadModel):
-    timestamp: AwareDatetime
+    time: AwareDatetime
     value: float | None
     provenance: TimelineProvenanceModel
     device_name: str
@@ -151,7 +151,7 @@ class LightTimelineSeriesOut(ControlReadModel):
 
 
 class DeviceTimelinePointOut(ControlReadModel):
-    timestamp: AwareDatetime
+    time: AwareDatetime
     provenance: TimelineProvenanceModel
     device_name: str
     device_state: float
@@ -167,7 +167,7 @@ class DeviceTimelineSeriesOut(ControlReadModel):
 
 
 class PidTimelinePointOut(ControlReadModel):
-    timestamp: AwareDatetime
+    time: AwareDatetime
     provenance: TimelineProvenanceModel
     device_name: str
     pid_output: float | None = None
@@ -188,7 +188,7 @@ class PidTimelineSeriesOut(ControlReadModel):
 
 
 class PhotoperiodTimelinePointOut(ControlReadModel):
-    timestamp: AwareDatetime
+    time: AwareDatetime
     phase: Literal["SUN", "MOON", "UNKNOWN"]
     provenance: TimelineProvenanceModel
     mode_id: int | None = None
@@ -237,7 +237,7 @@ class RelayTimelineTransition(ControlReadModel):
     """One persisted sample-time physical observation or recorder heartbeat."""
 
     observation_id: int = Field(gt=0)
-    observed_at: AwareDatetime
+    time: AwareDatetime
     channel: int | None = Field(ge=0, le=15)
     observed_state: bool | None
     reason: Literal[
@@ -257,7 +257,7 @@ class RelayTimelineTransition(ControlReadModel):
     location: str | None
     cluster: str | None
 
-    @field_validator("observed_at")
+    @field_validator("time")
     @classmethod
     def normalize_utc(cls, value: datetime) -> datetime:
         return value.astimezone(UTC)
@@ -286,7 +286,7 @@ class RelayTimelineLoadPoint(ControlReadModel):
 
     device_id: int | None = Field(ge=0)
     device_name: str
-    timestamp: AwareDatetime
+    time: AwareDatetime
     requested_percent: FiniteFloat | None = Field(ge=0, le=100)
     # Valid requested-percent extrema over the samples the point represents.
     # Null unless the source proves every represented fraction is valid, so a
@@ -296,7 +296,7 @@ class RelayTimelineLoadPoint(ControlReadModel):
     aggregated: bool
     interval_seconds: int = Field(ge=1)
 
-    @field_validator("timestamp")
+    @field_validator("time")
     @classmethod
     def normalize_utc(cls, value: datetime) -> datetime:
         return value.astimezone(UTC)

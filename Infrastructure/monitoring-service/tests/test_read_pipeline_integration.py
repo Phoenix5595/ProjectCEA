@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import asyncio  # noqa: ANYIO_OK
+import asyncio
 from collections import Counter, defaultdict
 from contextlib import AbstractAsyncContextManager
 from contextvars import ContextVar
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from time import perf_counter
 from types import TracebackType
 from typing import Protocol
@@ -57,6 +57,10 @@ class LatentConnection:
         return FakeTransaction()
 
     async def fetch(self, query: str, *_: object) -> list[asyncpg.Record]:
+        if "to_regclass('public.archive_availability')" in query:
+            row = MagicMock(spec=asyncpg.Record)
+            row.__getitem__.side_effect = {"relation": None}.__getitem__
+            return [row]
         self._queries_by_request[_REQUEST_ID.get()].append(query)
         await asyncio.sleep(0.05)
         if "materialization_watermark" in query:
@@ -192,9 +196,9 @@ async def test_eight_concurrent_bounded_flower_range_reads_release_the_shared_po
     assert elapsed_seconds < 1.5
     assert {
         request_id: len(queries) for request_id, queries in pool.queries_by_request.items()
-    } == {request_id: 3 for request_id in range(8)}
+    } == {request_id: 4 for request_id in range(8)}
     assert all(
-        sum("materialization_watermark" in query for query in queries) == 1
+        sum("materialization_watermark" in query for query in queries) == 2
         for queries in pool.queries_by_request.values()
     )
     assert all(max(Counter(queries).values()) == 1 for queries in pool.queries_by_request.values())

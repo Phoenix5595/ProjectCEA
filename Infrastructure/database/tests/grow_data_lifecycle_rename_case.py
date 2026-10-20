@@ -577,7 +577,7 @@ async def _policy_probe(url: str) -> None:
         await conn.execute(
             "ALTER TABLE public.automation_state SET (timescaledb.compress, "
             "timescaledb.compress_segmentby = 'location', "
-            "timescaledb.compress_orderby = 'timestamp DESC')"
+            "timescaledb.compress_orderby = 'time DESC')"
         )
         source_job_id = await conn.fetchval(
             "SELECT add_retention_policy('public.measurement', INTERVAL '100 years', if_not_exists => TRUE)"

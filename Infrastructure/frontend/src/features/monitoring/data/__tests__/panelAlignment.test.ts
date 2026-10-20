@@ -47,7 +47,7 @@ function fixedRange(): MonitoringRange {
 }
 
 function controls(
-  points: Array<{ timestamp: Date; value: number | null }>
+  points: Array<{ time: Date; value: number | null }>
 ): ControlMonitoringResponse {
   const climate: ClimateTimelineSeries = {
     name: 'Heating Setpoint',
@@ -55,7 +55,7 @@ function controls(
     projection: null,
     warnings: [],
     points: points.map(point => ({
-      timestamp: point.timestamp,
+      time: point.time,
       value: point.value,
       nominal_value: point.value,
       metric: 'heating_setpoint',
@@ -89,7 +89,7 @@ function input(overrides: Partial<AlignInput> = {}): AlignInput {
   ]
   return {
     series,
-    controlHistory: controls([{ timestamp: START, value: 22 }]),
+    controlHistory: controls([{ time: START, value: 22 }]),
     projectionHistory: null,
     photoperiod: [],
     live: [],
@@ -131,7 +131,7 @@ describe('panel alignment', () => {
 
   it('inserts live sensor values before future projection timestamps', () => {
     const source = input({
-      projectionHistory: controls([{ timestamp: FUTURE, value: 23 }]),
+      projectionHistory: controls([{ time: FUTURE, value: 23 }]),
       range: { kind: 'live', duration: 60 * 60 * 1000 },
     })
     const alignment = createPanelAlignment()
@@ -170,7 +170,7 @@ describe('panel alignment', () => {
     const result = alignment.align({
       ...source,
       panel: CLIMATE_PANEL,
-      controlHistory: controls([{ timestamp: firstNow, value: 23 }]),
+      controlHistory: controls([{ time: firstNow, value: 23 }]),
       live: [{ sensor: 'dry_bulb', value: 24.9, timestamp: secondNow }],
       now: secondNow,
     })
@@ -189,9 +189,9 @@ describe('panel alignment', () => {
   it('preserves legacy series, bands, provenance, and null gaps', () => {
     const source = input({
       controlHistory: controls([
-        { timestamp: START, value: 22 },
-        { timestamp: NOW, value: null },
-        { timestamp: END, value: 23 },
+        { time: START, value: 22 },
+        { time: NOW, value: null },
+        { time: END, value: 23 },
       ]),
       live: [{ sensor: 'dry_bulb', value: 24.8, timestamp: NOW }],
     })
@@ -229,7 +229,7 @@ describe('panel alignment', () => {
     const source = input()
     const alignment = createPanelAlignment()
     alignment.align({ ...source, panel: CLIMATE_PANEL })
-    const changed = { ...source, controlHistory: controls([{ timestamp: START, value: 23 }]) }
+    const changed = { ...source, controlHistory: controls([{ time: START, value: 23 }]) }
     alignment.align({ ...changed, panel: CLIMATE_PANEL })
     alignment.align({ ...changed, panel: CLIMATE_PANEL })
 
@@ -244,7 +244,7 @@ describe('panel alignment', () => {
       warnings: [],
       points: [
         {
-          timestamp: START,
+          time: START,
           value: 600,
           nominal_value: 600,
           metric: 'co2_setpoint',
@@ -319,7 +319,7 @@ describe('panel alignment', () => {
     expect(budgeted.x.length).toBeGreaterThan(20_000)
   })
   it('keeps recorded climate targets out of both room panels but retains sensors', () => {
-    const history = controls([{ timestamp: START, value: 22 }])
+    const history = controls([{ time: START, value: 22 }])
     const heating = history.climate[0]
     if (heating === undefined) throw new Error('heating fixture is required')
     heating.name = 'heating'
@@ -372,7 +372,7 @@ describe('panel alignment', () => {
       warnings: [],
       points: [
         {
-          timestamp: START,
+          time: START,
           provenance,
           device_name: deviceName,
           device_state: 1,
@@ -387,7 +387,7 @@ describe('panel alignment', () => {
       warnings: [],
       points: [
         {
-          timestamp: START,
+          time: START,
           provenance,
           device_name: deviceName,
           pid_output: 15,
@@ -406,7 +406,7 @@ describe('panel alignment', () => {
         warnings: [],
         points: [
           {
-            timestamp: START,
+            time: START,
             value: 40,
             nominal_value: 40,
             device_name: 'light_f_1',
@@ -431,10 +431,10 @@ describe('panel alignment', () => {
       warnings: [],
       points: [],
       steps: [
-        { timestamp: NOW, value: 40, provenance: projectedProvenance },
-        { timestamp: gapStart, value: null, provenance: unavailableProvenance },
+        { time: NOW, value: 40, provenance: projectedProvenance },
+        { time: gapStart, value: null, provenance: unavailableProvenance },
         {
-          timestamp: new Date(gapStart.getTime() + 30_000),
+          time: new Date(gapStart.getTime() + 30_000),
           value: 0,
           provenance: projectedProvenance,
         },
@@ -454,7 +454,7 @@ describe('panel alignment', () => {
       name: 'Scheduled projection',
       metric: 'light_f_1',
       trajectory_kind: 'scheduled',
-      steps: [{ timestamp: NOW, value: 95, provenance: projectedProvenance }],
+      steps: [{ time: NOW, value: 95, provenance: projectedProvenance }],
       linear: [],
     }
     projection.lights = [effectiveLight, scheduledLight]

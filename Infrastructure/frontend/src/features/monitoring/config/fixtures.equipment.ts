@@ -23,9 +23,9 @@ function rawLight(name: string, start: string, end: string, value: number) {
     provenance: recorded(),
     warnings: [],
     points: [
-      { timestamp: start, value, nominal_value: value, device_name: name, mode: 'DAY', provenance: recorded() },
-      { timestamp: at(start, end, 0.5), value: value + 10, nominal_value: value + 10, device_name: name, mode: 'NIGHT', provenance: recorded() },
-      { timestamp: at(start, end, 0.9), value: value + 5, nominal_value: value + 5, device_name: name, mode: 'DAY', provenance: recorded() },
+      { time: start, value, nominal_value: value, device_name: name, mode: 'DAY', provenance: recorded() },
+      { time: at(start, end, 0.5), value: value + 10, nominal_value: value + 10, device_name: name, mode: 'NIGHT', provenance: recorded() },
+      { time: at(start, end, 0.9), value: value + 5, nominal_value: value + 5, device_name: name, mode: 'DAY', provenance: recorded() },
     ],
     steps: [],
     linear: [],
@@ -39,7 +39,7 @@ function deviceState(deviceName: string, timestamp: string, state: number) {
     warnings: [],
     points: [
       {
-        timestamp,
+        time: timestamp,
         provenance: recorded('exact', true),
         device_name: deviceName,
         device_state: state,
@@ -57,7 +57,7 @@ function pidState(deviceName: string, timestamp: string, pidOutput: number, duty
     warnings: [],
     points: [
       {
-        timestamp,
+        time: timestamp,
         provenance: recorded('exact', true),
         device_name: deviceName,
         pid_output: pidOutput,
@@ -81,11 +81,11 @@ export function equipmentHistoryFixture(room: string, start: string, end: string
         warnings: [],
         points: [],
         steps: [
-          { timestamp: start, value: 40, provenance: recorded() },
-          { timestamp: at(start, end, 0.18), value: 0, provenance: recorded() },
-          { timestamp: at(start, end, 0.40), value: 10, provenance: recorded() },
-          { timestamp: at(start, end, 0.72), value: null, provenance: recorded('unavailable') },
-          { timestamp: at(start, end, 0.86), value: 0, provenance: recorded() },
+          { time: start, value: 40, provenance: recorded() },
+          { time: at(start, end, 0.18), value: 0, provenance: recorded() },
+          { time: at(start, end, 0.40), value: 10, provenance: recorded() },
+          { time: at(start, end, 0.72), value: null, provenance: recorded('unavailable') },
+          { time: at(start, end, 0.86), value: 0, provenance: recorded() },
         ],
         linear: [
           {

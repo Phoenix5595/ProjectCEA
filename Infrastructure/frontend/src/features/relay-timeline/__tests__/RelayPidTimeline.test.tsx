@@ -164,7 +164,7 @@ function timelinePage(start: string, end: string, watermark = 42) {
     transitions: [
       {
         observation_id: 3,
-        observed_at: new Date(endMs - 5_000).toISOString(),
+        time: new Date(endMs - 5_000).toISOString(),
         channel: null,
         observed_state: null,
         reason: 'heartbeat',
@@ -180,7 +180,7 @@ function timelinePage(start: string, end: string, watermark = 42) {
     anchors: [
       {
         observation_id: 1,
-        observed_at: new Date(startMs - 10_000).toISOString(),
+        time: new Date(startMs - 10_000).toISOString(),
         channel: 0,
         observed_state: true,
         reason: 'initial',
@@ -194,7 +194,7 @@ function timelinePage(start: string, end: string, watermark = 42) {
       },
       {
         observation_id: 2,
-        observed_at: new Date(startMs - 5_000).toISOString(),
+        time: new Date(startMs - 5_000).toISOString(),
         channel: null,
         observed_state: null,
         reason: 'heartbeat',
@@ -211,7 +211,7 @@ function timelinePage(start: string, end: string, watermark = 42) {
       {
         device_id: 101,
         device_name: 'veg_heater',
-        timestamp: new Date(startMs + 20_000).toISOString(),
+        time: new Date(startMs + 20_000).toISOString(),
         requested_percent: 50,
         aggregated: false,
         interval_seconds: 60,
@@ -298,7 +298,7 @@ describe('RelayPidTimeline integration', () => {
           {
             device_id: 101,
             device_name: 'veg_heater',
-            timestamp: new Date(Date.parse(end) - 1_000),
+            time: new Date(Date.parse(end) - 1_000),
             requested_percent: 42,
             aggregated: false,
             interval_seconds: 5,
@@ -338,7 +338,7 @@ describe('RelayPidTimeline integration', () => {
           {
             device_id: 101,
             device_name: 'veg_heater',
-            timestamp: new Date(Date.parse(end) - 2_000),
+            time: new Date(Date.parse(end) - 2_000),
             requested_percent: 75,
             aggregated: false,
             interval_seconds: 1,
@@ -346,7 +346,7 @@ describe('RelayPidTimeline integration', () => {
           {
             device_id: 101,
             device_name: 'veg_heater',
-            timestamp: new Date(Date.parse(end) - 500),
+            time: new Date(Date.parse(end) - 500),
             requested_percent: null,
             aggregated: false,
             interval_seconds: 1,
@@ -398,7 +398,7 @@ describe('RelayPidTimeline integration', () => {
         const page = timelinePage(start, end)
         const initial = {
           observation_id: 4,
-          observed_at: new Date(Date.parse(start) + 20_000),
+          time: new Date(Date.parse(start) + 20_000),
           channel: 0,
           observed_state: true,
           reason: 'initial' as const,
@@ -413,7 +413,7 @@ describe('RelayPidTimeline integration', () => {
         return {
           ...page,
           transitions: [...page.transitions, initial].sort(
-            (left, right) => left.observed_at.getTime() - right.observed_at.getTime()
+            (left, right) => left.time.getTime() - right.time.getTime()
           ),
           anchors: page.anchors.filter(anchor => anchor.reason === 'heartbeat'),
           coverage_complete: false,
@@ -465,7 +465,7 @@ describe('RelayPidTimeline integration', () => {
           transitions: [
             {
               observation_id: 5,
-              observed_at: new Date(Date.parse(start) + 30_000),
+              time: new Date(Date.parse(start) + 30_000),
               channel: 0,
               observed_state: false,
               reason: 'state_changed',
@@ -489,7 +489,7 @@ describe('RelayPidTimeline integration', () => {
           transitions: [
             {
               observation_id: 6,
-              observed_at: new Date(Date.parse(start) + 60_000),
+              time: new Date(Date.parse(start) + 60_000),
               channel: 0,
               observed_state: true,
               reason: 'state_changed',

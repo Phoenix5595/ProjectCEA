@@ -12,6 +12,7 @@ Canonical encoding (``canonical_json_bytes``) is the exact JSON encoding the
 codec writes for ``manifest.json``/``schema.json`` (sorted keys, compact
 separators, UTF-8, no NaN), so ``manifest_sha256`` recomputes byte-exactly.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -39,8 +40,91 @@ class AnnualIntegrityError(ValueError):
 
 def canonical_json_bytes(value: Any) -> bytes:
     """Canonical manifest encoding shared with the codec (sorted, compact, UTF-8)."""
-    return json.dumps(value, sort_keys=True, separators=(",", ":"),
-                      ensure_ascii=False, allow_nan=False).encode()
+    return json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
+    ).encode()
+
+
+_EVENT_TIME_TOKEN = re.compile(
+    r"(?<![a-z0-9])(?:timestamp|observed_at|triggered_at)(?![a-z0-9])",
+)
+
+
+def _normalize_event_time_names(
+    value: Any,
+    field: str | None = None,
+    table_name: str | None = None,
+    parent_field: str | None = None,
+) -> Any:
+    if isinstance(value, Mapping):
+        if table_name is None and isinstance(value.get("name"), str):
+            table_name = value["name"]
+        return {
+            key: _normalize_event_time_names(
+                item, field=str(key), table_name=table_name, parent_field=field
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [
+            _normalize_event_time_names(
+                item, field=field, table_name=table_name, parent_field=field
+            )
+            for item in value
+        ]
+    if isinstance(value, str):
+        if field in {"type", "source_files"}:
+            return value
+        if table_name == "automation_state" and parent_field == "indexes" and field == "name":
+            return value
+        return _EVENT_TIME_TOKEN.sub("time", value)
+    return value
+
+
+def _refresh_descriptor_fingerprint(descriptor: dict[str, Any]) -> None:
+    columns = descriptor.get("columns")
+    primary_key = descriptor.get("primary_key")
+    variants = descriptor.get("primary_key_variants") or []
+    unique_constraints = descriptor.get("unique_constraints")
+    if (
+        not isinstance(columns, list)
+        or not all(isinstance(column, Mapping) for column in columns)
+        or not isinstance(primary_key, list)
+        or not isinstance(variants, list)
+        or not isinstance(unique_constraints, list)
+        or type(descriptor.get("hypertable")) is not bool
+    ):
+        return
+    payload = {
+        "relation": descriptor.get("relation"),
+        "columns": [
+            [
+                column.get("name"),
+                column.get("type"),
+                column.get("not_null"),
+                column.get("generation"),
+            ]
+            for column in columns
+        ],
+        "primary_key": primary_key,
+        "primary_key_variants": variants,
+        "unique_constraints": unique_constraints,
+        "hypertable": descriptor["hypertable"],
+    }
+    descriptor["fingerprint"] = hashlib.sha256(canonical_json_bytes(payload)).hexdigest()
+
+
+def schema_descriptors_compatible(left: Mapping[str, Any], right: Mapping[str, Any]) -> bool:
+    """Accept only byte-equivalent descriptors apart from legacy event-time names."""
+    if canonical_json_bytes(left) == canonical_json_bytes(right):
+        return True
+    normalized_left = _normalize_event_time_names(left)
+    normalized_right = _normalize_event_time_names(right)
+    if isinstance(normalized_left, dict):
+        _refresh_descriptor_fingerprint(normalized_left)
+    if isinstance(normalized_right, dict):
+        _refresh_descriptor_fingerprint(normalized_right)
+    return canonical_json_bytes(normalized_left) == canonical_json_bytes(normalized_right)
 
 
 def manifest_sha256(manifest: Mapping[str, Any]) -> str:
@@ -67,12 +151,20 @@ def component_members(manifest: Mapping[str, Any]) -> list[Mapping[str, Any]]:
 
 
 def _safe_member(name: Any) -> bool:
-    return (isinstance(name, str) and bool(name) and "\\" not in name and "\x00" not in name
-            and not name.startswith("/") and not re.match(r"^[A-Za-z]:", name)
-            and not any(part in ("", ".", "..") for part in name.split("/")))
+    return (
+        isinstance(name, str)
+        and bool(name)
+        and "\\" not in name
+        and "\x00" not in name
+        and not name.startswith("/")
+        and not re.match(r"^[A-Za-z]:", name)
+        and not any(part in ("", ".", "..") for part in name.split("/"))
+    )
 
 
-def annual_member_inventory(manifest: Mapping[str, Any]) -> tuple[tuple[Mapping[str, Any], Mapping[str, Any], str], ...]:
+def annual_member_inventory(
+    manifest: Mapping[str, Any],
+) -> tuple[tuple[Mapping[str, Any], Mapping[str, Any], str], ...]:
     """Ordered ``(component, member_entry, zip_member_name)`` triples.
 
     ``zip_member_name`` is the prefixed name inside the annual ZIP; the same
@@ -88,14 +180,21 @@ def annual_member_inventory(manifest: Mapping[str, Any]) -> tuple[tuple[Mapping[
         if not isinstance(component, Mapping):
             raise AnnualIntegrityError("invalid annual component")
         prefix = component.get("member_prefix")
-        if not isinstance(prefix, str) or not PREFIX_PATTERN.match(prefix) or prefix in seen_prefixes:
+        if (
+            not isinstance(prefix, str)
+            or not PREFIX_PATTERN.match(prefix)
+            or prefix in seen_prefixes
+        ):
             raise AnnualIntegrityError("invalid component prefix")
         seen_prefixes.add(prefix)
         child = component.get("manifest")
         if not isinstance(child, Mapping):
             raise AnnualIntegrityError("component manifest missing")
-        if (child.get("format") != FORMAT or str(child.get("dataset_id")) != str(component.get("dataset_id"))
-                or child.get("revision") != component.get("revision")):
+        if (
+            child.get("format") != FORMAT
+            or str(child.get("dataset_id")) != str(component.get("dataset_id"))
+            or child.get("revision") != component.get("revision")
+        ):
             raise AnnualIntegrityError("component identity mismatch")
         for entry in component_members(child):
             name = entry.get("path")
@@ -114,14 +213,20 @@ def annual_member_inventory(manifest: Mapping[str, Any]) -> tuple[tuple[Mapping[
 def _merge_schema(target: dict[str, Any], schema: Mapping[str, Any], *, label: str) -> None:
     for table, descriptor in schema.items():
         existing = target.get(table)
-        if existing is not None and canonical_json_bytes(existing) != canonical_json_bytes(descriptor):
+        if existing is not None and not schema_descriptors_compatible(existing, descriptor):
             raise AnnualIntegrityError(f"component {label} schema mismatch")
         target[table] = descriptor
 
 
-def build_annual_manifest(dataset_id: UUID, revision: int, *, calendar_revision: int,
-                          calendar_year: int, room: str,
-                          components: Sequence[AnnualComponentInput]) -> dict[str, Any]:
+def build_annual_manifest(
+    dataset_id: UUID,
+    revision: int,
+    *,
+    calendar_revision: int,
+    calendar_year: int,
+    room: str,
+    components: Sequence[AnnualComponentInput],
+) -> dict[str, Any]:
     """Pure annual manifest; totals are sums over the embedded child manifests."""
     if revision < 1 or calendar_revision < 1 or len(components) != 4:
         raise AnnualIntegrityError("annual must contain four quarters")
@@ -140,10 +245,13 @@ def build_annual_manifest(dataset_id: UUID, revision: int, *, calendar_revision:
     available_to: str | None = None
     decoded_bytes = 0
     for component in ordered:
-        if (not PREFIX_PATTERN.match(component.member_prefix) or component.member_prefix in seen
-                or len(component.sha256) != 64
-                or any(char not in "0123456789abcdef" for char in component.sha256.lower())
-                or component.byte_size <= 0):
+        if (
+            not PREFIX_PATTERN.match(component.member_prefix)
+            or component.member_prefix in seen
+            or len(component.sha256) != 64
+            or any(char not in "0123456789abcdef" for char in component.sha256.lower())
+            or component.byte_size <= 0
+        ):
             raise AnnualIntegrityError("invalid component identity/prefix")
         seen.add(component.member_prefix)
         if component.source_prefix and not PREFIX_PATTERN.match(component.source_prefix):
@@ -151,9 +259,12 @@ def build_annual_manifest(dataset_id: UUID, revision: int, *, calendar_revision:
         if Path(component.source).is_symlink():
             raise AnnualIntegrityError("component source is not owned")
         manifest = component.manifest
-        if (manifest.get("format") != FORMAT or str(manifest.get("dataset_id")) != str(component.dataset_id)
-                or manifest.get("revision") != component.revision
-                or manifest.get("timezone") != "America/Toronto"):
+        if (
+            manifest.get("format") != FORMAT
+            or str(manifest.get("dataset_id")) != str(component.dataset_id)
+            or manifest.get("revision") != component.revision
+            or manifest.get("timezone") != "America/Toronto"
+        ):
             raise AnnualIntegrityError("component identity mismatch")
         component_members(manifest)
         for table, count in (manifest.get("observation_counts") or {}).items():
@@ -180,15 +291,17 @@ def build_annual_manifest(dataset_id: UUID, revision: int, *, calendar_revision:
         if child_to is not None and (available_to is None or child_to > available_to):
             available_to = child_to
         decoded_bytes += int(manifest.get("decoded_bytes") or 0)
-        entries.append({
-            "dataset_id": str(component.dataset_id),
-            "revision": component.revision,
-            "member_prefix": component.member_prefix,
-            "sha256": component.sha256,
-            "byte_size": component.byte_size,
-            "manifest_sha256": manifest_sha256(manifest),
-            "manifest": manifest,
-        })
+        entries.append(
+            {
+                "dataset_id": str(component.dataset_id),
+                "revision": component.revision,
+                "member_prefix": component.member_prefix,
+                "sha256": component.sha256,
+                "byte_size": component.byte_size,
+                "manifest_sha256": manifest_sha256(manifest),
+                "manifest": manifest,
+            }
+        )
     schema_document = {"source_schema": source_schema, "graph_schema": graph_schema}
     decoded_bytes += len(canonical_json_bytes(schema_document))
     if decoded_bytes > TOTAL_LIMIT:
@@ -218,14 +331,31 @@ def build_annual_manifest(dataset_id: UUID, revision: int, *, calendar_revision:
     }
 
 
-def build_annual_zip(dataset_id: UUID, revision: int, *, calendar_revision: int, calendar_year: int,
-                     room: str, components: Sequence[AnnualComponentInput], destination: Path,
-                     checkpoint: Callable[[], None] | None = None) -> dict[str, Any]:
+def build_annual_zip(
+    dataset_id: UUID,
+    revision: int,
+    *,
+    calendar_revision: int,
+    calendar_year: int,
+    room: str,
+    components: Sequence[AnnualComponentInput],
+    destination: Path,
+    checkpoint: Callable[[], None] | None = None,
+) -> dict[str, Any]:
     """Stream component members unchanged under their prefixes; manifest last."""
     destination = Path(destination)
-    manifest = build_annual_manifest(dataset_id, revision, calendar_revision=calendar_revision,
-                                     calendar_year=calendar_year, room=room, components=components)
-    schema_document = {"source_schema": manifest["source_schema"], "graph_schema": manifest["graph_schema"]}
+    manifest = build_annual_manifest(
+        dataset_id,
+        revision,
+        calendar_revision=calendar_revision,
+        calendar_year=calendar_year,
+        room=room,
+        components=components,
+    )
+    schema_document = {
+        "source_schema": manifest["source_schema"],
+        "graph_schema": manifest["graph_schema"],
+    }
     schema_bytes = canonical_json_bytes(schema_document)
     manifest_bytes = canonical_json_bytes(manifest)
     if len(schema_bytes) > MANIFEST_LIMIT or len(manifest_bytes) > MANIFEST_LIMIT:
@@ -237,7 +367,9 @@ def build_annual_zip(dataset_id: UUID, revision: int, *, calendar_revision: int,
     total_member_bytes = 0
     written: set[str] = set()
     try:
-        with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
+        with zipfile.ZipFile(
+            temporary, "w", compression=zipfile.ZIP_STORED, allowZip64=True
+        ) as archive:
             for component in sorted(components, key=lambda item: item.member_prefix):
                 with zipfile.ZipFile(component.source, "r") as source_archive:
                     available = set(source_archive.namelist())
@@ -254,18 +386,27 @@ def build_annual_zip(dataset_id: UUID, revision: int, *, calendar_revision: int,
                         written.add(target_name)
                         digest = hashlib.sha256()
                         size = 0
-                        with source_archive.open(source_name) as source, \
-                                archive.open(target_name, "w", force_zip64=True) as output:
+                        with (
+                            source_archive.open(source_name) as source,
+                            archive.open(target_name, "w", force_zip64=True) as output,
+                        ):
                             while block := source.read(BLOCK):
-                                if size + len(block) > MEMBER_LIMIT or total_member_bytes + len(block) > TOTAL_LIMIT:
-                                    raise AnnualIntegrityError("annual member/archive exceeds budget")
+                                if (
+                                    size + len(block) > MEMBER_LIMIT
+                                    or total_member_bytes + len(block) > TOTAL_LIMIT
+                                ):
+                                    raise AnnualIntegrityError(
+                                        "annual member/archive exceeds budget"
+                                    )
                                 output.write(block)
                                 digest.update(block)
                                 size += len(block)
                                 total_member_bytes += len(block)
                                 if checkpoint is not None:
                                     checkpoint()
-                        if size != entry.get("byte_size") or digest.hexdigest() != entry.get("sha256"):
+                        if size != entry.get("byte_size") or digest.hexdigest() != entry.get(
+                            "sha256"
+                        ):
                             raise AnnualIntegrityError("component member bytes changed")
             archive.writestr("schema.json", schema_bytes)
             archive.writestr("manifest.json", manifest_bytes)

@@ -133,6 +133,9 @@ def _build_climate_timelines(
     preserve_gaps: bool,
     aggregated: bool,
 ) -> dict[str, list[ClimateTimelinePointOut]]:
+    raw_provenance = TimelineProvenanceModel(
+        origin="recorded", quality=Quality.EXACT, is_aggregated=False
+    )
     climate: dict[str, list[ClimateTimelinePointOut]] = {}
     if not rows:
         return climate
@@ -140,17 +143,19 @@ def _build_climate_timelines(
     climate_rows: dict[str, dict[datetime, list[ControlRecord]]] = {}
     for row in rows:
         for metric, _, _, _ in _CLIMATE_FIELDS:
-            timestamp = _timestamp(row, "timestamp")
+            timestamp = _timestamp(row, "time")
             climate_rows.setdefault(metric, {}).setdefault(timestamp, []).append(row)
 
     for metric, effective_column, nominal_column, ramp_column in _CLIMATE_FIELDS:
         for timestamp, siblings in sorted(climate_rows[metric].items()):
             selected_row: ControlRecord | None = None
+            selected_aggregated = aggregated
             effective: float | None = None
             minimum: float | None = None
             maximum: float | None = None
             for row in siblings:
-                low, high = _climate_row_extrema(row, effective_column, aggregated)
+                row_aggregated = row.get("is_aggregated", aggregated) is True
+                low, high = _climate_row_extrema(row, effective_column, row_aggregated)
                 minimum = merge_minimum(minimum, low)
                 maximum = merge_maximum(maximum, high)
                 if selected_row is not None:
@@ -159,12 +164,13 @@ def _build_climate_timelines(
                 if candidate is not None:
                     selected_row = row
                     effective = candidate
+                    selected_aggregated = row_aggregated
             if selected_row is not None:
                 climate.setdefault(metric, []).append(
                     ClimateTimelinePointOut(
-                        timestamp=timestamp,
+                        time=timestamp,
                         value=effective,
-                        provenance=provenance,
+                        provenance=provenance if selected_aggregated else raw_provenance,
                         metric=metric,
                         nominal_value=_optional_float(selected_row[nominal_column]),
                         ramp_progress=_optional_float(selected_row[ramp_column]),
@@ -176,7 +182,7 @@ def _build_climate_timelines(
             elif preserve_gaps and metric in climate:
                 climate[metric].append(
                     ClimateTimelinePointOut(
-                        timestamp=timestamp,
+                        time=timestamp,
                         value=None,
                         provenance=unavailable_provenance,
                         metric=metric,
@@ -223,18 +229,18 @@ def _build_light_timelines(
         if device_name is None:
             continue
         device = str(device_name)
-        timestamp = _timestamp(row, "timestamp")
+        timestamp = _timestamp(row, "time")
         light_rows.setdefault(device, {}).setdefault(timestamp, []).append(row)
 
     for device, timestamps in sorted(light_rows.items()):
         for timestamp, siblings in sorted(timestamps.items()):
             points = lights.get(device)
             if preserve_gaps and points and points[-1].value is not None:
-                expires_at = points[-1].timestamp + SAMPLE_SUPPORTED_SPAN
+                expires_at = points[-1].time + SAMPLE_SUPPORTED_SPAN
                 if timestamp > expires_at:
                     points.append(
                         LightTimelinePointOut(
-                            timestamp=expires_at,
+                            time=expires_at,
                             value=None,
                             provenance=unavailable_provenance,
                             device_name=device,
@@ -251,7 +257,7 @@ def _build_light_timelines(
             if selected_row is not None:
                 lights.setdefault(device, []).append(
                     LightTimelinePointOut(
-                        timestamp=timestamp,
+                        time=timestamp,
                         value=effective,
                         minimum=effective,
                         maximum=effective,
@@ -265,7 +271,7 @@ def _build_light_timelines(
             elif preserve_gaps and device in lights:
                 lights[device].append(
                     LightTimelinePointOut(
-                        timestamp=timestamp,
+                        time=timestamp,
                         value=None,
                         provenance=unavailable_provenance,
                         device_name=device,
@@ -274,11 +280,11 @@ def _build_light_timelines(
                 )
         points = lights.get(device)
         if preserve_gaps and points and points[-1].value is not None:
-            expires_at = points[-1].timestamp + SAMPLE_SUPPORTED_SPAN
+            expires_at = points[-1].time + SAMPLE_SUPPORTED_SPAN
             if coverage_end > expires_at:
                 points.append(
                     LightTimelinePointOut(
-                        timestamp=expires_at,
+                        time=expires_at,
                         value=None,
                         provenance=unavailable_provenance,
                         device_name=device,
@@ -292,12 +298,16 @@ def _build_device_timelines(
 ) -> tuple[tuple[DeviceTimelineSeriesOut, ...], tuple[PidTimelineSeriesOut, ...]]:
     devices: dict[str, list[DeviceTimelinePointOut]] = {}
     pid: dict[str, list[PidTimelinePointOut]] = {}
+    raw_provenance = TimelineProvenanceModel(
+        origin="recorded", quality=Quality.EXACT, is_aggregated=False
+    )
     for row in rows:
+        point_provenance = provenance if row.get("is_aggregated", True) is True else raw_provenance
         device = str(row["device_name"])
         devices.setdefault(device, []).append(
             DeviceTimelinePointOut(
-                timestamp=_timestamp(row, "bucket"),
-                provenance=provenance,
+                time=_timestamp(row, "bucket"),
+                provenance=point_provenance,
                 device_name=device,
                 device_state=_required_float(row["device_state_last"]),
                 device_mode=_optional_string(row["device_mode_last"]) or "unknown",
@@ -306,8 +316,8 @@ def _build_device_timelines(
         )
         pid.setdefault(device, []).append(
             PidTimelinePointOut(
-                timestamp=_timestamp(row, "bucket"),
-                provenance=provenance,
+                time=_timestamp(row, "bucket"),
+                provenance=point_provenance,
                 device_name=device,
                 pid_output=_optional_float(row["pid_output_last"]),
                 duty_cycle_percent=_optional_float(row["duty_cycle_percent_last"]),

@@ -46,7 +46,7 @@ class SetpointRepository(BaseRepository):
                     # Prepare the insert statement
                     insert_query = """
                             INSERT INTO effective_setpoints (
-                                timestamp, location, cluster, device_name, mode,
+                                "time", location, cluster, device_name, mode,
                                 effective_heating_setpoint, effective_cooling_setpoint, effective_humidity_setpoint,
                                 effective_co2_setpoint, effective_vpd_setpoint,
                                 nominal_heating_setpoint, nominal_cooling_setpoint, nominal_humidity_setpoint,
@@ -60,7 +60,7 @@ class SetpointRepository(BaseRepository):
                         insert_query,
                         [
                             (
-                                record["timestamp"],
+                                record["time"],
                                 record["location"],
                                 record["cluster"],
                                 record["device_name"],
@@ -108,7 +108,7 @@ class SetpointRepository(BaseRepository):
                 row = await conn.fetchrow(
                     """SELECT * FROM effective_setpoints
                        WHERE location = $1 AND cluster = $2
-                       ORDER BY timestamp DESC LIMIT 1""",
+                       ORDER BY "time" DESC LIMIT 1""",
                     location,
                     cluster,
                 )
@@ -171,7 +171,7 @@ class SetpointRepository(BaseRepository):
 
             # Buffer the record for batch writing (performance optimization)
             record = {
-                "timestamp": ts,
+                "time": ts,
                 "location": location,
                 "cluster": cluster,
                 "mode": db_mode,
