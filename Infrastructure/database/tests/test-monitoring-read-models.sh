@@ -228,7 +228,7 @@ cleanup_monitoring_test_db() {
   set +e
 
   if ((MONITORING_DATABASE_CREATED)); then
-    local cleanup_database
+    local cleanup_database database_exists
     for cleanup_database in "${MONITORING_DATABASE_CREATED_NAMES[@]}"; do
       if [[ ! "$cleanup_database" =~ ^monitoring_test_[a-z0-9_]+$ ]] || \
         [[ "${cleanup_database,,}" == *cea_sensors* || "${cleanup_database,,}" == *sj_cea* ]]; then
@@ -238,6 +238,16 @@ cleanup_monitoring_test_db() {
       fi
       if ! assert_monitoring_test_target "$cleanup_database"; then
         cleanup_status=1
+        continue
+      fi
+      database_exists="$(monitoring_postgres_psql --dbname="$POSTGRES_ADMIN_DATABASE" \
+        --tuples-only --no-align \
+        --command="SELECT 1 FROM pg_database WHERE datname = '$cleanup_database'")" || {
+        printf 'could not check owned monitoring database: %s\n' "$cleanup_database" >&2
+        cleanup_status=1
+        continue
+      }
+      if [[ -z "$database_exists" ]]; then
         continue
       fi
       if ! monitoring_postgres_psql --dbname="$cleanup_database" \
