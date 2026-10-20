@@ -187,7 +187,7 @@ postgres_env \
   POSTGRES_DB="$DB_NAME" \
   POSTGRES_USER=postgres \
   SETTINGS_CACHE_PATH="$TMP_ROOT/cache/automation.json" \
-  PYTHONPATH="$REPO_ROOT/Infrastructure" \
+  PYTHONPATH="$REPO_ROOT/Infrastructure${PROJECTCEA_SERVICE_SETTINGS_PYTHONPATH:+:$PROJECTCEA_SERVICE_SETTINGS_PYTHONPATH}" \
   "$PYTHON" - <<'PY'
 import asyncio
 import json
