@@ -859,7 +859,7 @@ function relayTimelineObservation(
 ): Record<string, unknown> {
   return {
     observation_id: observationId,
-    observed_at: new Date(at).toISOString(),
+    time: new Date(at).toISOString(),
     channel,
     observed_state: state,
     reason,
@@ -917,7 +917,7 @@ function relayTimelineFixture(req: { url?: string }, _scenario: string | null): 
     if (at >= staleAt && at < recoveredAt) continue
     events.push(relayTimelineObservation(0, at, null, null, 'heartbeat', null))
   }
-  events.sort((a, b) => Date.parse(String(a.observed_at)) - Date.parse(String(b.observed_at)))
+  events.sort((a, b) => Date.parse(String(a.time)) - Date.parse(String(b.time)))
   const transitions = events.map((row, index) => ({ ...row, observation_id: 1_000 + index }))
   const anchors = [
     relayTimelineObservation(1, startMs - 40_000, heatingChannel, true, 'initial', heating),
@@ -939,7 +939,7 @@ function relayTimelineFixture(req: { url?: string }, _scenario: string | null): 
   const hasMore = nextOffset < transitions.length
   const heartbeatTimes = transitions
     .filter(row => row.reason === 'heartbeat')
-    .map(row => Date.parse(String(row.observed_at)))
+    .map(row => Date.parse(String(row.time)))
   const latestHeartbeat = heartbeatTimes.length > 0 ? Math.max(...heartbeatTimes) : startMs - 10_000
   const durationMs = endMs - startMs
   const aggregated = durationMs > 60 * 60_000
@@ -948,7 +948,7 @@ function relayTimelineFixture(req: { url?: string }, _scenario: string | null): 
     {
       device_id: heating.device_id,
       device_name: heating.device_name,
-      timestamp: new Date(startMs + 20_000).toISOString(),
+      time: new Date(startMs + 20_000).toISOString(),
       requested_percent: 0,
       aggregated,
       interval_seconds: outputInterval,
@@ -956,7 +956,7 @@ function relayTimelineFixture(req: { url?: string }, _scenario: string | null): 
     {
       device_id: heating.device_id,
       device_name: heating.device_name,
-      timestamp: new Date(startMs + 50_000).toISOString(),
+      time: new Date(startMs + 50_000).toISOString(),
       requested_percent: 50,
       aggregated,
       interval_seconds: outputInterval,
@@ -964,7 +964,7 @@ function relayTimelineFixture(req: { url?: string }, _scenario: string | null): 
     {
       device_id: heating.device_id,
       device_name: heating.device_name,
-      timestamp: new Date(startMs + 80_000).toISOString(),
+      time: new Date(startMs + 80_000).toISOString(),
       requested_percent: null,
       aggregated,
       interval_seconds: outputInterval,
@@ -972,7 +972,7 @@ function relayTimelineFixture(req: { url?: string }, _scenario: string | null): 
     {
       device_id: heating.device_id,
       device_name: heating.device_name,
-      timestamp: new Date(startMs + 110_000).toISOString(),
+      time: new Date(startMs + 110_000).toISOString(),
       requested_percent: 100,
       aggregated,
       interval_seconds: outputInterval,
@@ -980,12 +980,12 @@ function relayTimelineFixture(req: { url?: string }, _scenario: string | null): 
     {
       device_id: co2.device_id,
       device_name: co2.device_name,
-      timestamp: new Date(startMs + 45_000).toISOString(),
+      time: new Date(startMs + 45_000).toISOString(),
       requested_percent: 25,
       aggregated,
       interval_seconds: outputInterval,
     },
-  ].filter(point => Date.parse(point.timestamp) >= startMs && Date.parse(point.timestamp) < endMs)
+  ].filter(point => Date.parse(point.time) >= startMs && Date.parse(point.time) < endMs)
   const coverageComplete = !(startMs < recoveredAt && endMs > staleAt)
 
   return {
