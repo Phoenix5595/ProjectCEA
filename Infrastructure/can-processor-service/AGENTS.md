@@ -37,6 +37,11 @@ DB writes are queued in `shared.db_batch_writer.BatchQueue` and flushed on which
 
 Queue capacity is 10,000 messages. The stream `sensor:raw` caps at 100,000 entries (`shared/redis_keys.py`).
 
+The metadata worker refreshes `last_seen` only from received frames. Each
+measurement flush resolves registry devices and channels and inserts its batch
+in one transaction holding shared per-registry advisory locks; same-identity
+merges take the matching exclusive locks.
+
 ## Anti-patterns
 
 | Never | Reason |

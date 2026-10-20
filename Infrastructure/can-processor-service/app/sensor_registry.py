@@ -3,10 +3,10 @@
 The hot path never touches metadata storage:
 ``AssignmentCache.get`` is a nonblocking dict lookup and
 ``MetadataWorker.offer`` is a nonblocking bounded-queue put. A dedicated
-metadata worker thread owns the psycopg connection, upserts observed
-nodes, refreshes ``last_seen`` at most once per 30 s per node, and
-refreshes assignments at most every 5 s. On metadata failure the last
-good assignments stay cached and unknown nodes stay unassigned.
+metadata worker thread owns the psycopg connection and upserts observed
+nodes, refreshing ``last_seen`` only when a frame is received. Assignments
+refresh each metadata cycle. On metadata failure the last good assignments stay
+cached and unknown nodes stay unassigned.
 """
 
 from __future__ import annotations
@@ -32,8 +32,6 @@ logger = get_logger(__name__)
 # for the same physical identity.
 ABSENCE = timedelta(minutes=10)
 
-ASSIGNMENT_REFRESH_INTERVAL_SEC = 5.0
-LAST_SEEN_REFRESH_INTERVAL_SEC = 30.0
 METADATA_CONNECT_TIMEOUT_SEC = 1
 METADATA_STATEMENT_TIMEOUT_MS = 1000
 MAX_BACKOFF_SEC = 30.0
@@ -94,7 +92,6 @@ class MetadataWorker:
             }
         self._observations: queue.Queue[int] = queue.Queue(maxsize=OBSERVATION_QUEUE_MAX)
         self._dropped_observations = 0
-        self._last_seen_refreshed_at: dict[int, float] = {}
         self._backoff_sec = 1.0
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
@@ -149,7 +146,6 @@ class MetadataWorker:
         connection = self._connect()
         try:
             self._drain_observations(connection)
-            self._refresh_last_seen(connection)
             self._refresh_assignments(connection)
         finally:
             connection.close()
@@ -168,7 +164,6 @@ class MetadataWorker:
         return connection
 
     def _drain_observations(self, connection: psycopg2.extensions.connection) -> None:
-        seen: set[int] = set()
         identity_changed = False
         for _ in range(DISCOVERY_DRAIN_LIMIT):
             try:
@@ -176,13 +171,7 @@ class MetadataWorker:
             except queue.Empty:
                 break
             identity_changed = self._upsert_node(connection, node_id) or identity_changed
-            seen.add(node_id)
 
-        # Seed the refresh map only for first-time observations: re-seeding
-        # on every busy cycle would keep the 30 s window open forever.
-        now = time.monotonic()
-        for node_id in seen:
-            self._last_seen_refreshed_at.setdefault(node_id, now)
         if identity_changed and self._on_change is not None:
             self._on_change()
 
@@ -324,6 +313,14 @@ class MetadataWorker:
                     changed = True
                 else:
                     changed = self._ensure_registry_device(cursor, int(registry_id), node_id)
+                    cursor.execute(
+                        """
+                        UPDATE sensor_registry
+                        SET last_seen = %s, updated_at = %s
+                        WHERE registry_id = %s
+                        """,
+                        (observed_at, observed_at, registry_id),
+                    )
             else:
                 cursor.execute(
                     """
@@ -359,23 +356,6 @@ class MetadataWorker:
                 cursor.close()
             connection.autocommit = previous_autocommit
 
-    def _refresh_last_seen(self, connection: psycopg2.extensions.connection) -> None:
-        now = time.monotonic()
-        for node_id in list(self._last_seen_refreshed_at.keys()):
-            refreshed_at = self._last_seen_refreshed_at[node_id]
-            if now - refreshed_at < LAST_SEEN_REFRESH_INTERVAL_SEC:
-                continue
-            cursor = connection.cursor()
-            cursor.execute(
-                """
-                UPDATE sensor_registry
-                SET last_seen = NOW()
-                WHERE bus = 'can' AND hardware_address = %s
-                """,
-                (node_id,),
-            )
-            cursor.close()
-            self._last_seen_refreshed_at[node_id] = now
 
     def _refresh_assignments(self, connection: psycopg2.extensions.connection) -> None:
         cursor = connection.cursor()

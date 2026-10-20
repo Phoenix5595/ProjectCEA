@@ -8,6 +8,7 @@ import pytest
 from app.middleware.exception_handler import ConflictError, NotFoundError
 from app.sensor_registry_models import NewIdentityRequest, SameIdentityRequest
 from app.tests.sensor_registry.fakes import FakeConnection
+from shared.sensor_identity import SENSOR_IDENTITY_LOCK_NAMESPACE
 
 
 def _registry_row(
@@ -100,6 +101,10 @@ async def test_same_decision_rejects_ineligible_target(repository, fake_connecti
     pending = _registry_row(4, pending_since=now)
     other_pending = _registry_row(5, pending_since=now)
     fake_connection.respond_to(
+        lambda query: "pg_advisory_xact_lock" in query,
+        lambda _query, *_args: None,
+    )
+    fake_connection.respond_to(
         lambda query: "FOR UPDATE OF sr" in query,
         lambda _query, *_args: [pending, other_pending],
     )
@@ -127,6 +132,14 @@ async def test_same_decision_blocks_ranges_removed_by_archives(repository, fake_
         lambda _query, *_args: [pending, detached],
     )
     fake_connection.respond_to(
+        lambda query: "pg_advisory_xact_lock" in query,
+        lambda _query, *_args: None,
+    )
+    fake_connection.respond_to(
+        lambda query: "SELECT min(m.time)" in query,
+        lambda _query, *_args: None,
+    )
+    fake_connection.respond_to(
         lambda query: "FROM public.archive_availability" in query,
         lambda _query, *_args: True,
     )
@@ -136,4 +149,13 @@ async def test_same_decision_blocks_ranges_removed_by_archives(repository, fake_
             4, SameIdentityRequest(decision="same", target_registry_id=5)
         )
 
+    lock_calls = [
+        args
+        for query, args in fake_connection.statements
+        if "pg_advisory_xact_lock" in query
+    ]
+    assert lock_calls == [
+        (SENSOR_IDENTITY_LOCK_NAMESPACE, 4),
+        (SENSOR_IDENTITY_LOCK_NAMESPACE, 5),
+    ]
     assert error.value.error_code == "identity_range_archived"

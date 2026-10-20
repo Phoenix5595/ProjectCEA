@@ -132,6 +132,8 @@ class RedisClient:
         readings: dict[str, float],
         bed_name: str | None,
         location: str = "Flower Room",
+        *,
+        sensor_names: dict[str, str] | None = None,
     ) -> bool:
         """
         Publish all sensor readings for a soil sensor in one pipeline.
@@ -160,7 +162,11 @@ class RedisClient:
                 if unit is None:
                     continue
 
-                sensor_name = f"{sensor_base_name}_{sensor_type}"
+                sensor_name = (
+                    sensor_names[sensor_type]
+                    if sensor_names is not None and sensor_type in sensor_names
+                    else f"{sensor_base_name}_{sensor_type}"
+                )
                 timestamp = datetime.now()
                 timestamp_ms = int(timestamp.timestamp() * 1000)
                 message = {

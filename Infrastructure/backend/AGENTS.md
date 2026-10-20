@@ -49,9 +49,11 @@ Redis and operational latest/predecessor reads never load archives.
 
 `POST /api/sensors/registry/{registry_id}/identity` confirms a pending address
 as the same stale/detached identity or as a new sensor. Same-identity merges
-run transactionally, decompress overlapping measurement chunks, and return
-409 `identity_range_archived` if archive deletion has removed any part of the
-pending measurement range.
+take exclusive transaction advisory locks on the pending and target registry
+rows, shared with soil/CAN measurement-ingestion transactions. The merge moves
+all pending-device measurements (including samples before `pending_since`),
+decompresses overlapping chunks and returns `409 identity_range_archived` if
+archive deletion removed any part of that measurement range.
 
 ## Native monitoring ownership
 

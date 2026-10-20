@@ -25,10 +25,19 @@ class SoilIdentityPollingTests(IsolatedAsyncioTestCase):
                 "last_seen": None,
             }
         )
+        sensor_ids = {"temperature": 101, "humidity": 102, "ec": 103, "ph": 104}
+        sensor_names = {
+            "temperature": "soil_sensor_226_temperature",
+            "humidity": "soil_sensor_226_humidity",
+            "ec": "soil_sensor_226_ec",
+            "ph": "soil_sensor_226_ph",
+        }
         self.database.register_sensor_device = AsyncMock(
-            return_value=(42, {"temperature": 101, "humidity": 102, "ec": 103, "ph": 104})
+            return_value=(8, 42, sensor_ids, sensor_names)
         )
-        self.database.store_measurements = AsyncMock(return_value=True)
+        self.database.store_measurements = AsyncMock(
+            return_value=(8, sensor_ids, sensor_names)
+        )
         self.redis = MagicMock()
         self.redis.write_to_stream = AsyncMock(return_value=True)
         self.redis.publish_all_readings = AsyncMock(return_value=True)
@@ -40,21 +49,33 @@ class SoilIdentityPollingTests(IsolatedAsyncioTestCase):
             "modbus_id": 233,
             "bed_name": "Front Bed",
         }
-        self.tasks.sensor_ids["soil_sensor_233"] = {"temperature": 1}
         self.tasks.registry_ids[233] = 4
 
     async def test_read_switches_to_observed_registry_device_before_storage(self) -> None:
         await self.tasks._poll_all_sensors()
 
         self.database.observe_probe.assert_awaited_once_with(233)
-        self.database.register_sensor_device.assert_awaited_once_with(8, "soil_sensor_233")
-        self.database.store_measurements.assert_awaited_once()
-        stored_sensor_ids, readings, _timestamp = self.database.store_measurements.await_args.args
-        self.assertEqual(
-            stored_sensor_ids,
-            {"temperature": 101, "humidity": 102, "ec": 103, "ph": 104},
+        self.database.register_sensor_device.assert_awaited_once_with(
+            8, 233, "soil_sensor_233"
         )
+        self.database.store_measurements.assert_awaited_once()
+        registry_id, modbus_id, probe_name, readings, _timestamp = (
+            self.database.store_measurements.await_args.args
+        )
+        self.assertEqual((registry_id, modbus_id, probe_name), (8, 233, "soil_sensor_233"))
         self.assertEqual(readings, {"temperature": 21.5})
+        self.redis.publish_all_readings.assert_awaited_once_with(
+            "soil_sensor_233",
+            {"temperature": 21.5},
+            None,
+            "Flower Room",
+            sensor_names={
+                "temperature": "soil_sensor_226_temperature",
+                "humidity": "soil_sensor_226_humidity",
+                "ec": "soil_sensor_226_ec",
+                "ph": "soil_sensor_226_ph",
+            },
+        )
         self.assertEqual(self.tasks.registry_ids[233], 8)
         self.assertIsNone(self.tasks.sensor_configs["soil_sensor_233"]["bed_name"])
 

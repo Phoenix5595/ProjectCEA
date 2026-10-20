@@ -49,7 +49,7 @@ class BackgroundTasks:
         self.discovered_modbus_ids: set[int] = set()  # Track discovered Modbus IDs
         self.registry_ids: dict[int, int] = {}  # modbus_id -> registry_id
         self.sensor_configs: dict[str, dict[str, Any]] = {}
-        self.sensor_ids: dict[str, dict[str, int]] = {}
+        self.sensor_names: dict[str, dict[str, str]] = {}
         self.rs485_port: str | None = None
         self.rs485_baudrate: int = 9600
 
@@ -119,11 +119,13 @@ class BackgroundTasks:
         reader = SoilSensorReader(cast(str, self.rs485_port), modbus_id, self.rs485_baudrate)
         reader.connect()
 
-        _device_id, sensor_ids = await self.database.register_sensor_device(registry_id, probe_name)
+        resolved_registry_id, _device_id, _sensor_ids, sensor_names = (
+            await self.database.register_sensor_device(registry_id, modbus_id, probe_name)
+        )
 
         self.sensor_readers[probe_name] = reader
-        self.sensor_ids[probe_name] = sensor_ids
-        self.registry_ids[modbus_id] = registry_id
+        self.sensor_names[probe_name] = sensor_names
+        self.registry_ids[modbus_id] = resolved_registry_id
         self.sensor_configs[probe_name] = {"modbus_id": modbus_id, "bed_name": bed_name}
 
     async def _apply_registry_entry(self, modbus_id: int, entry: dict[str, Any]) -> None:
@@ -131,10 +133,11 @@ class BackgroundTasks:
         probe_name = self._probe_name(modbus_id)
         registry_id = int(entry["registry_id"])
         if self.registry_ids.get(modbus_id) != registry_id:
-            _device_id, sensor_ids = await self.database.register_sensor_device(
-                registry_id, probe_name
+            resolved_registry_id, _device_id, _sensor_ids, sensor_names = (
+                await self.database.register_sensor_device(registry_id, modbus_id, probe_name)
             )
-            self.sensor_ids[probe_name] = sensor_ids
+            self.sensor_names[probe_name] = sensor_names
+            registry_id = resolved_registry_id
         self.registry_ids[modbus_id] = registry_id
         config = self.sensor_configs.get(probe_name)
         if config is not None:
@@ -273,22 +276,30 @@ class BackgroundTasks:
                 if readings:
                     # Resolve identity before storing a reading. A stale same-
                     # address response becomes pending before it gets a device.
-                    entry = await self.database.observe_probe(int(config["modbus_id"]))
-                    await self._apply_registry_entry(int(config["modbus_id"]), entry)
+                    modbus_id = int(config["modbus_id"])
+                    entry = await self.database.observe_probe(modbus_id)
+                    await self._apply_registry_entry(modbus_id, entry)
                     bed_name = config["bed_name"]
-                    sensor_ids = self.sensor_ids.get(probe_name, {})
-                    await self.database.store_measurements(sensor_ids, readings, timestamp)
+                    stored = await self.database.store_measurements(
+                        int(entry["registry_id"]), modbus_id, probe_name, readings, timestamp
+                    )
+                    if stored is not None:
+                        registry_id, _sensor_ids, sensor_names = stored
+                        self.registry_ids[modbus_id] = registry_id
+                        self.sensor_names[probe_name] = sensor_names
 
                     # Write to Redis Stream (sensor:raw) with bed metadata
                     await self.redis_client.write_to_stream(
                         probe_name, readings, bed_name, room_name
                     )
 
-                    # Publish to stable per-probe Redis state keys
                     await self.redis_client.publish_all_readings(
-                        probe_name, readings, bed_name, room_name
+                        probe_name,
+                        readings,
+                        bed_name,
+                        room_name,
+                        sensor_names=self.sensor_names.get(probe_name),
                     )
-
                     logger.info(
                         f"Read {probe_name}: "
                         f"T={readings.get('temperature', 0):.1f}°C, "

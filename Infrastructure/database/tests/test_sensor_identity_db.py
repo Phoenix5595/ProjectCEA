@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import importlib.util
 import os
 from pathlib import Path
 import sys
+from unittest.mock import patch
 from urllib.parse import unquote, urlsplit
 
 import asyncpg
@@ -42,17 +43,17 @@ can_registry = _load_service_module(
 @pytest.mark.asyncio
 async def test_readdress_same_replacement_new_and_transient_absence() -> None:
     dsn = os.environ["MONITORING_TEST_DATABASE_URL"]
+    assert urlsplit(dsn).port == 5433
     pool = await asyncpg.create_pool(dsn=dsn)
-    password = urlsplit(dsn).password or ""
-    soil_db = soil_database.DatabaseManager(
-        {
-            "host": urlsplit(dsn).hostname or "127.0.0.1",
-            "port": urlsplit(dsn).port or 5432,
-            "database": (urlsplit(dsn).path or "/").lstrip("/"),
-            "user": urlsplit(dsn).username or "cea_user",
-            "password": unquote(password),
-        }
-    )
+    password = unquote(urlsplit(dsn).password or "")
+    db_config = {
+        "host": urlsplit(dsn).hostname or "127.0.0.1",
+        "port": urlsplit(dsn).port or 5433,
+        "database": (urlsplit(dsn).path or "/").lstrip("/"),
+        "user": urlsplit(dsn).username or "cea_user",
+        "password": password,
+    }
+    soil_db = soil_database.DatabaseManager(db_config)
     soil_db._pool = pool
     repository = SensorRegistryRepository(pool=pool)
     try:
@@ -67,6 +68,7 @@ async def test_readdress_same_replacement_new_and_transient_absence() -> None:
                 )
                 """
             )
+            await conn.execute("UPDATE sensor_registry SET last_seen = clock_timestamp()")
             original = await conn.fetchrow(
                 """
                 SELECT registry_id, device_id
@@ -76,8 +78,8 @@ async def test_readdress_same_replacement_new_and_transient_absence() -> None:
             )
             assert original is not None
             original_registry_id = int(original["registry_id"])
-            _, original_sensors = await soil_db.register_sensor_device(
-                original_registry_id, "soil_sensor_226"
+            _, _, original_sensors, _ = await soil_db.register_sensor_device(
+                original_registry_id, 226, "soil_sensor_226"
             )
             await conn.execute(
                 "UPDATE sensor_registry SET last_seen = clock_timestamp() - interval '11 minutes' "
@@ -89,19 +91,25 @@ async def test_readdress_same_replacement_new_and_transient_absence() -> None:
         pending = await soil_db.observe_probe(233)
         assert pending["identity_status"] == "pending"
         assert pending["pending_candidate_registry_id"] == original_registry_id
-        _, pending_sensors = await soil_db.register_sensor_device(
-            pending["registry_id"], "soil_sensor_233"
+        _, _, pending_sensors, _ = await soil_db.register_sensor_device(
+            pending["registry_id"], 233, "soil_sensor_233"
         )
-        observed_at = datetime.now(UTC)
+        pending_since = pending["pending_since"]
+        sample_times = [
+            pending_since - timedelta(seconds=1),
+            pending_since + timedelta(seconds=1),
+        ]
         pending_sensor_id = pending_sensors["temperature"]
         original_sensor_id = original_sensors["temperature"]
         async with pool.acquire() as conn:
-            await conn.execute(
+            await conn.executemany(
                 "INSERT INTO measurement (time, sensor_id, value) VALUES ($1, $2, $3)",
-                observed_at,
-                pending_sensor_id,
-                21.5,
+                [
+                    (sample_times[0], pending_sensor_id, 20.5),
+                    (sample_times[1], pending_sensor_id, 21.5),
+                ],
             )
+
 
         await repository.resolve_identity(
             pending["registry_id"],
@@ -116,13 +124,14 @@ async def test_readdress_same_replacement_new_and_transient_absence() -> None:
             assert target is not None
             assert target["hardware_address"] == 233
             assert target["identity_status"] == "confirmed"
-            moved = await conn.fetchrow(
-                "SELECT sensor_id, value FROM measurement WHERE time = $1",
-                observed_at,
+            moved = await conn.fetch(
+                "SELECT time, sensor_id, value FROM measurement "
+                "WHERE time = ANY($1::timestamptz[]) ORDER BY time",
+                sample_times,
             )
-            assert moved is not None
-            assert moved["sensor_id"] == original_sensor_id
-            assert float(moved["value"]) == 21.5
+            assert len(moved) == 2
+            assert [row["sensor_id"] for row in moved] == [original_sensor_id] * 2
+            assert [float(row["value"]) for row in moved] == [20.5, 21.5]
             assert (
                 await conn.fetchval(
                     "SELECT count(*) FROM sensor_registry WHERE registry_id = $1",
@@ -131,8 +140,8 @@ async def test_readdress_same_replacement_new_and_transient_absence() -> None:
                 == 0
             )
 
-        # Replacement: a stale confirmed CAN address reappears, then the
-        # operator keeps the new device separate with the `new` decision.
+        # A CAN node becomes stale only from its last actual frame; an idle
+        # metadata cycle must not keep refreshing an observed address.
         async with pool.acquire() as conn:
             can_original = await conn.fetchrow(
                 """
@@ -144,15 +153,30 @@ async def test_readdress_same_replacement_new_and_transient_absence() -> None:
             assert can_original is not None
             can_original_id = int(can_original["registry_id"])
             can_original_device = int(can_original["device_id"])
+
+        worker = can_registry.MetadataWorker(
+            cache=can_registry.AssignmentCache(), db_config=db_config
+        )
+        worker.offer(1)
+        with patch.object(can_registry.time, "monotonic", return_value=1_000.0):
+            worker._cycle()
+        async with pool.acquire() as conn:
             await conn.execute(
                 "UPDATE sensor_registry SET last_seen = clock_timestamp() - interval '11 minutes' "
                 "WHERE registry_id = $1",
                 can_original_id,
             )
+        with patch.object(can_registry.time, "monotonic", return_value=1_661.0):
+            worker._cycle()
+        async with pool.acquire() as conn:
+            still_stale = await conn.fetchval(
+                "SELECT last_seen FROM sensor_registry WHERE registry_id = $1",
+                can_original_id,
+            )
+            assert still_stale < datetime.now(UTC) - can_registry.ABSENCE
 
-        connection = psycopg2.connect(dsn)
+        connection = psycopg2.connect(**db_config)
         try:
-            worker = can_registry.MetadataWorker(cache=can_registry.AssignmentCache(), db_config={})
             assert worker._upsert_node(connection, 1)
         finally:
             connection.close()
@@ -170,28 +194,97 @@ async def test_readdress_same_replacement_new_and_transient_absence() -> None:
             assert replacement["identity_status"] == "pending"
             assert replacement["pending_candidate_registry_id"] == can_original_id
             replacement_device = int(replacement["device_id"])
-
-        await repository.resolve_identity(replacement_id, NewIdentityRequest(decision="new"))
-        async with pool.acquire() as conn:
             detached = await conn.fetchrow(
                 "SELECT hardware_address, identity_status FROM sensor_registry "
                 "WHERE registry_id = $1",
                 can_original_id,
             )
+            assert detached is not None
+            assert detached["hardware_address"] is None
+            assert detached["identity_status"] == "detached"
+
+        await repository.resolve_identity(replacement_id, NewIdentityRequest(decision="new"))
+        async with pool.acquire() as conn:
             confirmed_new = await conn.fetchrow(
                 "SELECT hardware_address, device_id, identity_status, pending_since "
                 "FROM sensor_registry WHERE registry_id = $1",
                 replacement_id,
             )
-            assert detached is not None
-            assert detached["hardware_address"] is None
-            assert detached["identity_status"] == "detached"
             assert confirmed_new is not None
             assert confirmed_new["identity_status"] == "confirmed"
             assert confirmed_new["pending_since"] is None
             assert confirmed_new["hardware_address"] == 1
             assert int(confirmed_new["device_id"]) != can_original_device
             assert int(confirmed_new["device_id"]) == replacement_device
+
+            # Restore the fixture's address owner after proving "new", so the
+            # down-migration proof can run without an intentional address clash.
+            await conn.execute("DELETE FROM sensor WHERE device_id = $1", replacement_device)
+            await conn.execute("DELETE FROM sensor_registry WHERE registry_id = $1", replacement_id)
+            await conn.execute("DELETE FROM device WHERE device_id = $1", replacement_device)
+            await conn.execute(
+                """
+                UPDATE sensor_registry
+                SET hardware_address = 1, identity_status = 'confirmed',
+                    pending_candidate_registry_id = NULL, pending_since = NULL,
+                    last_seen = clock_timestamp()
+                WHERE registry_id = $1
+                """,
+                can_original_id,
+            )
+            await conn.execute(
+                "UPDATE sensor_address_history SET valid_to = NULL "
+                "WHERE registry_id = $1 AND hardware_address = 1",
+                can_original_id,
+            )
+
+            can_readdress_target = await conn.fetchrow(
+                """
+                SELECT registry_id, device_id
+                FROM sensor_registry
+                WHERE bus = 'can' AND hardware_address = 2
+                """
+            )
+            assert can_readdress_target is not None
+            can_readdress_target_id = int(can_readdress_target["registry_id"])
+            can_readdress_target_device = int(can_readdress_target["device_id"])
+            await conn.execute(
+                "UPDATE sensor_registry SET last_seen = clock_timestamp() - interval '11 minutes' "
+                "WHERE registry_id = $1",
+                can_readdress_target_id,
+            )
+
+        connection = psycopg2.connect(**db_config)
+        try:
+            assert worker._upsert_node(connection, 4)
+        finally:
+            connection.close()
+        async with pool.acquire() as conn:
+            can_pending = await conn.fetchrow(
+                """
+                SELECT registry_id, identity_status, pending_candidate_registry_id
+                FROM sensor_registry
+                WHERE bus = 'can' AND hardware_address = 4
+                """
+            )
+            assert can_pending is not None
+            assert can_pending["identity_status"] == "pending"
+            assert can_pending["pending_candidate_registry_id"] == can_readdress_target_id
+
+        await repository.resolve_identity(
+            int(can_pending["registry_id"]),
+            SameIdentityRequest(decision="same", target_registry_id=can_readdress_target_id),
+        )
+        async with pool.acquire() as conn:
+            can_readdressed = await conn.fetchrow(
+                "SELECT hardware_address, identity_status, device_id "
+                "FROM sensor_registry WHERE registry_id = $1",
+                can_readdress_target_id,
+            )
+            assert can_readdressed is not None
+            assert can_readdressed["hardware_address"] == 4
+            assert can_readdressed["identity_status"] == "confirmed"
+            assert int(can_readdressed["device_id"]) == can_readdress_target_device
 
         # A 30-second interruption is below ABSENCE and keeps the same row.
         async with pool.acquire() as conn:

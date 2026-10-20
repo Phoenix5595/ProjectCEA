@@ -61,6 +61,8 @@ assert_monitoring_test_target() {
     return 1
   }
 }
+readonly CEA_TEST_PGPORT
+export CEA_TEST_PGPORT
 
 fail() {
   printf 'monitoring test harness: %s\n' "$1" >&2
@@ -135,6 +137,10 @@ assert_safe_database_url() {
     return 1
   fi
 
+  [[ "$port" == "$CEA_TEST_PGPORT" ]] || {
+    fail "test database must use PostgreSQL port $CEA_TEST_PGPORT, not $port"
+    return 1
+  }
   if ((10#$port < 1 || 10#$port > 65535)); then
     fail "invalid PostgreSQL port: $port"
     return 1
@@ -285,6 +291,7 @@ cleanup_monitoring_test_db() {
         cleanup_status=1
         continue
       fi
+
       if monitoring_postgres_psql --dbname="$POSTGRES_ADMIN_DATABASE" \
         --command="DROP DATABASE IF EXISTS \"$cleanup_database\" WITH (FORCE)" >/dev/null 2>&1; then
         printf 'cleaned owned monitoring database name: %s\n' "$cleanup_database"
@@ -315,6 +322,10 @@ cleanup_monitoring_test_db() {
 
 with_monitoring_test_db() (
   set -euo pipefail
+  [[ "$CEA_TEST_PGPORT" == "5433" ]] || {
+    fail "test harness requires CEA_TEST_PGPORT=5433, not $CEA_TEST_PGPORT"
+    exit 1
+  }
 
   [[ "$#" -gt 0 ]] || {
     fail 'with_monitoring_test_db requires a child command'
@@ -342,6 +353,7 @@ with_monitoring_test_db() (
   database_password="$(openssl rand -hex 24)"
   local database_url
   local timescaledb_version
+  local data_directory
 
   trap cleanup_monitoring_test_db EXIT
   trap 'exit 130' INT

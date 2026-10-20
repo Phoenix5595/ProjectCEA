@@ -26,6 +26,7 @@ from shared.redis_keys import (
     sensor_full,
     sensor_full_ts,
 )
+from shared.sensor_identity import SENSOR_IDENTITY_LOCK_NAMESPACE
 
 logger = get_logger(__name__)
 
@@ -174,30 +175,61 @@ class DataWriter:
             return False
 
     def _prefetch_registry_device_ids(self, cursor: Any, node_ids: set[int]) -> None:
-        """Resolve only current, non-stale addresses to their registry devices."""
+        """Lock current registry rows and resolve their devices for one batch."""
         for node_id in node_ids:
             self.device_cache.pop(node_id, None)
         if not node_ids:
             return
-        cursor.execute(
-            """
-            SELECT hardware_address, device_id
-            FROM sensor_registry
-            WHERE bus = 'can' AND hardware_address = ANY(%s::int[])
-              AND device_id IS NOT NULL
-              AND (
-                  identity_status = 'pending'
-                  OR (
-                      identity_status = 'confirmed'
-                      AND last_seen >= clock_timestamp() - %s
-                  )
-              )
-            """,
-            (list(node_ids), ABSENCE),
-        )
-        for hardware_address, device_id in cursor.fetchall():
-            self.device_cache[int(hardware_address)] = int(device_id)
+        requested_node_ids = list(node_ids)
 
+        locked_ids: set[int] = set()
+        while True:
+            cursor.execute(
+                """
+                SELECT registry_id
+                FROM sensor_registry
+                WHERE bus = 'can' AND hardware_address = ANY(%s::int[])
+                  AND device_id IS NOT NULL
+                  AND (
+                      identity_status = 'pending'
+                      OR (
+                          identity_status = 'confirmed'
+                          AND last_seen >= clock_timestamp() - %s
+                      )
+                  )
+                """,
+                (requested_node_ids, ABSENCE),
+            )
+            registry_ids = {int(row[0]) for row in cursor.fetchall()}
+            for registry_id in sorted(registry_ids - locked_ids):
+                cursor.execute(
+                    "SELECT pg_advisory_xact_lock_shared(%s, %s)",
+                    (SENSOR_IDENTITY_LOCK_NAMESPACE, registry_id),
+                )
+                locked_ids.add(registry_id)
+
+            cursor.execute(
+                """
+                SELECT registry_id, hardware_address, device_id
+                FROM sensor_registry
+                WHERE bus = 'can' AND hardware_address = ANY(%s::int[])
+                  AND device_id IS NOT NULL
+                  AND (
+                      identity_status = 'pending'
+                      OR (
+                          identity_status = 'confirmed'
+                          AND last_seen >= clock_timestamp() - %s
+                      )
+                  )
+                """,
+                (requested_node_ids, ABSENCE),
+            )
+            rows = cursor.fetchall()
+            resolved_ids = {int(row[0]) for row in rows}
+            if resolved_ids <= locked_ids:
+                for _registry_id, hardware_address, device_id in rows:
+                    self.device_cache[int(hardware_address)] = int(device_id)
+                return
     def _ensure_channels(self, cursor: Any, by_device: dict[int, set[str]]) -> None:
         """Create observed metric channels instead of silently dropping them."""
         for device_id, names in by_device.items():
@@ -241,6 +273,10 @@ class DataWriter:
                 raise RuntimeError("db connection unavailable; dropping batch")
             if self.db_conn is None:
                 raise RuntimeError("db connection is None; dropping batch")
+
+            previous_autocommit = self.db_conn.autocommit
+            self.db_conn.autocommit = False
+            cursor = None
             try:
                 cursor = self.db_conn.cursor()
                 node_ids = {
@@ -282,11 +318,16 @@ class DataWriter:
                         measurements,
                         page_size=500,
                     )
-                cursor.close()
+                self.db_conn.commit()
             except Exception:
+                self.db_conn.rollback()
                 # Re-raise so BatchQueue counts the batch as dropped +
                 # emits the flush-callback error log.
                 raise
+            finally:
+                if cursor is not None:
+                    cursor.close()
+                self.db_conn.autocommit = previous_autocommit
 
     def _check_db_connection(self) -> bool:
         """Check if database connection is alive and reconnect if needed.

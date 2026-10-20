@@ -123,6 +123,29 @@ class SoilPublicationTests(unittest.IsolatedAsyncioTestCase):
                 (str(timestamp_ms), SOIL_SENSOR_CURRENT_TTL_SEC),
             )
 
+    async def test_readdressed_reading_uses_resolved_channel_name(self) -> None:
+        redis = FakeRedis()
+        client = RedisClient()
+        client.redis_enabled = True
+        client.redis_client = redis
+
+        succeeded = await client.publish_all_readings(
+            "soil_sensor_233",
+            {"temperature": 21.5},
+            "Front Bed",
+            sensor_names={"temperature": "soil_sensor_226_temperature"},
+        )
+
+        key = sensor_full("Flower Room", "main", "soil_sensor_226_temperature")
+        message = cast(dict[str, object], json.loads(redis.notifications[0][1]))
+        self.assertTrue(succeeded)
+        self.assertEqual(message["sensor_name"], "soil_sensor_226_temperature")
+        self.assertIn(key, redis.state)
+        self.assertNotIn(
+            sensor_full("Flower Room", "main", "soil_sensor_233_temperature"),
+            redis.state,
+        )
+
     async def test_empty_and_unsupported_readings_are_successful_without_state_changes(
         self,
     ) -> None:

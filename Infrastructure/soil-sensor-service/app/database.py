@@ -10,6 +10,7 @@ import asyncpg
 from shared.db import create_pool, db_config_from_env
 from shared.db_batch_writer import insert_measurements_async
 from shared.infra_logging import get_logger
+from shared.sensor_identity import SENSOR_IDENTITY_LOCK_NAMESPACE
 
 logger = get_logger(__name__)
 
@@ -281,98 +282,130 @@ class DatabaseManager:
                 "last_seen": current["last_seen"],
             }
 
-    async def register_sensor_device(
-        self, registry_id: int, probe_name: str
-    ) -> tuple[int, dict[str, int]]:
-        """Create/reuse metric channels on the device owned by one identity."""
-        pool = await self._get_pool()
-        async with pool.acquire() as conn, conn.transaction():
+    async def _resolve_current_registry_row(
+        self, conn: Any, registry_id: int, modbus_id: int
+    ) -> Any:
+        """Lock and resolve the live address even if a same-identity merge won."""
+        locked_ids = {registry_id}
+        await conn.fetchval(
+            "SELECT pg_advisory_xact_lock_shared($1::integer, $2::integer)",
+            SENSOR_IDENTITY_LOCK_NAMESPACE,
+            registry_id,
+        )
+        while True:
             row = await conn.fetchrow(
                 """
                 SELECT registry_id, bus, hardware_address, rack_id, device_id, sensor_uid
                 FROM sensor_registry
-                WHERE registry_id = $1 AND bus = 'rs485' AND hardware_address IS NOT NULL
-                FOR UPDATE
+                WHERE bus = 'rs485' AND hardware_address = $1
                 """,
-                registry_id,
+                modbus_id,
             )
             if row is None:
-                raise RuntimeError(f"RS-485 registry record {registry_id} is unavailable")
-            device_id = await self._ensure_registry_device(conn, row, probe_name)
+                raise RuntimeError(f"RS-485 registry record for address {modbus_id} is unavailable")
+            current_id = int(row["registry_id"])
+            if current_id in locked_ids:
+                return row
+            await conn.fetchval(
+                "SELECT pg_advisory_xact_lock_shared($1::integer, $2::integer)",
+                SENSOR_IDENTITY_LOCK_NAMESPACE,
+                current_id,
+            )
+            locked_ids.add(current_id)
 
-            existing = await conn.fetch(
+    async def _ensure_soil_channels(
+        self, conn: Any, device_id: int, probe_name: str
+    ) -> tuple[dict[str, int], dict[str, str]]:
+        existing = await conn.fetch(
+            """
+            SELECT sensor_id, name FROM sensor
+            WHERE device_id = $1
+              AND (name LIKE '%\\_temperature' OR name LIKE '%\\_humidity'
+                   OR name LIKE '%\\_ec' OR name LIKE '%\\_ph')
+            """,
+            device_id,
+        )
+        sensor_ids: dict[str, int] = {}
+        sensor_names: dict[str, str] = {}
+        for sensor in existing:
+            name = str(sensor["name"])
+            for sensor_type in ("temperature", "humidity", "ec", "ph"):
+                if name.endswith(f"_{sensor_type}") and sensor_type not in sensor_ids:
+                    sensor_ids[sensor_type] = int(sensor["sensor_id"])
+                    sensor_names[sensor_type] = name
+
+        sensor_types = [
+            ("temperature", "°C", "temperature"),
+            ("humidity", "%", "humidity"),
+            ("ec", "µS/cm", "electrical_conductivity"),
+            ("ph", "pH", "ph"),
+        ]
+        for sensor_type, unit, data_type in sensor_types:
+            if sensor_type in sensor_ids:
+                continue
+            sensor_full_name = f"{probe_name}_{sensor_type}"
+            sensor = await conn.fetchrow(
                 """
-                SELECT sensor_id, name FROM sensor
-                WHERE device_id = $1
-                  AND (name LIKE '%\\_temperature' OR name LIKE '%\\_humidity'
-                       OR name LIKE '%\\_ec' OR name LIKE '%\\_ph')
+                INSERT INTO sensor (device_id, name, unit, data_type)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (device_id, name) DO UPDATE SET name = EXCLUDED.name
+                RETURNING sensor_id, name
                 """,
                 device_id,
+                sensor_full_name,
+                unit,
+                data_type,
             )
-            sensor_ids: dict[str, int] = {}
-            for sensor in existing:
-                name: str = sensor["name"]
-                for wire_key in ("temperature", "humidity", "ec", "ph"):
-                    if name.endswith(f"_{wire_key}") and wire_key not in sensor_ids:
-                        sensor_ids[wire_key] = int(sensor["sensor_id"])
+            sensor_ids[sensor_type] = int(sensor["sensor_id"])
+            sensor_names[sensor_type] = str(sensor["name"])
+            logger.info(
+                f"Registered sensor: {sensor_full_name} (ID: {sensor['sensor_id']})"
+            )
+        return sensor_ids, sensor_names
 
-            sensor_types = [
-                ("temperature", "°C", "temperature"),
-                ("humidity", "%", "humidity"),
-                ("ec", "µS/cm", "electrical_conductivity"),
-                ("ph", "pH", "ph"),
-            ]
-            for sensor_type, unit, data_type in sensor_types:
-                if sensor_type in sensor_ids:
-                    continue
-                sensor_full_name = f"{probe_name}_{sensor_type}"
-                sensor_id = await conn.fetchval(
-                    """
-                    INSERT INTO sensor (device_id, name, unit, data_type)
-                    VALUES ($1, $2, $3, $4) RETURNING sensor_id
-                    """,
-                    device_id,
-                    sensor_full_name,
-                    unit,
-                    data_type,
-                )
-                sensor_ids[sensor_type] = int(sensor_id)
-                logger.info(f"Registered sensor: {sensor_full_name} (ID: {sensor_id})")
-
-            return device_id, sensor_ids
+    async def register_sensor_device(
+        self, registry_id: int, modbus_id: int, probe_name: str
+    ) -> tuple[int, int, dict[str, int], dict[str, str]]:
+        """Resolve one live address and its metric channels under the identity lock."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn, conn.transaction():
+            row = await self._resolve_current_registry_row(conn, registry_id, modbus_id)
+            device_id = await self._ensure_registry_device(conn, row, probe_name)
+            sensor_ids, sensor_names = await self._ensure_soil_channels(
+                conn, device_id, probe_name
+            )
+            return int(row["registry_id"]), device_id, sensor_ids, sensor_names
 
     async def store_measurements(
         self,
-        sensor_ids: dict[str, int],
+        registry_id: int,
+        modbus_id: int,
+        probe_name: str,
         readings: dict[str, float],
         timestamp: datetime | None = None,
-    ) -> bool:
-        """
-        Store sensor measurements in the database.
-
-        Args:
-            sensor_ids: Dict mapping sensor_type to sensor_id
-            readings: Dict with temperature, humidity, ec, ph values
-            timestamp: Timestamp for measurements (defaults to now)
-
-        Returns:
-            True if successful, False otherwise
-        """
+    ) -> tuple[int, dict[str, int], dict[str, str]] | None:
+        """Resolve channels and insert a poll while holding the shared identity lock."""
         if timestamp is None:
             timestamp = datetime.now()
 
         pool = await self._get_pool()
-        rows = [
-            (timestamp, sensor_id, float(readings[sensor_type]), "ok")
-            for sensor_type, sensor_id in sensor_ids.items()
-            if sensor_type in readings
-        ]
         try:
-            await insert_measurements_async(pool, rows)
-            return True
+            async with pool.acquire() as conn, conn.transaction():
+                row = await self._resolve_current_registry_row(conn, registry_id, modbus_id)
+                device_id = await self._ensure_registry_device(conn, row, probe_name)
+                sensor_ids, sensor_names = await self._ensure_soil_channels(
+                    conn, device_id, probe_name
+                )
+                rows = [
+                    (timestamp, sensor_id, float(readings[sensor_type]), "ok")
+                    for sensor_type, sensor_id in sensor_ids.items()
+                    if sensor_type in readings
+                ]
+                await insert_measurements_async(conn, rows)
+                return int(row["registry_id"]), sensor_ids, sensor_names
         except Exception as e:
             logger.error(f"Error storing measurements: {e}")
-            return False
+            return None
 
     async def get_sensor_id(self, sensor_name: str) -> int | None:
         """Get sensor_id by sensor name."""

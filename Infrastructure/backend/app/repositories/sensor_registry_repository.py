@@ -48,6 +48,7 @@ from app.sensor_registry_models import (
 )
 from shared.cluster_topology import known_rooms, sensor_name_like_pattern, sensor_url_clusters_for
 from shared.infra_logging import get_logger
+from shared.sensor_identity import SENSOR_IDENTITY_LOCK_NAMESPACE
 
 if TYPE_CHECKING:
     from asyncpg import Pool
@@ -263,6 +264,12 @@ class SensorRegistryRepository:
         target_registry_id = body.target_registry_id
         locked_ids = sorted({registry_id, target_registry_id})
         async with self._acquire() as conn, conn.transaction():
+            for locked_id in locked_ids:
+                await conn.fetchval(
+                    "SELECT pg_advisory_xact_lock($1::integer, $2::integer)",
+                    SENSOR_IDENTITY_LOCK_NAMESPACE,
+                    locked_id,
+                )
             rows = await conn.fetch(
                 """
                 SELECT sr.registry_id, sr.bus, sr.hardware_address, sr.sensor_uid,
@@ -318,6 +325,21 @@ class SensorRegistryRepository:
                 )
 
             pending_since = pending["pending_since"]
+            pending_device_id = await self._ensure_identity_device(conn, pending)
+            first_measurement = await conn.fetchval(
+                """
+                SELECT min(m.time)
+                FROM measurement AS m
+                JOIN sensor AS s ON s.sensor_id = m.sensor_id
+                WHERE s.device_id = $1
+                """,
+                pending_device_id,
+            )
+            merge_from = (
+                min(pending_since, first_measurement)
+                if first_measurement is not None
+                else pending_since
+            )
             archived = await conn.fetchval(
                 """
                 SELECT EXISTS (
@@ -329,7 +351,7 @@ class SensorRegistryRepository:
                       AND end_at > $1
                 )
                 """,
-                pending_since,
+                merge_from,
             )
             if archived:
                 raise ConflictError(
@@ -351,11 +373,10 @@ class SensorRegistryRepository:
                   AND c.range_start < clock_timestamp()
                   AND c.range_end > $1
                 """,
-                pending_since,
+                merge_from,
             )
 
             target_device_id = await self._ensure_identity_device(conn, target)
-            pending_device_id = await self._ensure_identity_device(conn, pending)
             channel_pairs = await self._identity_channel_pairs(
                 conn, pending, target, pending_device_id, target_device_id
             )
@@ -364,11 +385,10 @@ class SensorRegistryRepository:
                     """
                     UPDATE measurement
                     SET sensor_id = $2
-                    WHERE sensor_id = $1 AND time >= $3
+                    WHERE sensor_id = $1
                     """,
                     pending_sensor_id,
                     target_sensor_id,
-                    pending_since,
                 )
 
             if pending["hardware_address"] is None:
