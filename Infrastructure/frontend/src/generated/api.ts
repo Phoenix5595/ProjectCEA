@@ -3218,7 +3218,7 @@ export interface components {
             /** Location */
             location: string;
             /** Points */
-            points: components["schemas"]["HistoryOverviewPoint"][];
+            points: components["schemas"]["HistoryOverviewSamplePoint"][];
         };
         /**
          * HistoryOverviewMetadata
@@ -3249,10 +3249,26 @@ export interface components {
             source_coverage: "ready" | "unavailable";
         };
         /**
-         * HistoryOverviewPoint
-         * @description One aligned overview bucket with nullable sampled statistics.
+         * HistoryOverviewRange
+         * @description An aware-UTC half-open overview interval with no arbitrary maximum.
          */
-        HistoryOverviewPoint: {
+        HistoryOverviewRange: {
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+        };
+        /**
+         * HistoryOverviewSamplePoint
+         * @description Sample-backed sensor/light point with exact zero- and one-row semantics.
+         */
+        HistoryOverviewSamplePoint: {
             /** Average */
             average?: number | null;
             /**
@@ -3268,22 +3284,6 @@ export interface components {
             partial: boolean;
             /** Sample Count */
             sample_count: number;
-            /**
-             * Start
-             * Format: date-time
-             */
-            start: string;
-        };
-        /**
-         * HistoryOverviewRange
-         * @description An aware-UTC half-open overview interval with no arbitrary maximum.
-         */
-        HistoryOverviewRange: {
-            /**
-             * End
-             * Format: date-time
-             */
-            end: string;
             /**
              * Start
              * Format: date-time
@@ -3308,7 +3308,7 @@ export interface components {
         HistoryOverviewSensorSeries: {
             node: components["schemas"]["Node"];
             /** Points */
-            points: components["schemas"]["HistoryOverviewPoint"][];
+            points: components["schemas"]["HistoryOverviewSamplePoint"][];
             /** Sensor */
             sensor: string;
             /** Unit */
