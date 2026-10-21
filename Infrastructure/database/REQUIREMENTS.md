@@ -46,10 +46,9 @@ All monitoring-service and backend historical queries must include a time-range 
 Use these canonical views and read models instead of ad-hoc hypertable scans:
 
 - `measurement_with_metadata` for ad-hoc time-series queries.
-- `latest_sensor_values` remains defined as a one-row-per-sensor view, but has no in-repo consumer.
 - The `monitoring_*` aggregates above for native monitoring reads (they own the monitoring ladder and bucketing).
 
-Avoid `MAX(time)` subqueries over the hypertable for "latest" values; they are slower than `latest_sensor_values`.
+For live sensor state, read the Redis current-value publications instead of scanning the history hypertable for latest values.
 
 ## Setpoints, Photoperiod Overlays, and Light Intensity
 
@@ -116,7 +115,7 @@ Redis owns live/current state; Postgres owns history and configuration. The moni
 
 ## Latest Values
 
-The retained `latest_sensor_values` view uses LATERAL index probes per sensor, not `DISTINCT ON` over the hypertable. No in-repo service currently consumes it.
+`latest_sensor_values` was dropped by `0012_mode_transition_history.sql` because no in-repo service consumed it. The down migration recreates the LATERAL definition only if the view existed before the upgrade.
 
 ## Anti-Patterns
 

@@ -18,7 +18,7 @@
 --     pid_parameter_history/config_versions               -> alembic 001/002/005/006/007
 --   * relay_observation                                   -> alembic 05_relay_observation
 --   * monitoring_room_photoperiod/coverage                -> monitoring_read_models.sql
---   * mode_transition_history                             -> add_mode_transition_history.sql
+--   * mode_transition_history                             -> migrations/0012_mode_transition_history.sql
 --   * calendar_mode_application                           -> add_calendar_tables.sql
 --
 -- light_state_history, pid_adjustments, setpoint_history and rollout_events

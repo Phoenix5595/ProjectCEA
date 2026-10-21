@@ -81,6 +81,7 @@ cp -a "$REPO_ROOT/Infrastructure/scripts/sync_systemd_units.sh" "$ARCHIVE_ROOT/I
 cp -a "$REPO_ROOT/Infrastructure/scripts/install-sudoers.sh" "$ARCHIVE_ROOT/Infrastructure/scripts/"
 cp -a "$REPO_ROOT/Infrastructure/systemd-overrides" "$ARCHIVE_ROOT/Infrastructure/"
 cp -a "$REPO_ROOT/Infrastructure/"*.service "$ARCHIVE_ROOT/Infrastructure/"
+cp -a "$REPO_ROOT/Infrastructure/service_error_handler.sh" "$ARCHIVE_ROOT/Infrastructure/"
 printf '#!/bin/bash\nexit 0\n' > "$ARCHIVE_ROOT/Infrastructure/can-processor-service/setup_can.sh"
 chmod 0755 "$ARCHIVE_ROOT/Infrastructure/can-processor-service/setup_can.sh"
 printf '# Required staged-release fixture file.\n' > "$ARCHIVE_ROOT/Infrastructure/grow-archive-service/requirements.txt"

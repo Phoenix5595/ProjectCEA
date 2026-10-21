@@ -8,15 +8,15 @@ Stable cross-service contracts for ProjectCEA. For current architecture, see `AR
 
 ## Secrets
 
-- The DB password lives only in `/opt/projectcea/shared/env/postgres_password` (mode `0600`). Every DB-using service loads it via `LoadCredential=postgres_password:...`; systemd copies it into `$CREDENTIALS_DIRECTORY` before the service starts. The env-var fallback is transitional.
+- Both `/opt/projectcea/shared/env/postgres_password` and `/opt/projectcea/shared/env/postgres.env` exist in production with mode `0600`. DB services read the systemd credential file first and fall back to the env file via `Infrastructure/shared/db_credentials.py`; tooling reads `postgres.env`.
 - The API key and enforcement flag live in `/opt/projectcea/shared/env/api_key.env` (mode `0600`). Services load it via `EnvironmentFile=-...`; `CEA_API_KEY_REQUIRE=true` enables enforcement fleet-wide.
 - No plaintext password or API key may be committed to the repo or written inline in a unit file.
 
 ## Redis Durability
 
 - AOF is on with `appendfsync everysec`. At most one second of writes is lost on crash.
-- `sensor:raw` and `stream:control` cap at 100,000 entries each (`Infrastructure/shared/redis_keys.py`).
-- Legacy dual-write contract: current-value writers populate both `sensor:{name}` and `cea:sensor:{location}:{cluster}:{sensor_type}` until the short form is retired. Schedule-state writers keep `schedule:state:{location}:{cluster}`, `cea:schedule:{location}:{cluster}:state`, and `cea:schedule:state:{location}:{cluster}` aligned.
+- `sensor:raw` is capped at 100,000 entries (`Infrastructure/shared/redis_keys.py`). `stream:control` is retired and no longer published; the purge tool preserves any existing key.
+- Current sensor values use only `cea:sensor:{location}:{cluster}:{sensor_type}` and its `_ts` timestamp companion; `sensor:{name}` short-key writes are retired.
 - New code must use the builders in `Infrastructure/shared/redis_keys.py`; do not introduce new top-level key namespaces without adding them here.
 
 ## Time Synchronization

@@ -116,7 +116,7 @@ Sources of truth: `Infrastructure/shared/cluster_topology.py` (Python) and `Infr
 
 ## Redis and TimescaleDB
 
-Redis holds live state and streams. `sensor:raw` is the main telemetry stream; `stream:control` carries effective-setpoint decisions. Both streams cap at 100,000 entries (`Infrastructure/shared/redis_keys.py`).
+Redis holds live state and streams. `sensor:raw` is the telemetry stream, capped at 100,000 entries. `stream:control` is retired and no longer published.
 
 TimescaleDB on the Pi primary holds history and configuration. The read-only `monitoring-service` (`:8005`) reads TimescaleDB for history and Redis for current publications; it never writes either. Its database target is configured by `MONITORING_POSTGRES_DSN`.
 
