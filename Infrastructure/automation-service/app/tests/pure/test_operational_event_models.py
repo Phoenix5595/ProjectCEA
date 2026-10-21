@@ -33,7 +33,6 @@ from shared.redis_keys import (
     OPERATIONAL_EVENTS_MAXLEN,
     OPERATIONAL_EVENTS_RETENTION_MS,
     OPERATIONAL_EVENTS_STREAM,
-    operational_events_stream,
 )
 
 
@@ -165,12 +164,9 @@ def test_rejects_serialized_output_over_the_canonical_size_limit() -> None:
 
 
 def test_exposes_canonical_operational_stream_bounds() -> None:
-    # Given: the shared Redis namespace contract.
-    # When: callers resolve the global operational stream.
-    stream = operational_events_stream()
-
-    # Then: all consumers receive the one bounded canonical stream.
-    assert stream == OPERATIONAL_EVENTS_STREAM == "cea:events:operational"
+    # Given / When: the shared Redis namespace contract.
+    # Then: all consumers use the one bounded canonical stream.
+    assert OPERATIONAL_EVENTS_STREAM == "cea:events:operational"
     assert OPERATIONAL_EVENTS_RETENTION_MS == 86_400_000
     assert OPERATIONAL_EVENTS_MAXLEN == 50_000
     assert OPERATIONAL_EVENT_MAX_SERIALIZED_BYTES == 4_096

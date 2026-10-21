@@ -411,6 +411,11 @@ if ! python3 "$STATE_HELPER" require-no-candidate "$STATE_JSON" >/dev/null; then
   echo "=== DEPLOY BLOCKED: a candidate release is already active; finalize or roll it back first ===" >&2
   exit 1
 fi
+if ! bash "$SOURCE/Infrastructure/scripts/verify_time.sh"; then
+  log_event "deploy_blocked" "time_sync_unhealthy"
+  echo "deploy_blocked:time_sync_unhealthy" >&2
+  exit 1
+fi
 
 echo "=== Deploying release: $RELEASE_ID ($FULL_SHA) ==="
 log_event "deploy_start" ""

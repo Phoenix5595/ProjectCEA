@@ -1,37 +1,45 @@
 #!/usr/bin/env bash
-# verify_time.sh — fail if NTP/time sync is unhealthy on this host.
-# Rationale: CAGG bucket boundaries, schedule start/stop, and Redis TTL comparisons
-# all rely on clock alignment.
-# Run as a deploy.sh preflight.
-
+# verify_time.sh — fail unless NTP time sync is healthy on this host.
+# deploy.sh runs this as a preflight: CAGG bucket boundaries, schedule
+# start/stop and Redis TTL comparisons all rely on clock alignment.
 set -euo pipefail
 
-NTP_SYNC=$(timedatectl show -p NTPSynchronized --value 2>/dev/null || echo "unknown")
-if [[ "$NTP_SYNC" != "yes" ]]; then
-  echo "verify_time: FAIL — NTPSynchronized=$NTP_SYNC (expected yes)" >&2
+MAX_OFFSET_MS=100
+
+sync_state="$(timedatectl show -p NTPSynchronized --value 2>/dev/null || echo unknown)"
+if [[ "$sync_state" != "yes" ]]; then
+  echo "verify_time: FAIL — NTPSynchronized=$sync_state (expected yes)" >&2
   exit 1
 fi
 
-# systemd-timesyncd path (no chrony on this Pi). Pull offset from journalctl if available.
-OFFSET_MS=""
 if command -v chronyc >/dev/null 2>&1; then
-  OFFSET_MS=$(chronyc tracking 2>/dev/null | awk -F': *' '/System time/ {print $2}' | awk '{print $1 * 1000}')
-elif command -v timedatectl >/dev/null 2>&1; then
-  # systemd-timesyncd shows "Poll interval" etc. No direct drift metric here;
-  # rely on NTPSynchronized=yes as the gate and fall through silently.
-  :
+  # "System time     : 0.000012345 seconds fast of NTP time"
+  offset_ms="$(chronyc tracking 2>/dev/null | awk -F': *' '/^System time/ { split($2, f, " "); printf "%.3f", f[1] * 1000; exit }' || true)"
+else
+  # systemd-timesyncd: "       Offset: +716us" (unit us, ms, s or min)
+  offset_ms="$(timedatectl timesync-status 2>/dev/null | awk '
+    $1 == "Offset:" {
+      v = $2; sign = 1
+      if (substr(v, 1, 1) == "-") sign = -1
+      sub(/^[+-]/, "", v)
+      if (v ~ /us$/) { sub(/us$/, "", v); ms = v / 1000 }
+      else if (v ~ /ms$/) { sub(/ms$/, "", v); ms = v + 0 }
+      else if (v ~ /min$/) { sub(/min$/, "", v); ms = v * 60000 }
+      else if (v ~ /s$/) { sub(/s$/, "", v); ms = v * 1000 }
+      else exit
+      printf "%.3f", sign * ms
+      exit
+    }' || true)"
 fi
 
-if [[ -n "$OFFSET_MS" ]]; then
-  # Threshold: 100 ms per plan's NTP invariant.
-  if awk -v o="$OFFSET_MS" 'BEGIN { exit !(o < 0 ? -o : o < 100) }'; then
-    echo "verify_time: OK — NTP synced, offset ${OFFSET_MS}ms"
-    exit 0
-  else
-    echo "verify_time: FAIL — NTP offset ${OFFSET_MS}ms > 100ms" >&2
-    exit 1
-  fi
+if [[ -z "$offset_ms" ]]; then
+  echo "verify_time: FAIL — NTP offset unavailable (chronyc tracking / timedatectl timesync-status)" >&2
+  exit 1
 fi
 
-echo "verify_time: OK — NTPSynchronized=yes (no drift metric available)"
-exit 0
+if awk -v o="$offset_ms" -v max="$MAX_OFFSET_MS" 'BEGIN { a = (o < 0) ? -o : o; exit !(a < max) }'; then
+  echo "verify_time: OK — NTP synced, offset ${offset_ms}ms"
+else
+  echo "verify_time: FAIL — NTP offset ${offset_ms}ms exceeds ${MAX_OFFSET_MS}ms" >&2
+  exit 1
+fi

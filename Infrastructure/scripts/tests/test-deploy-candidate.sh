@@ -447,6 +447,27 @@ elif command == "status":
 else:
     raise SystemExit(f"unexpected db_migrate command: {command}")
 PY
+cat > "$BIN_DIRECTORY/timedatectl" <<'TIMEDATECTL'
+#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  show) printf '%s\n' "${DEPLOY_TEST_NTP_SYNC:-yes}" ;;
+  timesync-status) printf '       Offset: %s\n' "${DEPLOY_TEST_NTP_OFFSET:-+1.000ms}" ;;
+  *) echo "unexpected timedatectl invocation: $*" >&2; exit 2 ;;
+esac
+TIMEDATECTL
+# verify_time.sh prefers chronyc when present; shadow a host chronyc so the
+# sandbox offset comes from DEPLOY_TEST_NTP_OFFSET, never from host NTP state.
+if command -v chronyc >/dev/null 2>&1; then
+  cat > "$BIN_DIRECTORY/chronyc" <<'CHRONYC'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "${1:-}" == tracking ]] || { echo "unexpected chronyc invocation: $*" >&2; exit 2; }
+offset="${DEPLOY_TEST_NTP_OFFSET:-+1.000ms}"
+offset="${offset%ms}"
+awk -v ms="$offset" 'BEGIN { s = ms / 1000; printf "System time     : %.9f seconds %s of NTP time\n", (s < 0 ? -s : s), (s < 0 ? "slow" : "fast") }'
+CHRONYC
+fi
 chmod 0700 "$BIN_DIRECTORY"/*
 
 base_environment() {
@@ -751,6 +772,7 @@ clear_state() {
   unset HEALTH_DELAYED_URL HEALTH_DELAYED_FAILURES ROLLBACK_HEALTH_TIMEOUT_SECONDS
   unset DEPLOY_TEST_DIRTY_TRACKED DEPLOY_TEST_UNTRACKED_ONLY DEPLOY_TEST_LINT_FAILURE DEPLOY_TEST_DOWNTIME
   unset DEPLOY_TEST_NOT_FOUND_UNIT DEPLOY_TEST_CADDY_CODE DEPLOY_TEST_FAIL_UNIT DEPLOY_TEST_FAIL_CADDY_INSTALL
+  unset DEPLOY_TEST_NTP_SYNC DEPLOY_TEST_NTP_OFFSET
 }
 
 set_current() {
@@ -1298,6 +1320,31 @@ grep -Fq 'dirty_tracked_inputs' "$EVENT_LOG" || fail 'dirty tracked input was no
 [[ "$(current_target)" == "$REL_A" ]] || fail 'dirty tracked input changed current'
 [[ "$(cat "$EVENT_LOG")" != *"db_migrate plan"* ]] || fail 'dirty tracked input reached migration planning'
 pass 'dirty tracked inputs block deploy before migrations'
+
+# --- Deploy hardening: unhealthy NTP time sync blocks deploy before release work ---
+clear_state
+set_current "$REL_A"
+write_state_json "rel-A" "$REL_A" "$REL_C"
+base_environment
+export TARGET="$REL_B"
+export DEPLOY_TEST_NTP_SYNC=no
+expect_failure bash "$DEPLOY_SCRIPT"
+grep -Fq 'time_sync_unhealthy' "$EVENT_LOG" || fail 'unsynced clock was not reported'
+[[ "$(current_target)" == "$REL_A" ]] || fail 'unsynced clock changed current'
+[[ "$(cat "$EVENT_LOG")" != *"db_migrate plan"* ]] || fail 'unsynced clock reached migration planning'
+pass 'unsynced clock blocks deploy before release work'
+
+clear_state
+set_current "$REL_A"
+write_state_json "rel-A" "$REL_A" "$REL_C"
+base_environment
+export TARGET="$REL_B"
+export DEPLOY_TEST_NTP_OFFSET=-150.000ms
+expect_failure bash "$DEPLOY_SCRIPT"
+grep -Fq 'time_sync_unhealthy' "$EVENT_LOG" || fail 'excess NTP offset was not reported'
+[[ "$(current_target)" == "$REL_A" ]] || fail 'excess NTP offset changed current'
+[[ "$(cat "$EVENT_LOG")" != *"db_migrate plan"* ]] || fail 'excess NTP offset reached migration planning'
+pass 'NTP offset beyond 100 ms blocks deploy (negative offsets included)'
 
 # Untracked inputs are deliberately ignored by the release-source guard.
 clear_state

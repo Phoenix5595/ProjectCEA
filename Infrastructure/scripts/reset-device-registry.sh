@@ -215,9 +215,6 @@ for line in Path(sys.argv[1]).read_text().splitlines():
     print(f"cea:light:{location}:{cluster}:{device_name}")
     print(f"cea:automation:{location}:{cluster}:{device_name}")
     print(f"cea:mode:{location}:{cluster}")
-    print(f"light:{location}:{cluster}:{device_name}")
-    print(f"automation:{location}:{cluster}:{device_name}")
-    print(f"mode:{location}:{cluster}")
 PY
 
 while IFS= read -r key; do

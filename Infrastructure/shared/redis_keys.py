@@ -3,7 +3,7 @@
 This module is the single source of truth for every Redis key, stream, or
 pubsub channel touched by any service. All NEW code MUST go through the
 builders and constants exported here. Existing call-sites are being migrated
-incrementally (see `LEGACY NOTES` below) — do not add new literal-string keys
+incrementally — do not add new literal-string keys
 to the codebase.
 
 Three design principles
@@ -16,9 +16,8 @@ Three design principles
 
 2. **One namespace per concept.**
     - ``cea:sensor:*`` — current sensor values (state, not history).
-    - ``sensor:*``     — legacy compatibility form (see LEGACY NOTES).
    - ``schedules:*``  — schedule JSON docs by location/cluster.
-   - ``cea:schedule:*`` — legacy + schedule state (see LEGACY NOTES).
+   - ``cea:schedule:*`` — legacy + schedule state.
    - ``automation:*`` — last-issued automation decision per device.
    - ``failsafe:*``   — per-cluster failsafe-active flag.
     - ``sensor:raw``   — main XADD telemetry stream (CAN + soil + 1-wire).
@@ -28,12 +27,6 @@ Three design principles
     Retention limits are defined by the corresponding ``*_MAXLEN`` constants.
     Writers pass ``approximate=True`` so Redis can trim in buckets of ~100
     entries, which is roughly free.
-
-LEGACY NOTES (do not port to new code)
---------------------------------------
-Legacy ``sensor:{name}`` keys and competing schedule-state forms may remain
-in Redis, but new readers and writers use the topology-qualified
-``cea:sensor:{location}:{cluster}:{sensor_type}`` contract.
 
 If you are adding a NEW kind of key, pick a namespace from the list above
 and add a builder here. Don't invent a new top-level namespace without a
@@ -83,11 +76,6 @@ OPERATIONAL_EVENTS_MAXLEN: Final[int] = 50_000
 
 OPERATIONAL_EVENT_MAX_SERIALIZED_BYTES: Final[int] = 4_096
 """Maximum UTF-8 byte length of one serialized operational event."""
-
-
-def operational_events_stream() -> str:
-    """Return the global operational-event stream key."""
-    return OPERATIONAL_EVENTS_STREAM
 
 
 # ---------------------------------------------------------------------------
@@ -188,7 +176,6 @@ __all__ = [
     "OPERATIONAL_EVENTS_RETENTION_MS",
     "OPERATIONAL_EVENTS_MAXLEN",
     "OPERATIONAL_EVENT_MAX_SERIALIZED_BYTES",
-    "operational_events_stream",
     # pubsub
     "SENSOR_UPDATE_CHANNEL",
     "SENSOR_UPDATE_SOIL_CHANNEL",
