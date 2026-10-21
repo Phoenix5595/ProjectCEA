@@ -247,35 +247,3 @@ async def set_device_mode(
                 status_code=400, detail="Mode must be 'manual', 'auto', or 'scheduled'"
             )
     return await command_device(location, cluster, device, command, device_command_service)
-
-
-@router.get("/api/control/history")
-async def get_control_history(
-    location: str | None = None,
-    cluster: str | None = None,
-    limit: int = 10,
-    channel: int | None = None,
-    since: str | None = None,
-    until: str | None = None,
-    database: DatabaseManager = Depends(get_database),
-) -> list[dict[str, Any]]:
-    if not location or not cluster:
-        raise HTTPException(
-            status_code=400,
-            detail="Query parameters 'location' and 'cluster' are required",
-        )
-    if not isinstance(limit, int) or limit < 1 or limit > 100:
-        raise HTTPException(
-            status_code=400,
-            detail="Parameter 'limit' must be an integer between 1 and 100",
-        )
-    _validate_device_cluster_or_400(location, cluster)
-    try:
-        return await database.control_action_repo.get_control_history_filtered(
-            location, cluster, limit, channel, since, until
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.warning(f"get_control_history failed: {e}")
-        return []

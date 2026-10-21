@@ -148,17 +148,9 @@ def get_database() -> DatabaseManager:
     return database
 
 
-def get_weather_client() -> WeatherClient:
-    """Get weather client."""
-    if weather_client is None:
-        raise RuntimeError("Weather client not initialized")
-    return weather_client
-
-
 # Override route dependencies
 app.dependency_overrides[status.get_database] = get_database
 app.dependency_overrides[weather.get_database] = get_database
-app.dependency_overrides[weather.get_weather_client] = get_weather_client
 
 # Register routes
 app.include_router(status.router)

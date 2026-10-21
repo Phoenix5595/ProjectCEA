@@ -1,13 +1,8 @@
 from datetime import UTC, datetime
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
-from app.repositories import control_actions as control_action_routes
-from app.repositories.control_actions import AUTOMATION_STATE_COLUMNS, ControlActionRepository
-from app.routes import debug as debug_routes
-from app.routes.debug import get_mode_history
 from app.services.photoperiod_history_logger import DatabasePhotoperiodHistoryStore
 
 
@@ -53,62 +48,6 @@ class _StateConnection(_Connection):
     async def fetch(self, query: str, *_: Any) -> list[dict[str, Any]]:
         self.queries.append(query)
         return self.responses.pop(0)
-
-
-@pytest.mark.asyncio
-async def test_control_history_uses_time_column_and_response_field(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    at = datetime(2026, 10, 19, tzinfo=UTC)
-    connection = _Connection(
-        [
-            {
-                "time": at,
-                "location": "Flower Room",
-                "cluster": "main",
-                "device_name": "relay_1",
-                "old_state": 0,
-                "new_state": 1,
-                "mode": "automatic",
-                "reason": "test",
-                "load_percent": None,
-                "channel": 1,
-            }
-        ]
-    )
-
-    async def allow_local_history(*_: Any, **__: Any) -> None:
-        return None
-
-    monkeypatch.setattr(control_action_routes, "require_local_history", allow_local_history)
-    repository = ControlActionRepository(_Pool(connection))
-
-    rows = await repository.get_control_history_filtered("Flower Room", "main")
-
-    assert AUTOMATION_STATE_COLUMNS[0] == "time"
-    assert rows[0]["time"] == at.isoformat()
-    assert "timestamp" not in rows[0]
-    assert 'SELECT "time"' in connection.queries[0]
-    assert 'ORDER BY "time" DESC' in connection.queries[0]
-
-
-@pytest.mark.asyncio
-async def test_mode_history_returns_renamed_time_key(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    at = datetime(2026, 10, 19, tzinfo=UTC)
-    connection = _Connection([{"time": at, "location": "Flower Room", "cluster": "main"}])
-
-    async def allow_local_history(*_: Any, **__: Any) -> None:
-        return None
-
-    monkeypatch.setattr(debug_routes, "require_local_history", allow_local_history)
-    result = await get_mode_history(
-        "Flower Room", "main", limit=10, db=SimpleNamespace(pool=_Pool(connection))
-    )
-
-    assert result == [{"time": at, "location": "Flower Room", "cluster": "main"}]
-    assert 'ORDER BY "time" DESC' in connection.queries[0]
 
 
 @pytest.mark.asyncio

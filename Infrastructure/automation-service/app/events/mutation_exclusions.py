@@ -20,7 +20,6 @@ class NonPersistentEffect(StrEnum):
     """Constrained effects that are safe to exempt from persisted-event coverage."""
 
     TRANSIENT_HARDWARE_TEST = "transient_hardware_test"
-    TRANSIENT_HARDWARE_COMMAND = "transient_hardware_command"
     TRANSIENT_REMOTE_CONNECTION_PROBE = "transient_remote_connection_probe"
     READ_ONLY_DRAFT_PREVIEW = "read_only_draft_preview"
 
@@ -53,18 +52,6 @@ MUTATION_ROUTE_EXCLUSIONS: Final[tuple[MutationRouteExclusion, ...]] = (
         path="/api/hardware/relays/test",
         rationale="Executes a transient hardware diagnostic without repository persistence.",
         effect=NonPersistentEffect.TRANSIENT_HARDWARE_TEST,
-    ),
-    MutationRouteExclusion(
-        method=MutationHttpMethod.POST,
-        path="/api/lights/{location}/{cluster}/{device_name}/intensity",
-        rationale="Direct DFR intensity command has no authoritative persistence seam.",
-        effect=NonPersistentEffect.TRANSIENT_HARDWARE_COMMAND,
-    ),
-    MutationRouteExclusion(
-        method=MutationHttpMethod.POST,
-        path="/api/lights/{location}/{cluster}/{device_name}/voltage",
-        rationale="Direct DFR voltage command has no authoritative persistence seam.",
-        effect=NonPersistentEffect.TRANSIENT_HARDWARE_COMMAND,
     ),
 )
 

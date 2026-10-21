@@ -610,12 +610,6 @@ class ServiceContainer:
         """Get DFR0971 manager instance."""
         return self.dfr0971_manager
 
-    def get_interlock_manager(self) -> InterlockManager:
-        """Get interlock manager instance."""
-        if not self.interlock_manager:
-            raise RuntimeError("Interlock manager not initialized")
-        return self.interlock_manager
-
     def get_alarm_manager(self) -> AlarmManager | None:
         """Get alarm manager instance."""
         return self.alarm_manager

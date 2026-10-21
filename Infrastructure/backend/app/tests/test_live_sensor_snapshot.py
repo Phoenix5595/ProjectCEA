@@ -109,7 +109,7 @@ class LiveSensorSnapshotTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("probe_4999", snapshot)
         self.assertNotIn("probe_5000", snapshot)
 
-    async def test_live_sensor_routes_keep_their_response_shapes(self) -> None:
+    async def test_live_sensor_route_keeps_its_response_shape(self) -> None:
         client = FakeRedis()
         now_ms = int(datetime.now().timestamp() * 1000)
         client.add_sensor("Flower Room", "back", "dry_bulb_b", "24.5", str(now_ms - 2_000))
@@ -120,19 +120,11 @@ class LiveSensorSnapshotTests(unittest.IsolatedAsyncioTestCase):
             patch.object(sensors, "get_sensor_repository", return_value=FakeSensorRepository()),
         ):
             per_cluster = await sensors.get_live_sensor_data("Flower Room", "back")
-            all_sensors = await sensors.get_all_live_sensor_data()
 
         self.assertEqual(set(per_cluster), {"dry_bulb_b", "rh_b"})
         self.assertEqual(per_cluster["dry_bulb_b"].sensor_type, "dry_bulb_b")
         self.assertEqual(per_cluster["dry_bulb_b"].data[0].value, 24.5)
         self.assertEqual(per_cluster["dry_bulb_b"].unit, "°C")
-        self.assertEqual(
-            {row["sensor"] for row in all_sensors},
-            {"dry_bulb_b", "rh_b"},
-        )
-        dry_bulb = next(row for row in all_sensors if row["sensor"] == "dry_bulb_b")
-        self.assertEqual(dry_bulb["value"], 24.5)
-        self.assertEqual(dry_bulb["unit"], "°C")
 
     async def test_sensor_data_uses_one_ordered_mget_with_existing_precedence(self) -> None:
         client = SimpleNamespace(

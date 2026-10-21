@@ -8,13 +8,11 @@ from datetime import datetime
 import logging
 
 # Standard library imports
-from pathlib import Path
 import signal
 import sys
 from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
 
 # Third-party imports
 import uvicorn
@@ -379,39 +377,6 @@ async def websocket_endpoint(websocket: WebSocket, location: str):
             websocket_manager.disconnect(websocket, location)
     finally:
         _ws_limiter.release()
-
-
-# Serve favicon BEFORE mounting static files (so it takes precedence)
-@app.get("/favicon.png")
-async def favicon():
-    """Serve favicon."""
-    # Use absolute paths
-    backend_dir = Path(__file__).parent.parent.absolute()
-    static_path = backend_dir / "static"
-    favicon_path = static_path / "favicon.png"
-    logger.info(f"Favicon request: checking {favicon_path} (exists: {favicon_path.exists()})")
-    if favicon_path.exists():
-        logger.info(f"Serving favicon from: {favicon_path}")
-        return FileResponse(str(favicon_path), media_type="image/png")
-    # Fallback: try frontend public directory
-    frontend_favicon = backend_dir.parent / "frontend" / "public" / "favicon.png"
-    logger.info(
-        f"Favicon fallback: checking {frontend_favicon} (exists: {frontend_favicon.exists()})"
-    )
-    if frontend_favicon.exists():
-        logger.info(f"Serving favicon from: {frontend_favicon}")
-        return FileResponse(str(frontend_favicon), media_type="image/png")
-    logger.warning("Favicon not found at either location")
-    from fastapi.responses import Response
-
-    return Response(status_code=404)
-
-
-# Also handle /favicon.ico (browser fallback)
-@app.get("/favicon.ico")
-async def favicon_ico():
-    """Serve favicon as .ico (browser fallback)."""
-    return await favicon()
 
 
 if __name__ == "__main__":

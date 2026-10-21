@@ -16,10 +16,7 @@ from .base import (
 )
 from .base import router as base_router
 from .room import router as room_router
-from .utils import (
-    _build_schedule_state,
-    _parse_time_str,
-)
+from .utils import _parse_time_str
 
 router = APIRouter(tags=["schedules"])
 router.include_router(base_router)
@@ -27,7 +24,6 @@ router.include_router(room_router)
 
 __all__ = [
     "router",
-    "_build_schedule_state",
     "_parse_time_str",
     "get_database",
     "get_scheduler",

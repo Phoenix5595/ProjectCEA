@@ -10,7 +10,6 @@ from app.routes import (
     calendar,
     climate_periods,
     climate_timeline,
-    debug,
     devices,
     devices_crud,
     failsafe,
@@ -20,7 +19,6 @@ from app.routes import (
     notes,
     operational_events,
     pid,
-    redis_state,
     room_modes,
     schedules,
     service_settings,
@@ -56,8 +54,6 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(websocket.router, tags=["websocket"])
     app.include_router(room_modes.router, tags=["room-modes"])
     app.include_router(calendar.router, tags=["calendar"])
-    app.include_router(redis_state.router, tags=["redis-state"])
-    app.include_router(debug.router, tags=["debug"])
     app.include_router(system_config.router, tags=["system-config"])
     app.include_router(service_settings.router, tags=["settings"])
     app.include_router(operational_events.router, tags=["operational-events"])
@@ -86,7 +82,6 @@ def setup_dependency_overrides(app: FastAPI, container) -> None:
     app.dependency_overrides[lights.get_config] = container.get_config
     app.dependency_overrides[lights.get_dfr0971_manager] = container.get_dfr0971_manager
     app.dependency_overrides[lights.get_relay_manager] = container.get_relay_manager
-    app.dependency_overrides[lights.get_interlock_manager] = container.get_interlock_manager
     app.dependency_overrides[lights.get_scheduler] = container.get_scheduler
     app.dependency_overrides[lights.get_device_repo] = lambda: container.get_database().device_repo
 
@@ -132,14 +127,6 @@ def setup_dependency_overrides(app: FastAPI, container) -> None:
 
     # Override dependencies in failsafe module
     app.dependency_overrides[failsafe.get_database] = container.get_database
-
-    # Override dependencies in redis_state module
-    app.dependency_overrides[redis_state.get_database] = container.get_database
-
-    # Override dependencies in debug module
-    app.dependency_overrides[debug.get_database] = container.get_database
-    app.dependency_overrides[debug.get_scheduler] = container.get_scheduler
-    app.dependency_overrides[debug.get_control_engine] = container.get_control_engine
 
     app.dependency_overrides[calendar.get_database] = container.get_database
 

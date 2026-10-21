@@ -13,10 +13,8 @@ from app.schemas.device import (
     DeviceModeRequest,
 )
 from app.schemas.lights import (
-    IntensityControl,
     ScheduleTimeControl,
     TargetIntensityControl,
-    VoltageControl,
 )
 from app.schemas.pid import (
     AutotuneStatusResponse,
@@ -46,8 +44,6 @@ __all__ = [
     "DeviceControlRequest",
     "DeviceModeRequest",
     # Light schemas
-    "IntensityControl",
-    "VoltageControl",
     "TargetIntensityControl",
     "ScheduleTimeControl",
     # PID schemas

@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import asyncpg
-from fastapi import HTTPException
 
 from app.events.operational_models import AlarmPayload, OperationalEvent
-from shared.history_availability import require_local_history
 
 from .base import BaseRepository, logger
 
@@ -244,92 +242,6 @@ class ControlActionRepository(BaseRepository):
         except Exception as e:
             logger.error(f"Failed to get control history: {e}")
             return []
-
-    async def get_control_history_filtered(
-        self,
-        location: str,
-        cluster: str,
-        limit: int = 100,
-        channel: int | None = None,
-        since: str | None = None,
-        until: str | None = None,
-    ) -> list[dict[str, Any]]:
-        """Return control_history rows with optional channel and time filters."""
-        try:
-            since_at = datetime.fromisoformat(since.replace("Z", "+00:00")) if since else None
-            until_at = datetime.fromisoformat(until.replace("Z", "+00:00")) if until else None
-            if any(
-                value.tzinfo is None or value.utcoffset() is None
-                for value in (since_at, until_at)
-                if value is not None
-            ):
-                raise HTTPException(status_code=400, detail={"code": "history_dates_invalid"})
-            async with (
-                self.pool.acquire() as conn,
-                conn.transaction(isolation="repeatable_read", readonly=True),
-            ):
-                query = """
-                    SELECT "time", location, cluster, device_name, old_state, new_state, mode, reason, load_percent, channel
-                    FROM control_history
-                    WHERE location = $1 AND cluster = $2 AND channel >= 0
-                """
-                params: list[Any] = [location, cluster]
-                param_idx = 3
-
-                if channel is not None:
-                    query += f" AND channel = ${param_idx}"
-                    params.append(channel)
-                    param_idx += 1
-                if since is not None:
-                    query += f' AND "time" >= ${param_idx}'
-                    params.append(since_at)
-                    param_idx += 1
-                if until is not None:
-                    query += f' AND "time" <= ${param_idx}'
-                    params.append(until_at)
-                    param_idx += 1
-
-                query += f' ORDER BY "time" DESC LIMIT ${param_idx}'
-                params.append(limit)
-
-                rows = await conn.fetch(query, *params)
-                oldest = min(
-                    (row["time"] for row in rows), default=datetime.min.replace(tzinfo=UTC)
-                )
-                await require_local_history(
-                    conn,
-                    room=location,
-                    start=since_at or oldest,
-                    end=(until_at or datetime.now(UTC)) + timedelta(microseconds=1),
-                    source_tables=("control_history",),
-                )
-                out: list[dict[str, Any]] = []
-                for row in rows:
-                    ts = row["time"]
-                    out.append(
-                        {
-                            "time": ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
-                            "location": row["location"],
-                            "cluster": row["cluster"],
-                            "device_name": row["device_name"],
-                            "old_state": row["old_state"],
-                            "new_state": row["new_state"],
-                            "mode": row["mode"],
-                            "reason": row["reason"],
-                            "load_percent": row["load_percent"],
-                            "channel": row["channel"],
-                        }
-                    )
-                return out
-        except HTTPException:
-            raise
-        except ValueError as error:
-            raise HTTPException(
-                status_code=400, detail={"code": "history_dates_invalid"}
-            ) from error
-        except Exception as error:
-            logger.error(f"Failed to get filtered control history: {error}")
-            raise HTTPException(status_code=503, detail={"code": "history_unavailable"}) from error
 
     async def get_last_changed_per_channel(self) -> list[dict[str, Any]]:
         """Return the most recent timestamp per relay channel (0-15).

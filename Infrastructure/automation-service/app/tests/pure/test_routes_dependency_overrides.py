@@ -50,9 +50,6 @@ class _FakeContainer:
     def get_control_snapshot_service(self) -> _FakeService:
         return _FakeService()
 
-    def get_interlock_manager(self) -> _FakeService:
-        return _FakeService()
-
     def get_relay_board_state_manager(self) -> _FakeService:
         return _FakeService()
 

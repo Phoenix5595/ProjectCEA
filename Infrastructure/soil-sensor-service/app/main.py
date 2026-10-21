@@ -118,13 +118,6 @@ def get_database() -> DatabaseManager:
     return database
 
 
-def get_redis_client() -> RedisClient:
-    """Get Redis client."""
-    if redis_client is None:
-        raise RuntimeError("Redis client not initialized")
-    return redis_client
-
-
 # Override route dependencies
 app.dependency_overrides[status.get_database] = get_database
 app.dependency_overrides[sensors.get_database] = get_database

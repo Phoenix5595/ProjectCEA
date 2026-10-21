@@ -8,7 +8,6 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.database import DatabaseManager
-from app.redis_client import RedisClient
 
 router = APIRouter()
 
@@ -16,11 +15,6 @@ router = APIRouter()
 # Dependency injection (will be overridden in main.py)
 def get_database() -> DatabaseManager:
     """Get database manager."""
-    raise NotImplementedError("Dependency not injected")
-
-
-def get_redis_client() -> RedisClient:
-    """Get Redis client."""
     raise NotImplementedError("Dependency not injected")
 
 
@@ -165,25 +159,3 @@ async def get_readings(
             return {"sensor_id": sensor_id, "count": len(readings), "readings": readings}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting readings: {str(e)}") from e
-
-
-@router.get("/api/sensors/live")
-async def get_live_readings(
-    redis_client: RedisClient = Depends(get_redis_client),
-) -> dict[str, Any]:
-    """Get current live sensor values from Redis state keys.
-
-    Returns all soil sensor values currently in Redis.
-    """
-    try:
-        # Get all sensor values from Redis
-        # Note: This requires access to Redis state keys
-        # For now, return a message indicating this endpoint needs Redis client access
-        # The actual implementation would read from cea:sensor:{location}:{cluster}:{sensor_name} keys
-
-        return {
-            "message": "Live readings endpoint - requires Redis state key access",
-            "note": "This endpoint should read from cea:sensor:{location}:{cluster}:{sensor_name} Redis keys",
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error getting live readings: {str(e)}") from e

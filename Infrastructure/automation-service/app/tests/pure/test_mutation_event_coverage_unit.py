@@ -21,7 +21,6 @@ from app.events.mutation_diff import safe_allowlisted_diff
 from app.events.mutation_exclusions import MUTATION_ROUTE_EXCLUSIONS, NonPersistentEffect
 from app.events.operational_models import EntityContext, OperationalEvent
 from app.routes import hardware
-from app.routes.lights import light_control
 
 
 class _RecordingSink:
@@ -124,8 +123,6 @@ def test_accepts_reviewed_nonpersistent_exclusions_only_for_permitted_operation_
         "/api/climate-timeline/{location}/{cluster}/preview",
         "/api/hardware/relays/test",
         "/api/calendar/sync/connections/test",
-        "/api/lights/{location}/{cluster}/{device_name}/intensity",
-        "/api/lights/{location}/{cluster}/{device_name}/voltage",
     }
 
     # Then: every exclusion is narrowly justified and no persistence route is exempted.
@@ -148,14 +145,6 @@ def test_rejects_the_persisted_light_test_route_from_the_exclusion_map() -> None
     ("path", "handler"),
     [
         ("/api/hardware/relays/test", hardware.relay_test),
-        (
-            "/api/lights/{location}/{cluster}/{device_name}/intensity",
-            light_control.set_intensity,
-        ),
-        (
-            "/api/lights/{location}/{cluster}/{device_name}/voltage",
-            light_control.set_voltage,
-        ),
     ],
 )
 def test_every_exclusion_has_a_nonpersistent_handler_proof(path: str, handler) -> None:
@@ -168,7 +157,6 @@ def test_every_exclusion_has_a_nonpersistent_handler_proof(path: str, handler) -
     # Then: the declared transient effect has no authoritative write seam.
     assert exclusion.effect in {
         NonPersistentEffect.TRANSIENT_HARDWARE_TEST,
-        NonPersistentEffect.TRANSIENT_HARDWARE_COMMAND,
         NonPersistentEffect.TRANSIENT_REMOTE_CONNECTION_PROBE,
     }
     assert "device_repo." not in source

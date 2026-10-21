@@ -9,7 +9,6 @@ from fastapi import APIRouter
 from shared.infra_logging import get_logger
 
 if TYPE_CHECKING:
-    from app.automation.interlock_manager import InterlockManager
     from app.config import ConfigLoader
     from app.control.relay_manager import RelayManager
     from app.control.scheduler import Scheduler
@@ -38,11 +37,6 @@ def get_relay_manager() -> RelayManager:
     raise RuntimeError("Dependency not injected")
 
 
-def get_interlock_manager() -> InterlockManager:
-    """Dependency to get interlock manager."""
-    raise RuntimeError("Dependency not injected")
-
-
 def get_database() -> DatabaseManager:
     """Dependency to get database manager."""
     raise RuntimeError("Dependency not injected")
@@ -61,7 +55,6 @@ def get_device_repo() -> DeviceRepository:
 
 
 from app.routes.lights import (  # noqa: E402
-    light_control,  # noqa: F401
     light_status,  # noqa: F401
     light_target,  # noqa: F401
     light_test,  # noqa: F401
@@ -72,7 +65,6 @@ __all__ = [
     "get_dfr0971_manager",
     "get_config",
     "get_relay_manager",
-    "get_interlock_manager",
     "get_database",
     "get_scheduler",
     "get_device_repo",

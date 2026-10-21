@@ -7,7 +7,6 @@ from typing import Any
 from fastapi import APIRouter, Depends
 
 from app.database import DatabaseManager
-from app.weather_client import WeatherClient
 
 router = APIRouter()
 
@@ -50,11 +49,6 @@ def degrees_to_cardinal(degrees: float | None) -> str | None:
 # Dependency injection (will be overridden in main.py)
 def get_database() -> DatabaseManager:
     """Get database manager."""
-    raise NotImplementedError("Dependency not injected")
-
-
-def get_weather_client() -> WeatherClient:
-    """Get weather client."""
     raise NotImplementedError("Dependency not injected")
 
 
@@ -110,19 +104,3 @@ async def get_latest_weather(db: DatabaseManager = Depends(get_database)) -> dic
 
         logging.getLogger(__name__).error(f"Error fetching weather data: {e!r}")
         return {"error": str(e) or repr(e)}
-
-
-@router.post("/fetch")
-async def fetch_weather_now(
-    db: DatabaseManager = Depends(get_database),
-    weather_client: WeatherClient = Depends(get_weather_client),
-) -> dict[str, Any]:
-    """Manually trigger a weather data fetch."""
-    try:
-        weather_data = await weather_client.fetch_metar()
-        if weather_data:
-            return {"status": "success", "data": weather_data}
-        else:
-            return {"status": "error", "message": "Failed to fetch weather data"}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}

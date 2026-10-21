@@ -99,9 +99,8 @@ async def test_relay_history_queries_exclude_reserved_alarm_channel() -> None:
     pool = _Pool()
     repository = ControlActionRepository(pool)
 
-    # When: callers request recent and filtered relay history.
+    # When: callers request recent relay history.
     await repository.get_recent_control_history("Veg Room", "main")
-    await repository.get_control_history_filtered("Veg Room", "main")
 
-    # Then: neither query can surface channel -1 alarm rows.
+    # Then: the query cannot surface channel -1 alarm rows.
     assert all("channel >= 0" in query for query in pool.connection.queries)
