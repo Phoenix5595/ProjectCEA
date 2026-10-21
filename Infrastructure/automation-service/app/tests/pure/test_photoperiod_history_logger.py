@@ -673,12 +673,16 @@ class _StubSensorReader:
     def __init__(self) -> None:
         self.failing: set[tuple[str, str]] = set()
 
-    async def read_sensors(
-        self, location: str, cluster: str, sensor_mapping: Any
-    ) -> dict[str, float | None]:
-        if (location, cluster) in self.failing:
+    async def read_sensors_for_rooms(
+        self,
+        rooms: list[tuple[str, str]],
+        sensor_mapping: Any,
+    ) -> dict[tuple[str, str], dict[str, float | None]]:
+        del sensor_mapping
+        if self.failing.intersection(rooms):
+            location, cluster = next(iter(self.failing.intersection(rooms)))
             raise RuntimeError(f"sensor unavailable for {location}/{cluster}")
-        return {}
+        return {room: {} for room in rooms}
 
 
 class _StubClimateResolver:

@@ -3,13 +3,12 @@
 This is NOT a subclass of ``shared.config.YamlConfigLoader`` — that is
 intentional. The shared loader provides mechanical YAML loading with
 search-path resolution; this loader adds Pydantic schema validation and
-separate schedule/rule loading. Device identity and assignments belong to the
+separate schedule loading. Device identity and assignments belong to the
 runtime registry snapshot, not this YAML file.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 import contextlib
 import logging
 import os
@@ -68,10 +67,8 @@ class ConfigLoader:
 
         self.config_path = Path(config_path)
         self.schedules_path = self.config_path.parent / "schedules.yaml"
-        self.rules_path = self.config_path.parent / "rules.yaml"
         self._config: dict[str, Any] = {}
         self._schedules: list[dict[str, Any]] = []
-        self._rules: list[dict[str, Any]] = []
         self._config_lock = threading.Lock()
         self._device_repo: DeviceRepository | None = None
         self._runtime_device_registry: RuntimeDeviceRegistry | None = None
@@ -107,12 +104,6 @@ class ConfigLoader:
         elif "schedules" in self._config:
             self._schedules = self._config["schedules"]
 
-        rules_data = _load_yaml_file(self.rules_path)
-        if rules_data:
-            self._rules = rules_data.get("rules", [])
-        elif "rules" in self._config:
-            self._rules = self._config["rules"]
-
         self._settings_fallback_values = self._settings_from_yaml()
         if not self._service_settings_loaded:
             self._effective_settings = dict(self._settings_fallback_values)
@@ -120,8 +111,6 @@ class ConfigLoader:
         logger.info(f"Loaded config from {self.config_path}")
         if self._schedules:
             logger.info(f"Loaded {len(self._schedules)} schedules")
-        if self._rules:
-            logger.info(f"Loaded {len(self._rules)} rules")
 
     async def load_service_settings(self, pool: Any) -> None:
         """Hydrate automation settings from DB, cache, then YAML fallback."""
@@ -247,12 +236,6 @@ class ConfigLoader:
                         pid[f"{device_type}_{gain}"] = value
         return pid
 
-    def get_pid_limits(self) -> dict[str, Any]:
-        """Get current DB/cache/YAML PID limits."""
-        return self._effective_settings.get(
-            "pid_limits", self._config.get("control", {}).get("pid_limits", {})
-        )
-
     def get_pid_defaults(self) -> dict[str, Any]:
         """Get current DB/cache/YAML PID defaults."""
         return self._effective_settings.get("pid_defaults", {})
@@ -305,10 +288,6 @@ class ConfigLoader:
         """Get schedules."""
         return self._schedules
 
-    def get_rules(self) -> list[dict[str, Any]]:
-        """Get rules."""
-        return self._rules
-
     def get_interlocks(self) -> list[dict[str, Any]]:
         """Get interlock rules."""
         return self._config.get("interlocks", [])
@@ -326,67 +305,6 @@ class ConfigLoader:
             "ki": gains.get("ki", 0.01),
             "kd": gains.get("kd", 0.0),
         }
-
-    async def get_pid_setpoints_for_device(
-        self, location: str, cluster: str, device_name: str, device_type: str
-    ) -> list[tuple]:
-        """Get PID setpoints for a device with priorities.
-
-        Args:
-            location: Location name
-            cluster: Cluster name
-            device_name: Device name
-            device_type: Device type (e.g., 'heater', 'fan', 'co2')
-
-        Returns:
-            List of (setpoint_type, priority) tuples sorted by priority (ascending)
-            Lower priority number = higher priority
-        """
-        devices = await self.get_devices()
-        device_info = devices.get(location, {}).get(cluster, {}).get(device_name, {})
-
-        # Check if pid_setpoints is explicitly configured
-        pid_setpoints: dict[str, int] | None = None
-        if isinstance(device_info, Mapping):
-            pid_setpoints = device_info.get("pid_setpoints") or None
-            if not pid_setpoints:
-                pid_setpoints = None
-
-        if pid_setpoints:
-            # Validate that it's a dict with integer priorities
-            if not isinstance(pid_setpoints, dict):
-                logger.warning(
-                    f"Invalid pid_setpoints format for {location}/{cluster}/{device_name}, using defaults"
-                )
-                pid_setpoints = None
-            else:
-                # Validate priorities are positive integers
-                for setpoint_type, priority in pid_setpoints.items():
-                    if not isinstance(priority, int) or priority < 1:
-                        logger.warning(
-                            f"Invalid priority {priority} for {setpoint_type} in {location}/{cluster}/{device_name}, using defaults"
-                        )
-                        pid_setpoints = None
-                        break
-
-        # Device types are already canonicalized at the registry write boundary.
-        if not pid_setpoints:
-            if device_type == "heating":
-                pid_setpoints = {"heating_setpoint": 1}
-            elif device_type == "fan":
-                pid_setpoints = {"cooling_setpoint": 1}
-            elif device_type == "co2":
-                pid_setpoints = {"co2": 1}
-            else:
-                # Unknown device type, return empty list
-                logger.warning(
-                    f"No default pid_setpoints for device_type '{device_type}', returning empty list"
-                )
-                return []
-
-        # Sort by priority (ascending: lower number = higher priority)
-        sorted_setpoints = sorted(pid_setpoints.items(), key=lambda x: x[1])
-        return sorted_setpoints
 
     def invalidate_device_cache(self) -> None:
         """Invalidate the in-memory device hierarchy cache."""

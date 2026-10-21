@@ -43,13 +43,12 @@ class AutomationRedisClient:
 
     Provides all Redis functionality for the automation control loop:
     - Connection management (connect, close)
-    - Stream writes (sensor data, control data)
+    - Stream writes (sensor data)
     - Setpoint management (read/write setpoints, effective setpoints)
     - Mode management (auto, manual, failsafe)
     - Failsafe state
     - Alarms
     - Heartbeats
-    - Sensor last-good values
     - PID parameter cache
     - Light intensity
     - Ramp state
@@ -236,26 +235,6 @@ class AutomationRedisClient:
         return self.ops.check_heartbeat(service_name, max_age_seconds)
 
     # ========================================================================
-    # Sensors - delegate to ops.sensors
-    # ========================================================================
-
-    def write_last_good_value(
-        self, cluster: str, sensor_name: str, value: float, timestamp: int | None = None
-    ) -> bool:
-        """Write last good sensor value to Redis."""
-        return self.ops.write_last_good_value(cluster, sensor_name, value, timestamp)
-
-    def read_last_good_value(self, cluster: str, sensor_name: str) -> dict[str, Any] | None:
-        """Read last good sensor value from Redis."""
-        return self.ops.read_last_good_value(cluster, sensor_name)
-
-    def check_last_good_age(
-        self, cluster: str, sensor_name: str, max_age_seconds: int = 30
-    ) -> tuple[bool, float | None]:
-        """Check if last good value is fresh."""
-        return self.ops.check_last_good_age(cluster, sensor_name, max_age_seconds)
-
-    # ========================================================================
     # Setpoints - delegate to ops.setpoints
     # ========================================================================
 
@@ -311,7 +290,6 @@ class AutomationRedisClient:
         ramp_progress_humidity: float | None = None,
         ramp_progress_co2: float | None = None,
         ramp_progress_vpd: float | None = None,
-        mode: str | None = None,
     ) -> bool:
         """Write effective setpoints to Redis."""
         return self.ops.write_effective_setpoints(
@@ -336,7 +314,6 @@ class AutomationRedisClient:
             ramp_progress_humidity=ramp_progress_humidity,
             ramp_progress_co2=ramp_progress_co2,
             ramp_progress_vpd=ramp_progress_vpd,
-            mode=mode,
         )
 
     def read_setpoint_source(self, location: str, cluster: str) -> dict[str, Any] | None:

@@ -22,7 +22,7 @@ Discovered via fixed globs only — anything else is refused as UNKNOWN:
 
 | Family | Legacy glob | Canonical counterpart |
 |---|---|---|
-| sensor last-good | `sensor:*:*:last_good` | `cea:sensor:global:{cluster}:{name}_last_good` |
+| sensor last-good (migration-only) | `sensor:*:*:last_good` | `cea:sensor:global:{cluster}:{name}_last_good` |
 | setpoint fields / rate-limit | `setpoint:*` | `cea:setpoint:{loc}:{clu}:{field}[:last_write]` |
 | effective setpoints (climate + per-light) | `effective_setpoint:*` | `cea:effective_setpoint:...` |
 | light state | `light:{loc}:{clu}:{dev}` | `cea:light:...` |
@@ -33,11 +33,12 @@ Discovered via fixed globs only — anything else is refused as UNKNOWN:
 | heartbeat | `heartbeat:{service}` | `cea:heartbeat:global:default:{service}` |
 | PID parameter caches (all shapes incl. `all`) | `pid:parameters:*` | `cea:pid:...` |
 
-### Never touched (active / control-critical)
+### Never touched (active, control-critical, or retired)
 
 - `failsafe:*` — T18 KEEP verdict; intentionally legacy until exhaustive consumer proof.
 - `pid:autotune:*` — still-active legacy-shape namespace.
-- `sensor:raw`, `stream:control` — active streams.
+- `sensor:raw` — active telemetry stream.
+- Retired control-history key — explicitly kept by the purge tool and never deleted.
 - `schedules:*` — active schedule caches.
 - `automation:degraded` — distinct self-consistent health pair.
 - Every `cea:*` key.

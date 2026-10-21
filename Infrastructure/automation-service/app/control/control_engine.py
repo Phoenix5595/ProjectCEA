@@ -1,4 +1,4 @@
-"""Control engine that orchestrates rules, schedules, and PID control."""
+"""Control engine that orchestrates schedules and PID control."""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ import math
 from typing import Any
 
 from app.alarm_manager import AlarmManager
-from app.automation.rules_engine import RulesEngine
 from app.config import ConfigLoader
 from app.control.climate_resolver import ClimatePeriodResolver
 from app.control.current_publication_observer import (
@@ -72,7 +71,6 @@ class ControlEngine:
         database: DatabaseManager,
         config: ConfigLoader,
         scheduler: Scheduler,
-        rules_engine: RulesEngine,
         runtime_device_registry: RuntimeDeviceRegistry,
         event_policy: DecisionEventPolicy,
         relay_board_state_manager: RelayBoardStateManager | None = None,
@@ -90,7 +88,6 @@ class ControlEngine:
             database: Database manager instance
             config: Config loader instance
             scheduler: Scheduler instance
-            rules_engine: Rules engine instance
             alarm_manager: Optional alarm manager instance
             dfr0971_manager: Optional DFR0971 manager for light intensity logging
         """
@@ -98,7 +95,6 @@ class ControlEngine:
         self.database = database
         self.config = config
         self.scheduler = scheduler
-        self.rules_engine = rules_engine
         self.alarm_manager = alarm_manager
         self.dfr0971_manager = dfr0971_manager
         self.runtime_device_registry = runtime_device_registry
@@ -506,8 +502,20 @@ class ControlEngine:
 
         # Debug logging removed
 
-        # Process each location/cluster
         device_processing_start = datetime.now() if self._profiling_enabled else None
+
+        rooms = [
+            (location, cluster) for location, clusters in devices.items() for cluster in clusters
+        ]
+        sensor_start = datetime.now() if self._profiling_enabled else None
+        sensor_values_by_room = await self.sensor_reader.read_sensors_for_rooms(
+            rooms, sensor_mapping
+        )
+        if self._profiling_enabled and sensor_start:
+            sensor_time = (datetime.now() - sensor_start).total_seconds() * 1000
+            self._record_performance_stat("sensor_reading_time", sensor_time)
+
+        # Process each location/cluster
 
         for location, clusters in devices.items():
             for cluster, cluster_devices in clusters.items():
@@ -517,13 +525,7 @@ class ControlEngine:
                     )
 
                 # Pipeline Step 1: Read sensor values
-                sensor_start = datetime.now() if self._profiling_enabled else None
-                sensor_values = await self.sensor_reader.read_sensors(
-                    location, cluster, sensor_mapping
-                )
-                if self._profiling_enabled and sensor_start:
-                    sensor_time = (datetime.now() - sensor_start).total_seconds() * 1000
-                    self._record_performance_stat("sensor_reading_time", sensor_time)
+                sensor_values = sensor_values_by_room[(location, cluster)]
 
                 # Pipeline Step 2: Resolve climate period
                 active_profile = self._get_active_room_mode(location, cluster, snapshot)
@@ -696,9 +698,11 @@ class ControlEngine:
 
         redis_client = automation_redis.redis_client
 
-        for channel in range(16):
-            key = relay_raw_override_key(channel)
-            raw = await asyncio.to_thread(redis_client.get, key)
+        raws = await asyncio.to_thread(
+            redis_client.mget,
+            [relay_raw_override_key(channel) for channel in range(16)],
+        )
+        for channel, raw in zip(range(16), raws, strict=False):
             if raw is None:
                 continue
 
@@ -706,91 +710,9 @@ class ControlEngine:
             expires_at = datetime.fromisoformat(payload["expires_at"])
             if expires_at <= datetime.now(UTC):
                 await self.relay_manager.set_channel_state(channel, 0)
+                key = relay_raw_override_key(channel)
                 await asyncio.to_thread(redis_client.delete, key)
                 logger.info(f"Raw channel {channel} manual override expired, turned OFF")
-
-    async def _set_device_state(
-        self,
-        location: str,
-        cluster: str,
-        device_name: str,
-        state: int,
-        mode: str,
-        reason: str,
-        sensor_values: dict[str, float | None],
-        setpoint: float | None = None,
-        load_percent: float | None = None,
-    ) -> None:
-        """Set device state and log action.
-
-        Args:
-            location: Location name
-            cluster: Cluster name
-            device_name: Device name
-            state: New state (0/1)
-            mode: Control mode
-            reason: Control reason
-            sensor_values: Sensor values for logging
-            setpoint: Setpoint value for logging
-            load_percent: Optional PID load (0-100) for log display
-        """
-        if (
-            self.device_command_service is not None
-            and not self.device_command_service.accepts_automatic_control(
-                location, cluster, device_name
-            )
-        ):
-            return
-        current_state = self.relay_manager.get_device_state(location, cluster, device_name) or 0
-
-        # Set device state
-        success, error_reason = await self.relay_manager.set_device_state(
-            location, cluster, device_name, state, mode
-        )
-
-        if not success:
-            logger.warning(f"Failed to set device state: {error_reason}")
-            if error_reason and "interlock" in error_reason.lower():
-                reason = "interlock"
-            return
-
-        # Get channel for logging
-        channel = self.relay_manager.get_channel(location, cluster, device_name) or 0
-
-        # Get sensor value for logging (use first available)
-        sensor_value = None
-        for value in sensor_values.values():
-            if value is not None:
-                sensor_value = value
-                break
-
-        if self.device_command_service is not None:
-            match mode:
-                case "auto":
-                    self.device_command_service.record_automatic_mode(
-                        location, cluster, device_name, "auto"
-                    )
-                case "scheduled":
-                    self.device_command_service.record_automatic_mode(
-                        location, cluster, device_name, "scheduled"
-                    )
-                case _:
-                    pass
-        self._pending_db_writes.append(
-            self.database.control_action_repo.log_control_action(
-                location,
-                cluster,
-                device_name,
-                channel,
-                current_state,
-                state,
-                mode,
-                reason,
-                sensor_value,
-                setpoint,
-                load_percent=load_percent,
-            )
-        )
 
     async def _log_effective_setpoints(
         self,

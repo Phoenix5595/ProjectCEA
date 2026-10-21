@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+import time
+from typing import Any, Final
 
 from shared.infra_logging import get_logger
+
+from .i2c_lock import get_i2c_bus_1_thread_lock
 
 """
 DFR0971 2-Channel I2C 0-10V DAC Module Driver
@@ -26,6 +29,14 @@ DFR0971_RANGE_10V = 0x11
 
 # Default I2C address
 DFR0971_DEFAULT_ADDRESS = 0x58
+
+LIGHT_RESYNC_INTERVAL_SECONDS: Final = 60.0
+
+
+def intensity_to_dac_code(intensity_percent: float) -> int:
+    """Convert an intensity percentage to the driver's 12-bit DAC code."""
+    voltage = max(0.0, min(10.0, (intensity_percent / 100.0) * 10.0))
+    return max(0, min(4095, int((voltage / 10.0) * 4095)))
 
 
 @dataclass
@@ -54,10 +65,12 @@ class DFR0971Driver:
         self.i2c_bus = i2c_bus
         self.i2c_address = i2c_address
         self.bus: Any = None
+        self._i2c_lock = get_i2c_bus_1_thread_lock()
         self._channel_states = [0.0, 0.0]  # Track voltage for channels 0 and 1
+        self._last_dac_code: list[int | None] = [None, None]
+        self._last_write_monotonic: list[float | None] = [None, None]
         self._range_set = False
         self._voltage_range = 10000  # 10V range in millivolts
-
         import smbus2
 
         self.bus = smbus2.SMBus(i2c_bus)
@@ -67,35 +80,33 @@ class DFR0971Driver:
     def _initialize_hardware(self):
         """Initialize DFR0971 hardware - set output range to 10V"""
         try:
-            import time
+            with self._i2c_lock:
+                logger.debug(
+                    f"Initializing DFR0971 at 0x{self.i2c_address:02X} - setting output range to 10V"
+                )
 
-            logger.debug(
-                f"Initializing DFR0971 at 0x{self.i2c_address:02X} - setting output range to 10V"
-            )
+                self._set_output_range(DFR0971_RANGE_10V)
+                time.sleep(0.05)
 
-            self._set_output_range(DFR0971_RANGE_10V)
-            time.sleep(0.05)
+                try:
+                    self.store_settings()
+                    time.sleep(0.1)
+                except Exception as e:
+                    logger.warning(f"Could not store range to EEPROM during init: {e}")
 
-            try:
-                self.store_settings()
-                time.sleep(0.1)
-            except Exception as e:
-                logger.warning(f"Could not store range to EEPROM during init: {e}")
-
-            self._range_set = True
-            logger.debug("DFR0971 output range set to 10V and stored")
+                self._range_set = True
+                logger.debug("DFR0971 output range set to 10V and stored")
         except Exception as e:
             logger.error(f"Error initializing DFR0971 hardware: {e}")
             raise
 
     def _set_output_range(self, range_value: int):
         """Set output range (5V or 10V)"""
-        import time
-
         try:
-            assert self.bus is not None, "I2C bus must be initialized"
-            self.bus.write_word_data(self.i2c_address, DFR0971_CMD_SET_RANGE, range_value)
-            time.sleep(0.02)
+            with self._i2c_lock:
+                assert self.bus is not None, "I2C bus must be initialized"
+                self.bus.write_word_data(self.i2c_address, DFR0971_CMD_SET_RANGE, range_value)
+                time.sleep(0.02)
 
             logger.debug(
                 f"Output range set to {'10V' if range_value == DFR0971_RANGE_10V else '5V'} (value: 0x{range_value:02X})"
@@ -144,14 +155,15 @@ class DFR0971Driver:
                 f"DAC_12bit={dac_12bit}, DAC_16bit={dac_value} (0x{dac_value:04X})"
             )
 
-            import time
-
             assert self.bus is not None, "I2C bus must be initialized"
-            self.bus.write_word_data(self.i2c_address, reg_addr, dac_value)
-            time.sleep(0.05)
+            with self._i2c_lock:
+                self.bus.write_word_data(self.i2c_address, reg_addr, dac_value)
+                self._last_dac_code[channel] = dac_12bit
+                self._last_write_monotonic[channel] = time.monotonic()
+                time.sleep(0.05)
 
             self._channel_states[channel] = voltage
-            logger.info(
+            logger.debug(
                 f"Channel {channel} set to {voltage:.2f}V (intensity: {(voltage / 10.0) * 100:.1f}%, DAC: 0x{dac_value:04X})"
             )
 
@@ -224,12 +236,11 @@ class DFR0971Driver:
         Returns:
             True if successful, False otherwise
         """
-        import time
-
         try:
-            assert self.bus is not None, "I2C bus must be initialized"
-            self.bus.write_byte(self.i2c_address, DFR0971_CMD_STORE)
-            time.sleep(0.02)
+            with self._i2c_lock:
+                assert self.bus is not None, "I2C bus must be initialized"
+                self.bus.write_byte(self.i2c_address, DFR0971_CMD_STORE)
+                time.sleep(0.02)
             logger.debug("DFR0971 settings stored to EEPROM")
             return True
         except OSError as e:
@@ -243,7 +254,8 @@ class DFR0971Driver:
         """Close I2C connection and cleanup"""
         if self.bus:
             try:
-                self.bus.close()
+                with self._i2c_lock:
+                    self.bus.close()
                 logger.info(f"DFR0971 I2C connection closed (address 0x{self.i2c_address:02X})")
             except Exception as e:
                 logger.error(f"Error closing I2C connection: {e}")
@@ -350,6 +362,29 @@ class DFR0971Manager:
             return False
 
         return driver.set_intensity(intensity, channel, store_to_eeprom)
+
+    def needs_write(
+        self,
+        board_id: int,
+        channel: int,
+        intensity_percent: float,
+        *,
+        resync_seconds: float = LIGHT_RESYNC_INTERVAL_SECONDS,
+    ) -> bool:
+        """Whether the requested DAC code needs writing or periodic resynchronization."""
+        driver = self.get_board(board_id)
+        if driver is None or channel not in (0, 1):
+            return True
+
+        requested_code = intensity_to_dac_code(intensity_percent)
+        last_code = driver._last_dac_code[channel]
+        last_write = driver._last_write_monotonic[channel]
+        return (
+            last_code is None
+            or last_code != requested_code
+            or last_write is None
+            or time.monotonic() - last_write >= resync_seconds
+        )
 
     def set_voltage(
         self, board_id: int, channel: int, voltage: float, store_to_eeprom: bool = False

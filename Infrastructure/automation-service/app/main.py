@@ -49,10 +49,6 @@ app = FastAPI(
             "description": "Light dimming control for DFR0971 modules",
         },
         {
-            "name": "rules",
-            "description": "Automation rules and logic",
-        },
-        {
             "name": "pid",
             "description": "PID parameter configuration",
         },

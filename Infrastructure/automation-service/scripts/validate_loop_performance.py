@@ -10,7 +10,6 @@ sys.path.append(os.path.join(os.getcwd(), "Infrastructure"))
 
 from app.alarm_manager import AlarmManager
 from app.automation.interlock_manager import InterlockManager
-from app.automation.rules_engine import RulesEngine
 from app.config import ConfigLoader
 from app.control.control_engine import ControlEngine
 from app.control.decision_event_policy import DecisionEventPolicy
@@ -171,9 +170,6 @@ async def run_load_test():
     db._setpoint_repo.log_effective_setpoints = AsyncMock()
 
     db._schedule_repo = MagicMock()
-    db._schedule_repo.get_room_light_schedule = AsyncMock(
-        return_value={"day_start_time": "06:00", "day_end_time": "18:00"}
-    )
     db._schedule_repo.get_climate_schedule = AsyncMock(
         return_value={"pre_day_duration": 30, "pre_night_duration": 30}
     )
@@ -200,8 +196,6 @@ async def run_load_test():
     # Mock Redis client
     redis_client = MagicMock()
     redis_client.redis_enabled = False
-    redis_client.read_last_good_value = MagicMock(return_value={"value": 25.0})
-    redis_client.check_last_good_age = MagicMock(return_value=(True, 1.0))
     redis_client.redis_client = None
     db._automation_redis = redis_client
 
@@ -219,7 +213,6 @@ async def run_load_test():
 
     scheduler = Scheduler([], climate_periods_repo=db._climate_periods_repo)
     event_policy = DecisionEventPolicy()
-    rules_engine = RulesEngine([], scheduler, event_policy=event_policy)
     alarm_manager = AlarmManager(redis_client, db)
 
     engine = ControlEngine(
@@ -227,7 +220,6 @@ async def run_load_test():
         database=db,
         config=config,
         scheduler=scheduler,
-        rules_engine=rules_engine,
         runtime_device_registry=runtime_device_registry,
         event_policy=event_policy,
         alarm_manager=alarm_manager,

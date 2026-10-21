@@ -108,43 +108,31 @@ async def test_empty_batch_returns_without_database_values() -> None:
 
 
 @pytest.mark.asyncio
-async def test_sensor_reader_keeps_flower_and_veg_sensor_name_inputs() -> None:
-    values = {
-        "dry_bulb_b": 24.5,
-        "rh_b": 65.0,
-        "co2_b": 700.0,
-        "vpd_b": 1.1,
-        "dry_bulb_v": 22.5,
-        "rh_v": 68.0,
-        "co2_v": 900.0,
-        "vpd_v": 1.0,
-    }
-    repository, _connection = _repository(values)
+async def test_sensor_reader_batches_flower_and_veg_sensor_names_once() -> None:
+    values = {"dry_bulb_b": 24.5, "rh_b": 65.0, "dry_bulb_v": 22.0}
+    repository, connection = _repository(values)
     reader = SensorReader(SimpleNamespace(sensor_repo=repository), None, _config())
     sensor_mapping = {
         "Flower Room": {
             "main": {
                 "temperature_sensor": "dry_bulb_b",
                 "humidity_sensor": "rh_b",
-                "co2_sensor": "co2_b",
-                "vpd_sensor": "vpd_b",
             }
         },
-        "Veg Room": {
-            "main": {
-                "temperature_sensor": "dry_bulb_v",
-                "humidity_sensor": "rh_v",
-                "co2_sensor": "co2_v",
-                "vpd_sensor": "vpd_v",
-            }
-        },
+        "Veg Room": {"main": {"temperature_sensor": "dry_bulb_v"}},
     }
+    rooms = [("Flower Room", "main"), ("Veg Room", "main")]
 
-    flower = await reader.read_sensors("Flower Room", "main", sensor_mapping)
-    veg = await reader.read_sensors("Veg Room", "main", sensor_mapping)
+    room_values = await reader.read_sensors_for_rooms(rooms, sensor_mapping)
 
-    assert flower == {name: values[name] for name in sensor_mapping["Flower Room"]["main"].values()}
-    assert veg == {name: values[name] for name in sensor_mapping["Veg Room"]["main"].values()}
+    assert room_values == {
+        ("Flower Room", "main"): {"dry_bulb_b": 24.5, "rh_b": 65.0},
+        ("Veg Room", "main"): {"dry_bulb_v": 22.0},
+    }
+    assert connection.fetch_args is not None
+    _, names, max_age_sec = connection.fetch_args
+    assert names == ["dry_bulb_b", "rh_b", "dry_bulb_v"]
+    assert max_age_sec == 30.0
 
 
 @pytest.mark.asyncio

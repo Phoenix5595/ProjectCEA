@@ -317,47 +317,6 @@ class PIDControllerManager:
             )
             return None
 
-    async def get_binary_hysteresis(self, location: str, cluster: str, device_type: str) -> float:
-        """Get binary hysteresis for a location/cluster/device_type with caching.
-
-        Tries StateManager cache first, then database, falling back to
-        the global default (0.1) on any error.
-        """
-        try:
-            # 1) Try StateManager cache first
-            cached = await self._state.get_pid_params(location, cluster, device_type)
-            if cached and "binary_hysteresis" in cached:
-                return float(cached["binary_hysteresis"])
-        except Exception as e:
-            logger.debug(f"PID binary_hysteresis cache lookup failed: {e}")
-
-        # 2) Fetch from database
-        try:
-            result = await self.database.pid_repo.get_binary_hysteresis(
-                location, cluster, device_type
-            )
-            hysteresis = result.get("binary_hysteresis", 0.1)
-            # Populate cache for future reads
-            try:
-                await self._state.set_pid_params(
-                    location,
-                    cluster,
-                    device_type,
-                    result.get("kp", 1.0),
-                    result.get("ki", 0.0),
-                    result.get("kd", 0.0),
-                    binary_hysteresis=hysteresis,
-                    source="database",
-                )
-            except Exception as e:
-                logger.debug(f"PID binary_hysteresis cache populate failed: {e}")
-            return float(hysteresis)
-        except Exception as e:
-            logger.warning(f"Failed to fetch binary hysteresis for {device_type}: {e}")
-
-        # 3) Global default fallback
-        return 0.1
-
     async def process_pid_control(
         self,
         location: str,

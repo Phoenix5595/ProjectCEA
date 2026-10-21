@@ -139,6 +139,8 @@ class HardwareBatchExecutor:
         board_id: str,
         dimming_channel: int,
         relay_channel: int | None = None,
+        *,
+        write_dimmer: bool = True,
     ) -> None:
         """Queue a light ON operation.
 
@@ -154,6 +156,7 @@ class HardwareBatchExecutor:
             board_id: DFR0971 board ID
             dimming_channel: DFR0971 channel (0-1)
             relay_channel: Optional relay channel (for power control)
+            write_dimmer: Whether to queue a DAC write for this light intent
         """
         chain = self._get_or_create_chain(location, cluster, device_name)
         device_key = chain.device_key
@@ -180,7 +183,7 @@ class HardwareBatchExecutor:
             )
 
         # Step 2: Set dimmer intensity
-        if dfr0971_manager is not None:
+        if dfr0971_manager is not None and write_dimmer:
             chain.add_dimmer(
                 DimmerOperation(
                     board_id=board_id,
@@ -189,7 +192,6 @@ class HardwareBatchExecutor:
                     dfr0971_manager=dfr0971_manager,
                 )
             )
-
         logger.debug(f"Queued light ON: {location}/{cluster}/{device_name} @ {intensity}%")
 
     def queue_light_off(
@@ -202,6 +204,8 @@ class HardwareBatchExecutor:
         board_id: str,
         dimming_channel: int,
         relay_channel: int | None = None,
+        *,
+        write_dimmer: bool = True,
     ) -> None:
         """Queue a light OFF operation.
 
@@ -216,6 +220,7 @@ class HardwareBatchExecutor:
             board_id: DFR0971 board ID
             dimming_channel: DFR0971 channel (0-1)
             relay_channel: Optional relay channel (for power control)
+            write_dimmer: Whether to queue a DAC write for this light intent
         """
         chain = self._get_or_create_chain(location, cluster, device_name)
         device_key = chain.device_key
@@ -230,7 +235,7 @@ class HardwareBatchExecutor:
         }
 
         # Step 1: Set dimmer to 0 (signal before power off)
-        if dfr0971_manager is not None:
+        if dfr0971_manager is not None and write_dimmer:
             chain.add_dimmer(
                 DimmerOperation(
                     board_id=board_id,
@@ -437,7 +442,7 @@ class HardwareBatchExecutor:
                 result.results[device_key] = False
                 result.errors[device_key] = error or "Unknown error"
 
-        logger.info(
+        logger.debug(
             f"Hardware batch: {result.success_count} ok, {result.failure_count} failed, "
             f"{total_time_ms:.1f}ms total"
         )

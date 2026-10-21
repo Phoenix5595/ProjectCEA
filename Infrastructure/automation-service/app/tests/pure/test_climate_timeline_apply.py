@@ -42,11 +42,10 @@ _STORED_NIGHT = time(19, 0)
 _APPLIED_DAY = time(6, 0)
 _APPLIED_NIGHT = time(18, 0)
 
-# The exact schedule-cache clears an affected active save performs.
+# The exact schedule-cache invalidations an affected active save performs.
 _SCHEDULE_KEYS = (
     f"schedules:loc:{_LOCATION}:cluster:{_CLUSTER}",
     f"schedules:loc:{_LOCATION}:cluster:{_CLUSTER}:climate",
-    f"schedule:{_LOCATION}:{_CLUSTER}",
     "schedules:all",
 )
 

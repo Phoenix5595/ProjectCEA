@@ -20,7 +20,7 @@ from app.events.mutation_coverage import (
 from app.events.mutation_diff import safe_allowlisted_diff
 from app.events.mutation_exclusions import MUTATION_ROUTE_EXCLUSIONS, NonPersistentEffect
 from app.events.operational_models import EntityContext, OperationalEvent
-from app.routes import flags, hardware, timing
+from app.routes import hardware
 from app.routes.lights import light_control
 
 
@@ -116,14 +116,12 @@ def test_reports_a_synthetic_unmarked_mutation_by_operation_and_source_file() ->
 
 
 def test_accepts_reviewed_nonpersistent_exclusions_only_for_permitted_operation_kinds() -> None:
-    # Given: the reviewed map of diagnostic, cache, timing, and test-command endpoints.
+    # Given: the reviewed map of diagnostic, cache, and test-command endpoints.
     excluded_paths = {exclusion.path for exclusion in MUTATION_ROUTE_EXCLUSIONS}
 
     # When: the declared exclusions are inspected as the coverage-checker input.
     accepted = {
         "/api/climate-timeline/{location}/{cluster}/preview",
-        "/api/timing/reset",
-        "/api/flags/cache/clear",
         "/api/hardware/relays/test",
         "/api/calendar/sync/connections/test",
         "/api/lights/{location}/{cluster}/{device_name}/intensity",
@@ -149,8 +147,6 @@ def test_rejects_the_persisted_light_test_route_from_the_exclusion_map() -> None
 @pytest.mark.parametrize(
     ("path", "handler"),
     [
-        ("/api/timing/reset", timing.reset_timing_data),
-        ("/api/flags/cache/clear", flags.clear_cache),
         ("/api/hardware/relays/test", hardware.relay_test),
         (
             "/api/lights/{location}/{cluster}/{device_name}/intensity",
@@ -169,10 +165,8 @@ def test_every_exclusion_has_a_nonpersistent_handler_proof(path: str, handler) -
     # When: the handler's structural persistence seams are inspected.
     source = getsource(handler)
 
-    # Then: the declared local/transient effect has no authoritative write seam.
+    # Then: the declared transient effect has no authoritative write seam.
     assert exclusion.effect in {
-        NonPersistentEffect.LOCAL_TIMING_RESET,
-        NonPersistentEffect.LOCAL_CACHE_CLEAR,
         NonPersistentEffect.TRANSIENT_HARDWARE_TEST,
         NonPersistentEffect.TRANSIENT_HARDWARE_COMMAND,
         NonPersistentEffect.TRANSIENT_REMOTE_CONNECTION_PROBE,
@@ -187,12 +181,12 @@ def test_every_exclusion_has_a_nonpersistent_handler_proof(path: str, handler) -
 
 
 def test_accepts_an_unmarked_synthetic_route_only_when_its_exact_exclusion_is_reviewed() -> None:
-    # Given: a synthetic timing reset matching one narrowly reviewed nonpersistent route.
+    # Given: a synthetic relay diagnostic matching one narrowly reviewed nonpersistent route.
     app = FastAPI()
 
-    @app.post("/api/timing/reset", operation_id="reset_timing")
-    async def reset_timing() -> dict[str, bool]:
-        return {"reset": True}
+    @app.post("/api/hardware/relays/test", operation_id="relay_test")
+    async def relay_test() -> dict[str, bool]:
+        return {"tested": True}
 
     # When: the mutating OpenAPI operation is checked against the reviewed map.
     assert_mutation_route_coverage(app)

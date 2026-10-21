@@ -8,7 +8,6 @@ from typing import Any
 
 from app.alarm_manager import AlarmManager
 from app.automation.interlock_manager import InterlockManager
-from app.automation.rules_engine import RulesEngine
 from app.background_tasks import BackgroundTasks
 from app.config import ConfigLoader
 from app.control.control_engine import ControlEngine
@@ -121,7 +120,6 @@ class ServiceContainer:
         self.relay_observation_recorder: RelayObservationRecorder | None = None
         self.device_registry_service: DeviceRegistryService | None = None
         self.scheduler: Scheduler | None = None
-        self.rules_engine: RulesEngine | None = None
         self.decision_event_policy: DecisionEventPolicy | None = None
         self.alarm_manager: AlarmManager | None = None
         self.control_engine: ControlEngine | None = None
@@ -153,10 +151,9 @@ class ServiceContainer:
         4. Interlock Manager
         5. Relay Manager
         6. Scheduler (with schedules from DB)
-        7. Rules Engine
-        8. Alarm Manager
-        9. Control Engine
-        10. Background Tasks
+        7. Alarm Manager
+        8. Control Engine
+        9. Background Tasks
         """
         if self._initialized:
             logger.warning("ServiceContainer already initialized")
@@ -299,15 +296,7 @@ class ServiceContainer:
                 + ")"
             )
 
-            # 7. Initialize rules engine
-            # get_rules is not yet implemented in DatabaseManager
-            rules: list[dict[str, Any]] = []
-            self.rules_engine = RulesEngine(
-                rules, self.scheduler, event_policy=decision_event_policy
-            )
-            logger.info("Rules engine initialized")
-
-            # 8. Initialize alarm manager
+            # 7. Initialize alarm manager
             assert self.automation_redis is not None, "AutomationRedisClient must be initialized"
             assert self.relay_board_state_manager is not None, (
                 "Relay board state manager must initialize"
@@ -326,7 +315,7 @@ class ServiceContainer:
             )
             logger.info("Control snapshot service initialized")
 
-            # 9. Initialize control engine
+            # 8. Initialize control engine
             assert self.database._pool is not None, (
                 "Database pool must be ready before history logging"
             )
@@ -338,7 +327,6 @@ class ServiceContainer:
                 database=self.database,
                 config=self.config,
                 scheduler=self.scheduler,
-                rules_engine=self.rules_engine,
                 alarm_manager=self.alarm_manager,
                 dfr0971_manager=self.dfr0971_manager,
                 runtime_device_registry=self.runtime_device_registry,

@@ -104,7 +104,6 @@ class SavedTimelineConfigurationInvalidator:
                 (
                     f"schedules:loc:{location}:cluster:{cluster}",
                     f"schedules:loc:{location}:cluster:{cluster}:climate",
-                    f"schedule:{location}:{cluster}",
                     "schedules:all",
                 )
             )

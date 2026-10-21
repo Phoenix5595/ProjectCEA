@@ -83,6 +83,9 @@ class _Dimmer:
         self.values[(board, channel)] = intensity
         return True
 
+    def needs_write(self, board, channel, intensity):
+        return self.values.get((board, channel)) != intensity
+
     def get_intensity(self, board, channel):
         return self.values.get((board, channel))
 

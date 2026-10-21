@@ -353,39 +353,6 @@ class PIDRepository(BaseRepository):
             logger.error(f"Failed to set control mode: {e}")
             return False
 
-    async def get_binary_hysteresis(
-        self, location: str, cluster: str, device_type: str
-    ) -> dict[str, Any]:
-        """Get binary hysteresis for a location/cluster/device_type.
-
-        Returns the stored binary_hysteresis value, falling back to the
-        default (0.1) when no row exists.
-        """
-        try:
-            async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """SELECT binary_hysteresis FROM pid_parameters
-                        WHERE location = $1 AND cluster = $2 AND device_type = $3""",
-                    location,
-                    cluster,
-                    device_type,
-                )
-                if row and row["binary_hysteresis"] is not None:
-                    return {
-                        "location": location,
-                        "cluster": cluster,
-                        "device_type": device_type,
-                        "binary_hysteresis": row["binary_hysteresis"],
-                    }
-        except Exception as e:
-            logger.error(f"Failed to get binary hysteresis: {e}")
-        return {
-            "location": location,
-            "cluster": cluster,
-            "device_type": device_type,
-            "binary_hysteresis": DEFAULT_PID_PARAMS["binary_hysteresis"],
-        }
-
     async def get_autotune_state(
         self, location: str, cluster: str, device_type: str
     ) -> dict[str, Any] | None:

@@ -94,7 +94,11 @@ class _FakeClimatePeriodsRepository:
 
 
 class _FakeScheduleRepository:
+    def __init__(self) -> None:
+        self.calls = 0
+
     async def get_room_light_schedule(self, _location: str, _cluster: str) -> list[dict[str, Any]]:
+        self.calls += 1
         return [{"device_name": "light_f_1", "start": "06:00", "end": "18:00"}]
 
 
@@ -212,7 +216,8 @@ async def test_invalid_identity_shape_is_unknown_not_null_base_coercion() -> Non
 @pytest.mark.asyncio
 async def test_known_identity_queries_exact_null_safe_profile() -> None:
     climate_repo = _FakeClimatePeriodsRepository(_PERIODS)
-    database = _FakeDatabase(climate_repo, _FakeScheduleRepository())
+    schedule_repo = _FakeScheduleRepository()
+    database = _FakeDatabase(climate_repo, schedule_repo)
     resolver = _resolver(database, _FakeState())
 
     result = await resolver.resolve_period(
@@ -221,6 +226,8 @@ async def test_known_identity_queries_exact_null_safe_profile() -> None:
 
     assert climate_repo.calls == [(_LOCATION, _CLUSTER, 2, None)]
     assert result["setpoint_data"]["heating_setpoint"] == 26.0
+    assert schedule_repo.calls == 0
+    assert "light_schedule" not in result
 
 
 @pytest.mark.asyncio

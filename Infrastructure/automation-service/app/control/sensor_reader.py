@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 import time
 from typing import Any
 
@@ -29,15 +30,30 @@ class SensorReader:
         self._last_db_warning_at: float | None = None
 
     async def read_sensors(
-        self, location: str, cluster: str, sensor_mapping: dict[str, Any]
+        self, location: str, cluster: str, sensor_mapping: Mapping[str, Any]
     ) -> dict[str, float | None]:
         """Read all sensor values for a location/cluster."""
-        location_sensors = sensor_mapping.get(location, {})
-        cluster_sensors = location_sensors.get(cluster, {})
-        sensor_names = [name for name in cluster_sensors.values() if name]
+        room_values = await self.read_sensors_for_rooms([(location, cluster)], sensor_mapping)
+        return room_values[(location, cluster)]
+
+    async def read_sensors_for_rooms(
+        self,
+        rooms: Sequence[tuple[str, str]],
+        sensor_mapping: Mapping[str, Any],
+    ) -> dict[tuple[str, str], dict[str, float | None]]:
+        """Read all requested room sensors using one batched database query."""
+        names_by_room: dict[tuple[str, str], list[str]] = {}
+        for location, cluster in rooms:
+            location_sensors = sensor_mapping.get(location, {})
+            cluster_sensors = location_sensors.get(cluster, {})
+            names_by_room[(location, cluster)] = [name for name in cluster_sensors.values() if name]
+
+        unique_names = list(
+            dict.fromkeys(name for names in names_by_room.values() for name in names)
+        )
         try:
-            return await self.database.sensor_repo.get_sensor_values_batch(
-                sensor_names, max_age_sec=self.config.get_last_good_hold_period()
+            values = await self.database.sensor_repo.get_sensor_values_batch(
+                unique_names, max_age_sec=self.config.get_last_good_hold_period()
             )
         except Exception as error:
             now = time.monotonic()
@@ -47,7 +63,15 @@ class SensorReader:
                     "Sensor DB read failed; using Redis live values: %s",
                     error,
                 )
-            return self._redis_values(location, sensor_names)
+            return {
+                room: self._redis_values(room[0], sensor_names)
+                for room, sensor_names in names_by_room.items()
+            }
+
+        return {
+            room: {name: values.get(name) for name in sensor_names}
+            for room, sensor_names in names_by_room.items()
+        }
 
     def _redis_values(self, location: str, sensor_names: list[str]) -> dict[str, float | None]:
         """Read the freshest recent topology-qualified Redis values for the requested sensors."""

@@ -10,9 +10,7 @@ from app.events.mutation_context import MutationRequestContext
 from app.events.operational_models import OperationalEvent, serialize_operational_event
 from app.routes.alarms import acknowledge_alarm
 from app.routes.failsafe import clear_failsafe
-from app.routes.flags import update_flag
 from app.routes.notes import NotesBody, save_notes
-from app.schemas.flags import FlagUpdateRequest
 
 
 class _RecordingSink:
@@ -40,37 +38,6 @@ class _FailsafeManager:
         del location, cluster
         return self._cleared
 
-
-class _FlagManager:
-    FLAG_DEFINITIONS = {"SAFE_MODE": "Enable safe mode"}
-
-    def __init__(self, enabled: bool) -> None:
-        self._enabled = enabled
-
-    def get_flag(self, flag_name: str) -> bool:
-        assert flag_name in self.FLAG_DEFINITIONS
-        return self._enabled
-
-    def set_flag(self, flag_name: str, enabled: bool) -> None:
-        assert flag_name in self.FLAG_DEFINITIONS
-        self._enabled = enabled
-
-    def get_flag_definition(self, flag_name: str):
-        from app.feature_flags import FeatureFlag
-
-        if flag_name not in self.FLAG_DEFINITIONS:
-            return None
-        return FeatureFlag(
-            name=flag_name,
-            enabled=self._enabled,
-            description=self.FLAG_DEFINITIONS[flag_name],
-        )
-
-
-class _FailedFlagManager(_FlagManager):
-    def get_flag_definition(self, flag_name: str):
-        del flag_name
-        return None
 
 
 class _FailsafeRedis:
@@ -199,62 +166,6 @@ async def test_note_save_emits_nothing_when_persistence_fails(tmp_path, monkeypa
     assert error.value.status_code == 500
     assert sink.events == []
 
-
-@pytest.mark.asyncio
-async def test_flag_update_emits_only_when_the_persisted_value_changes() -> None:
-    # Given: an enabled-state transition for an allowlisted feature flag.
-    sink = _RecordingSink()
-
-    # When: the route persists the enabled value.
-    await update_flag(
-        "SAFE_MODE",
-        FlagUpdateRequest(enabled=True),
-        MutationRequestContext.create(),
-        sink,
-        _FlagManager(False),
-    )
-
-    # Then: exactly one scalar enabled change reaches the event sink.
-    assert len(sink.events) == 1
-    assert sink.events[0].payload.changes[0].key == "enabled"
-
-
-@pytest.mark.asyncio
-async def test_flag_update_emits_nothing_for_an_idempotent_persistence() -> None:
-    # Given: a flag that is already enabled.
-    sink = _RecordingSink()
-
-    # When: the route persists the same enabled value.
-    await update_flag(
-        "SAFE_MODE",
-        FlagUpdateRequest(enabled=True),
-        MutationRequestContext.create(),
-        sink,
-        _FlagManager(True),
-    )
-
-    # Then: the no-op produces no operational mutation event.
-    assert sink.events == []
-
-
-@pytest.mark.asyncio
-async def test_flag_update_emits_nothing_when_persistence_cannot_be_confirmed() -> None:
-    # Given: a flag manager that cannot return the persisted definition.
-    sink = _RecordingSink()
-
-    # When: the route rejects the unconfirmed update.
-    with pytest.raises(HTTPException) as error:
-        await update_flag(
-            "SAFE_MODE",
-            FlagUpdateRequest(enabled=True),
-            MutationRequestContext.create(),
-            sink,
-            _FailedFlagManager(False),
-        )
-
-    # Then: no mutation event is emitted without authoritative persistence.
-    assert error.value.status_code == 500
-    assert sink.events == []
 
 
 @pytest.mark.asyncio

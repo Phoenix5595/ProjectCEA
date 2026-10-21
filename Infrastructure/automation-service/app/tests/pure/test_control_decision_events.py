@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, MagicMock
 import anyio
 import pytest
 
-from app.automation.rules_engine import RulesEngine
 from app.control.control_engine import ControlEngine
 from app.control.decision_event_policy import DecisionEventPolicy, DecisionObservation
 from app.control.device_controller import DeviceController
@@ -23,53 +22,10 @@ class RecordingSink:
         self.events.append(event)
 
 
-class AlwaysActiveScheduler:
-    def is_schedule_active(self, location, cluster, device_name, current_time):
-        return True, 7
-
-
-def test_rule_match_emits_rule_and_schedule_context() -> None:
-    # Given: one active rule and a recording operational-event sink
-    sink = RecordingSink()
-    policy = DecisionEventPolicy(sink)
-    engine = RulesEngine(
-        [
-            {
-                "id": 42,
-                "location": "Flower Room",
-                "cluster": "main",
-                "action_device": "heater-1",
-                "action_state": 1,
-                "condition_sensor": "temperature",
-                "condition_operator": "<",
-                "condition_value": 20.0,
-                "schedule_id": 7,
-            }
-        ],
-        AlwaysActiveScheduler(),
-        event_policy=policy,
-    )
-
-    # When: the rule condition is met
-    result = engine.evaluate(
-        "Flower Room",
-        "main",
-        {"temperature": 19.0},
-        datetime(2026, 9, 1, tzinfo=UTC),
-    )
-
-    # Then: the decision and its causal identifiers are emitted
-    assert result == ("heater-1", 1, 42)
-    assert [event.event_type for event in sink.events] == ["control.rule_matched"]
-    assert sink.events[0].reason_code == "control.rule_matched"
-    assert sink.events[0].reason_text == "Rule 42 matched under schedule 7"
-    assert engine._event_policy is policy
-
 
 def test_control_engine_startup_injects_one_policy_into_decision_producers() -> None:
     # Given: one shared decision policy at the composition boundary.
     policy = DecisionEventPolicy()
-    rules_engine = RulesEngine([], MagicMock(), event_policy=policy)
     config = MagicMock()
     config.get_control_config.return_value = {}
     database = MagicMock()
@@ -81,13 +37,11 @@ def test_control_engine_startup_injects_one_policy_into_decision_producers() -> 
         database=database,
         config=config,
         scheduler=MagicMock(),
-        rules_engine=rules_engine,
         runtime_device_registry=MagicMock(),
         event_policy=policy,
     )
 
     # Then: every decision producer retains the exact same policy object.
-    assert rules_engine._event_policy is policy
     assert engine.decision_event_policy is policy
     assert engine.pid_controller_manager._event_policy is policy
     assert engine.device_controller._event_policy is policy

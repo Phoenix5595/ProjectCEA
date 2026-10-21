@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import inspect
 from typing import Any
 
 from shared.infra_logging import get_logger
@@ -143,24 +142,6 @@ class MCP23017Driver:
         if channel < 0 or channel > 15:
             logger.error(f"Invalid channel number: {channel} (must be 0-15)")
             return False
-
-        # TEMP DEBUG (relay-mcp-bugfix Task 8): capture the immediate caller
-        # so ch11 cycling can be attributed from journalctl. Uses
-        # inspect.currentframe() (single-frame, lightweight) rather than
-        # inspect.stack() (full-stack walk). Removed by Task 7 once R12 is
-        # observed steady.
-        try:
-            _caller_frame = inspect.currentframe()
-            _caller = (
-                _caller_frame.f_back.f_code.co_name
-                if _caller_frame is not None and _caller_frame.f_back is not None
-                else "<unknown>"
-            )
-        except Exception:
-            _caller = "<unknown>"
-        logger.info(
-            f"MCP23017Driver.set_channel called: channel={channel}, state={state}, caller={_caller}"
-        )
 
         try:
             if self.bus is None:

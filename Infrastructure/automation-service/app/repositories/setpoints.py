@@ -220,7 +220,7 @@ class SetpointRepository(BaseRepository):
                 await self.flush_batch_buffer()
 
             # Write effective setpoints to Redis immediately for real-time access
-            # State keys = fast truth for automation, Streams = history for dashboards/DB
+            # Redis state keys provide fast access; history is buffered above.
             if self._redis_client and getattr(self._redis_client, "redis_enabled", False):
                 self._redis_client.write_effective_setpoints(
                     location=location,
@@ -244,7 +244,6 @@ class SetpointRepository(BaseRepository):
                     ramp_progress_vpd=ramp_progress_vpd,
                     nominal_light_intensity=nominal_light_intensity,
                     ramp_progress_light=ramp_progress_light,
-                    mode=mode,
                 )
 
             return accepted == 1

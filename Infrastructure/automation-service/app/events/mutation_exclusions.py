@@ -19,8 +19,6 @@ class MutationHttpMethod(StrEnum):
 class NonPersistentEffect(StrEnum):
     """Constrained effects that are safe to exempt from persisted-event coverage."""
 
-    LOCAL_TIMING_RESET = "local_timing_reset"
-    LOCAL_CACHE_CLEAR = "local_cache_clear"
     TRANSIENT_HARDWARE_TEST = "transient_hardware_test"
     TRANSIENT_HARDWARE_COMMAND = "transient_hardware_command"
     TRANSIENT_REMOTE_CONNECTION_PROBE = "transient_remote_connection_probe"
@@ -49,18 +47,6 @@ MUTATION_ROUTE_EXCLUSIONS: Final[tuple[MutationRouteExclusion, ...]] = (
         path="/api/calendar/sync/connections/test",
         rationale="Reads remote CalDAV calendars without persisting authoritative state.",
         effect=NonPersistentEffect.TRANSIENT_REMOTE_CONNECTION_PROBE,
-    ),
-    MutationRouteExclusion(
-        method=MutationHttpMethod.POST,
-        path="/api/timing/reset",
-        rationale="Resets process-local timing instrumentation only.",
-        effect=NonPersistentEffect.LOCAL_TIMING_RESET,
-    ),
-    MutationRouteExclusion(
-        method=MutationHttpMethod.POST,
-        path="/api/flags/cache/clear",
-        rationale="Clears only the local feature-flag cache.",
-        effect=NonPersistentEffect.LOCAL_CACHE_CLEAR,
     ),
     MutationRouteExclusion(
         method=MutationHttpMethod.POST,

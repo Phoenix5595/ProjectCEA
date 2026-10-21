@@ -58,7 +58,6 @@ class DeviceController(
         self.database: DatabaseManager = database_manager
         self.dfr0971_manager: DFR0971Manager | None = dfr0971_manager
         self.binary_hysteresis: float = binary_hysteresis
-        self._last_light_command: dict[tuple[str, str, str], int] = {}
         self._last_applied_light: dict[tuple[str, str, str], int] = {}
         # Per-(location, cluster, device_name) last applied binary state, used to
         # decide ON/OFF transitions under hysteresis. Missing key => uninitialized

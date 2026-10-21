@@ -2,7 +2,7 @@
 
 The scheduler computes a continuous intensity float; the only quantization
 allowed is the driver's own 12-bit DAC truncation. A 1-LSB change (0.0244%)
-must reach the hardware, and unchanged codes must not re-write the bus.
+must reach the hardware, while unchanged codes skip writes until the 60-second resync.
 """
 
 from __future__ import annotations
@@ -12,15 +12,21 @@ from typing import Any
 import pytest
 
 from app.control.device_controller import DeviceController
-from app.control.hardware_batch import DimmerOperation, HardwareBatchExecutor
+from app.control.hardware_batch import DimmerOperation, HardwareBatchExecutor, RelayOperation
+from app.hardware.dfr0971 import intensity_to_dac_code
 
 
 class FakeDfr:
     def __init__(self) -> None:
         self.calls: list[tuple[str, int, float]] = []
+        self._last_codes: dict[tuple[str, int], int] = {}
+
+    def needs_write(self, board_id: str, channel: int, intensity: float) -> bool:
+        return self._last_codes.get((board_id, channel)) != intensity_to_dac_code(intensity)
 
     def set_intensity(self, board_id: str, channel: int, intensity: float) -> bool:
         self.calls.append((board_id, channel, intensity))
+        self._last_codes[(board_id, channel)] = intensity_to_dac_code(intensity)
         return True
 
 
@@ -36,7 +42,9 @@ class FakeRelay:
         state: int,
         mode: str = "auto",
         check_interlock: bool = True,
+        command_reason: Any | None = None,
     ) -> tuple[bool, str | None]:
+        del location, cluster, device_name, mode, check_interlock, command_reason
         self.states.append(state)
         return True, None
 
@@ -55,7 +63,6 @@ def _controller(relay: FakeRelay, dfr: FakeDfr) -> DeviceController:
     controller.database = NoTelemetryDatabase()
     controller.dfr0971_manager = dfr
     controller.binary_hysteresis = 0.1
-    controller._last_light_command = {}
     controller._last_applied_light = {}
     return controller
 
@@ -88,16 +95,16 @@ async def test_sub_percent_change_within_one_lsb_is_deduplicated() -> None:
 
 
 @pytest.mark.asyncio
-async def test_one_lsb_change_commands_the_driver_again() -> None:
+async def test_dac_code_change_commands_the_driver_again() -> None:
     # Given: a light already commanded at 50% (code 2047).
     relay, dfr = FakeRelay(), FakeDfr()
     controller = _controller(relay, dfr)
     await controller._control_dimmable_light(*DEVICE, DEVICE_INFO, 0.5)
 
-    # When: the recomputed intensity crosses the next DAC code (0.5010% -> code 2051).
+    # When: the target changes from code 2047 to code 2051 at 50.10%.
     await controller._control_dimmable_light(*DEVICE, DEVICE_INFO, 0.5010)
 
-    # Then: the finer step reaches the hardware immediately, every tick.
+    # Then: a changed DAC code reaches the hardware on this tick.
     assert len(dfr.calls) == 2
     assert dfr.calls[1][2] == pytest.approx(50.10)
 
@@ -156,3 +163,37 @@ def test_batch_dimmer_operation_carries_the_float_percent() -> None:
     assert dimmer.intensity == pytest.approx(50.01)
     intent = executor._light_intents["Veg Room/main/grow_light_1"]
     assert intent["intensity_percent"] == 50
+
+
+@pytest.mark.asyncio
+async def test_batch_without_dimmer_write_keeps_relay_intent_and_succeeds() -> None:
+    # Given: a light intent whose DAC code does not need an update.
+    executor = HardwareBatchExecutor()
+    relay, dfr = FakeRelay(), FakeDfr()
+    device_key = "Veg Room/main/grow_light_1"
+
+    # When: a relay-only batch is queued and executed.
+    executor.queue_light_on(
+        location=DEVICE[0],
+        cluster=DEVICE[1],
+        device_name=DEVICE[2],
+        intensity=50.0,
+        relay_manager=relay,
+        dfr0971_manager=dfr,
+        board_id="board-88",
+        dimming_channel=0,
+        relay_channel=3,
+        write_dimmer=False,
+    )
+    chain = executor._chains[device_key]
+    assert len(chain.operations) == 1
+    assert isinstance(chain.operations[0], RelayOperation)
+
+    result = await executor.execute()
+
+    # Then: relay success and the intent remain visible without a DAC call.
+    assert result.results[device_key] is True
+    assert device_key in result.light_intents
+    assert result.light_intents[device_key]["intensity_percent"] == 50
+    assert relay.states == [1]
+    assert dfr.calls == []

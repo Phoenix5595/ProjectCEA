@@ -44,17 +44,20 @@ class DimmableLightMixin:
 
         # If batch_executor provided, queue operations for parallel execution
         if batch_executor is not None:
+            percent = intensity * 100.0 if intensity > 0 else 0.0
+            write_dimmer = self.dfr0971_manager.needs_write(board_id, dimming_channel, percent)
             if intensity > 0:
                 batch_executor.queue_light_on(
                     location=location,
                     cluster=cluster,
                     device_name=device_name,
-                    intensity=intensity * 100.0,
+                    intensity=percent,
                     relay_manager=self.relay_manager,
                     dfr0971_manager=self.dfr0971_manager,
                     board_id=board_id,
                     dimming_channel=dimming_channel,
                     relay_channel=relay_channel,
+                    write_dimmer=write_dimmer,
                 )
             else:
                 batch_executor.queue_light_off(
@@ -66,6 +69,7 @@ class DimmableLightMixin:
                     board_id=board_id,
                     dimming_channel=dimming_channel,
                     relay_channel=relay_channel,
+                    write_dimmer=write_dimmer,
                 )
             return
 
@@ -73,17 +77,11 @@ class DimmableLightMixin:
             # Passthrough granularity: the driver's 12-bit DAC truncation is the
             # only quantizer. This system forwards the computed float so a
             # one-LSB change (0.0244%) reaches the hardware on the next tick.
-            dac_code = int(intensity * 4095)
-            intensity_percent = round(intensity * 100)  # whole-percent telemetry
+            percent = intensity * 100.0 if intensity > 0 else 0.0
+            intensity_percent = round(percent)  # whole-percent telemetry
             light_key = (location, cluster, device_name)
 
-            # Idempotent command handling: skip when the DAC code is unchanged.
-            prev_cmd = self._last_light_command.get(light_key)
-            if prev_cmd == dac_code:
-                logger.debug(
-                    f"Skipping duplicate light command for {device_name} "
-                    f"({location}/{cluster}) at {intensity_percent}%"
-                )
+            if not self.dfr0971_manager.needs_write(board_id, dimming_channel, percent):
                 return
             relay_ok = True
             dimmer_ok = False
@@ -105,7 +103,7 @@ class DimmableLightMixin:
                             self.dfr0971_manager.set_intensity,
                             board_id,
                             dimming_channel,
-                            intensity * 100.0,
+                            percent,
                         )
                     if relay_ok and not dimmer_ok:
                         logger.warning(
@@ -141,7 +139,7 @@ class DimmableLightMixin:
                     self.dfr0971_manager.set_intensity,
                     board_id,
                     dimming_channel,
-                    intensity * 100.0,
+                    percent,
                 )
                 if not dimmer_ok:
                     logger.warning(
@@ -152,7 +150,6 @@ class DimmableLightMixin:
             # Keep last known good hardware level for hold-last behavior on failures.
             hw_ok = relay_ok and dimmer_ok
             if hw_ok:
-                self._last_light_command[light_key] = dac_code
                 self._last_applied_light[light_key] = intensity_percent
                 self.write_light_telemetry(
                     location,

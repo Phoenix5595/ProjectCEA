@@ -327,7 +327,7 @@ async def test_empty_registry_startup_installs_empty_snapshot_without_energizing
         assert sink is container.relay_board_state_manager._event_sink
         assert sink is container.relay_manager._event_sink
         assert sink is container.scheduler._event_sink
-        assert sink is container.rules_engine._event_policy._sink
+        assert sink is container.control_engine.decision_event_policy._sink
         assert sink is container.alarm_manager._event_sink
         assert sink is container.control_engine.pid_controller_manager._event_policy._sink
         assert sink is container.control_engine.device_controller._event_policy._sink

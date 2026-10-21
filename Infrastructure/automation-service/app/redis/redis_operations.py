@@ -25,7 +25,6 @@ from app.redis.lighting import LightingMixin  # noqa: E402, PLC0415
 from app.redis.modes import ModesMixin  # noqa: E402, PLC0415
 from app.redis.pid import PIDMixin  # noqa: E402, PLC0415
 from app.redis.ramps import RampsMixin  # noqa: E402, PLC0415
-from app.redis.sensors import SensorsMixin  # noqa: E402, PLC0415
 from app.redis.setpoints import SetpointsMixin  # noqa: E402, PLC0415
 from app.redis.streams import StreamsMixin  # noqa: E402, PLC0415
 from shared.infra_logging import get_logger
@@ -69,7 +68,6 @@ class RedisOperations:
         self.modes = ModesMixin()
         self.pid = PIDMixin()
         self.ramps = RampsMixin()
-        self.sensors = SensorsMixin()
         self.setpoints = SetpointsMixin()
         self.streams = StreamsMixin()
 
@@ -82,7 +80,6 @@ class RedisOperations:
             self.modes,
             self.pid,
             self.ramps,
-            self.sensors,
             self.setpoints,
             self.streams,
         ]:
@@ -92,9 +89,6 @@ class RedisOperations:
         # Set stream client and TTL on streams mixin
         self.streams.stream_client = stream_client
         self.streams.redis_ttl = redis_ttl
-
-        # Set stream client on setpoints mixin (for _write_effective_setpoints_to_stream)
-        self.setpoints.stream_client = stream_client
 
     # ========================================================================
     # Alarms - delegate to AlarmsMixin
@@ -172,26 +166,6 @@ class RedisOperations:
         return self.heartbeat.check_heartbeat(service_name, max_age_seconds)
 
     # ========================================================================
-    # Sensors - delegate to SensorsMixin
-    # ========================================================================
-
-    def write_last_good_value(
-        self, cluster: str, sensor_name: str, value: float, timestamp: int | None = None
-    ) -> bool:
-        """Write last good sensor value to Redis."""
-        return self.sensors.write_last_good_value(cluster, sensor_name, value, timestamp)
-
-    def read_last_good_value(self, cluster: str, sensor_name: str) -> dict[str, Any] | None:
-        """Read last good sensor value from Redis."""
-        return self.sensors.read_last_good_value(cluster, sensor_name)
-
-    def check_last_good_age(
-        self, cluster: str, sensor_name: str, max_age_seconds: int = 30
-    ) -> tuple[bool, float | None]:
-        """Check if last good value is fresh."""
-        return self.sensors.check_last_good_age(cluster, sensor_name, max_age_seconds)
-
-    # ========================================================================
     # Setpoints - delegate to SetpointsMixin
     # ========================================================================
 
@@ -247,7 +221,6 @@ class RedisOperations:
         ramp_progress_humidity: float | None = None,
         ramp_progress_co2: float | None = None,
         ramp_progress_vpd: float | None = None,
-        mode: str | None = None,
     ) -> bool:
         """Write effective setpoints to Redis."""
         return self.setpoints.write_effective_setpoints(
@@ -272,7 +245,6 @@ class RedisOperations:
             ramp_progress_humidity=ramp_progress_humidity,
             ramp_progress_co2=ramp_progress_co2,
             ramp_progress_vpd=ramp_progress_vpd,
-            mode=mode,
         )
 
     def read_setpoint_source(self, location: str, cluster: str) -> dict[str, Any] | None:

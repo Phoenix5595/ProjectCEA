@@ -13,7 +13,6 @@ from app.redis.schema import (
     setpoint_key,
 )
 from shared.infra_logging import get_logger
-from shared.redis_keys import CONTROL_STREAM, CONTROL_STREAM_MAXLEN
 
 if TYPE_CHECKING:
     import redis
@@ -28,7 +27,6 @@ class SetpointsMixin:
         """Initialize mixin with Redis clients."""
         self.redis_enabled: bool = False
         self.redis_client: redis.Redis | None = None
-        self.stream_client: redis.Redis | None = None
 
     def read_setpoint(self, location: str, cluster: str) -> dict[str, Any] | None:
         if not self.redis_enabled or not self.redis_client:
@@ -180,13 +178,11 @@ class SetpointsMixin:
         ramp_progress_humidity: float | None = None,
         ramp_progress_co2: float | None = None,
         ramp_progress_vpd: float | None = None,
-        mode: str | None = None,
     ) -> bool:
         if not self.redis_enabled or not self.redis_client:
             return False
 
         try:
-            timestamp_ms = int(datetime.now().timestamp() * 1000)
             setpoint_ttl = 300
 
             pipe = self.redis_client.pipeline()
@@ -289,102 +285,10 @@ class SetpointsMixin:
 
             pipe.execute()
 
-            skip_light_stream = has_light_fields and not device_name
-            self._write_effective_setpoints_to_stream(
-                location,
-                cluster,
-                timestamp_ms,
-                mode,
-                effective_heating_setpoint,
-                nominal_heating_setpoint,
-                ramp_progress_heating,
-                effective_cooling_setpoint,
-                nominal_cooling_setpoint,
-                ramp_progress_cooling,
-                effective_humidity_setpoint,
-                nominal_humidity_setpoint,
-                ramp_progress_humidity,
-                effective_co2_setpoint,
-                nominal_co2_setpoint,
-                ramp_progress_co2,
-                effective_vpd_setpoint,
-                nominal_vpd_setpoint,
-                ramp_progress_vpd,
-                None if skip_light_stream else effective_light_intensity,
-                None if skip_light_stream else nominal_light_intensity,
-                None if skip_light_stream else ramp_progress_light,
-                None if skip_light_stream else device_name,
-            )
-
             return True
         except Exception as e:
             logger.warning(f"Error writing setpoint to Redis: {e}")
             return False
-
-    def _write_effective_setpoints_to_stream(
-        self,
-        location: str,
-        cluster: str,
-        timestamp_ms: int,
-        mode: str | None,
-        eff_heat: float | None,
-        nom_heat: float | None,
-        ramp_heat: float | None,
-        eff_cool: float | None,
-        nom_cool: float | None,
-        ramp_cool: float | None,
-        eff_hum: float | None,
-        nom_hum: float | None,
-        ramp_hum: float | None,
-        eff_co2: float | None,
-        nom_co2: float | None,
-        ramp_co2: float | None,
-        eff_vpd: float | None,
-        nom_vpd: float | None,
-        ramp_vpd: float | None,
-        eff_light: float | None,
-        nom_light: float | None,
-        ramp_light: float | None,
-        light_device_name: str | None = None,
-    ) -> None:
-        if not self.stream_client:
-            return
-
-        try:
-            variables = [
-                ("temp", eff_heat, nom_heat, ramp_heat),
-                ("cooling", eff_cool, nom_cool, ramp_cool),
-                ("humidity", eff_hum, nom_hum, ramp_hum),
-                ("co2", eff_co2, nom_co2, ramp_co2),
-                ("vpd", eff_vpd, nom_vpd, ramp_vpd),
-                ("light", eff_light, nom_light, ramp_light),
-            ]
-
-            for var_name, effective, nominal, ramp in variables:
-                if effective is not None:
-                    stream_data: dict[str, Any] = {
-                        "ts": str(timestamp_ms),
-                        "type": "control",
-                        "room": location,
-                        "cluster": cluster,
-                        "variable": var_name,
-                        "nominal": str(nominal or effective),
-                        "effective": str(effective),
-                    }
-                    if mode:
-                        stream_data["mode"] = mode
-                    if ramp is not None:
-                        stream_data["ramp"] = str(ramp)
-                    if var_name == "light" and light_device_name:
-                        stream_data["device_name"] = light_device_name
-                    self.stream_client.xadd(
-                        CONTROL_STREAM,
-                        cast(dict[Any, Any], stream_data),
-                        maxlen=CONTROL_STREAM_MAXLEN,
-                        approximate=True,
-                    )
-        except Exception as e:
-            logger.debug(f"Error writing effective setpoints to stream: {e}")
 
     def read_setpoint_source(self, location: str, cluster: str) -> dict[str, Any] | None:
         if not self.redis_enabled or not self.redis_client:

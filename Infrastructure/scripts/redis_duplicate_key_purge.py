@@ -12,9 +12,10 @@ Safety contract (project AGENTS.md):
 - Never deletes non-legacy keys; never runs automatically (no daemon/cron).
 
 Eligibility basis: Tasks 18 (ledger), 21-23 (canonicalization + compat removal).
-Excluded control-critical namespaces: ``failsafe:*`` (KEEP per T18), the
-``sensor:raw`` and ``stream:control`` streams, ``schedules:*`` caches,
-``pid:autotune:*`` (still active legacy-shape), and ``automation:degraded``.
+Excluded control-critical namespaces: ``failsafe:*`` (KEEP per T18), active
+``sensor:raw`` telemetry, ``schedules:*`` caches, ``pid:autotune:*`` (still
+active legacy-shape), and ``automation:degraded``. Retired keys are retained
+separately and never considered for deletion.
 """
 
 from __future__ import annotations
@@ -141,9 +142,10 @@ ACTIVE_EXCLUSIONS: tuple[str, ...] = (
     "pid:autotune:*",  # still-active legacy-shape namespace (documented T23)
     "automation:degraded",
     "sensor:raw",  # active telemetry stream (non-cea canonical name)
-    "stream:control",  # T18 KEEP: active control buffer
     "schedules:*",  # active schedule caches (non-cea builders)
 )
+
+RETIRED_KEEP: tuple[str, ...] = ("stream:control",)
 
 
 @dataclass
@@ -157,7 +159,7 @@ class Candidate:
 
 def classify(client: Any) -> tuple[list[Candidate], list[str], int, int]:
     """Scan read-only; returns (candidates, exclusions_found, canonical_count, unknown_count)."""
-    known_globs = [f.glob for f in FAMILIES] + list(ACTIVE_EXCLUSIONS)
+    known_globs = [f.glob for f in FAMILIES] + list(ACTIVE_EXCLUSIONS) + list(RETIRED_KEEP)
     candidates: list[Candidate] = []
     exclusions: list[str] = []
     unknown = 0
@@ -171,6 +173,9 @@ def classify(client: Any) -> tuple[list[Candidate], list[str], int, int]:
             canonical_count += 1
             continue
         if any(fnmatch.fnmatchcase(key, g) for g in ACTIVE_EXCLUSIONS):
+            exclusions.append(key)
+            continue
+        if key in RETIRED_KEEP:
             exclusions.append(key)
             continue
         matched = False
@@ -232,10 +237,13 @@ def run_discovery(client: Any) -> int:
     compare(client, candidates)
     print(
         f"scan summary: {canonical_count} canonical keys untouched, "
-        f"{len(exclusions)} active-exclusion keys skipped, {unknown} unknown"
+        f"{len(exclusions)} kept/excluded keys skipped, {unknown} unknown"
     )
     for key in exclusions:
-        print(f"EXCLUDED (active/control-critical): {key}")
+        if key in RETIRED_KEEP:
+            print(f"KEEP (retired): {key}")
+        else:
+            print(f"EXCLUDED (active/control-critical): {key}")
     exit_code = EXIT_OK
     eligible = [c for c in candidates if c.status == "ELIGIBLE"]
     for cand in candidates:
@@ -275,7 +283,7 @@ def run_delete(client: Any, owner_approval: str) -> int:
         deleted += 1
     print(
         f"deleted {deleted} legacy key(s); canonical keys untouched; "
-        f"{len(exclusions)} exclusion(s) preserved"
+        f"{len(exclusions)} keep/exclusion key(s) preserved"
     )
     return EXIT_OK
 

@@ -601,7 +601,6 @@ async def test_scoped_null_submode_save_replaces_only_the_null_base_slice(
         _profile_key(1, None),
         "schedules:loc:Flower Room:cluster:main",
         "schedules:loc:Flower Room:cluster:main:climate",
-        "schedule:Flower Room:main",
         "schedules:all",
     ]
     assert [(event.event_type, event.data) for event in event_bus.events] == [

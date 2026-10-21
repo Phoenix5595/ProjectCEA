@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -66,15 +66,17 @@ class FakeSensorReader:
         self.on_read: Callable[[], Awaitable[None]] | None = None
         self.fail = False
 
-    async def read_sensors(
-        self, location: str, cluster: str, sensor_mapping: Mapping[str, str]
-    ) -> Mapping[str, float]:
-        del location, cluster, sensor_mapping
+    async def read_sensors_for_rooms(
+        self,
+        rooms: Sequence[tuple[str, str]],
+        sensor_mapping: Mapping[str, str],
+    ) -> dict[tuple[str, str], dict[str, float]]:
+        del sensor_mapping
         if self.fail:
             raise RuntimeError("sensor read failed")
         if self.on_read is not None:
             await self.on_read()
-        return {}
+        return {room: {} for room in rooms}
 
 
 class FakeClimateResolver:

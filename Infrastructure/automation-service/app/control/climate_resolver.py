@@ -47,7 +47,6 @@ class ClimatePeriodResolver:
     """Resolves climate period and calculates effective setpoints."""
 
     # TTL constants for cache-aside pattern
-    _LIGHT_SCHEDULE_TTL = 30.0
     _CLIMATE_PERIOD_TTL = 30.0
 
     def __init__(self, scheduler: Any, setpoint_manager: Any, state: StateManager | None = None):
@@ -91,7 +90,6 @@ class ClimatePeriodResolver:
             database, location, cluster, time_str, active_profile=active_profile
         )
 
-        light_schedule = await self._get_cached_light_schedule(database, location, cluster)
         current_period_name: str = (
             active_period.get("period_name", "NO_PERIOD") if active_period else "NO_PERIOD"
         )
@@ -133,31 +131,8 @@ class ClimatePeriodResolver:
             "active_period": active_period,
             "current_period_name": current_period_name,
             "setpoint_data": setpoint_data,
-            "light_schedule": light_schedule,
             "time_str": time_str,
         }
-
-    async def _get_cached_light_schedule(
-        self, database: Any, location: str, cluster: str
-    ) -> Any | None:
-        """Get light schedule from cache or database (30s TTL)."""
-        cache_key = f"schedule:{location}:{cluster}"
-        if self._state:
-            cached_sched = await self._state.get(cache_key)
-            if cached_sched is not None:
-                logger.debug(f"Cache hit for light schedule: {location}/{cluster}")
-                return cached_sched
-
-        try:
-            light_schedule = await database.schedule_repo.get_room_light_schedule(location, cluster)
-        except Exception as e:
-            logger.info(f"Database error fetching light schedule for {location}/{cluster}: {e}")
-            return None
-
-        if self._state and light_schedule is not None:
-            await self._state.set(cache_key, light_schedule, ttl=self._LIGHT_SCHEDULE_TTL)
-
-        return light_schedule
 
     async def _get_cached_climate_period(
         self,

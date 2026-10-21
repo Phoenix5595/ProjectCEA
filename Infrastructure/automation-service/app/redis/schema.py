@@ -1,13 +1,9 @@
-from __future__ import annotations
-
-from shared.redis_keys import sensor_last_good
-
 """Redis key schema constants for ProjectCEA automation service."""
+
+from __future__ import annotations
 
 # Canonical cea-prefixed key patterns (consumed by SchemaValidationMixin).
 NEW_KEY_PATTERNS: list[str] = [
-    # Sensor last-good values
-    "cea:sensor:{location}:{cluster}:{sensor_name}_last_good",
     # Mode
     "cea:mode:{location}:{cluster}",
     # Setpoints
@@ -47,13 +43,6 @@ def build_key(
     if detail:
         return f"cea:{entity}:{loc}:{clu}:{detail}"
     return f"cea:{entity}:{loc}:{clu}"
-
-
-def sensor_key(location: str, cluster: str, sensor_name: str, suffix: str = "last_good") -> str:
-    """Build the canonical last-good key while retaining the legacy call signature."""
-    if suffix == "last_good":
-        return sensor_last_good(location, cluster, sensor_name)
-    return build_key("sensor", location, cluster, f"{sensor_name}_{suffix}")
 
 
 def mode_key(location: str, cluster: str) -> str:
@@ -177,7 +166,6 @@ __all__ = [
     "NEW_KEY_PATTERNS",
     "RELAY_BOARD_SNAPSHOT",
     "build_key",
-    "sensor_key",
     "mode_key",
     "setpoint_key",
     "effective_setpoint_key",
