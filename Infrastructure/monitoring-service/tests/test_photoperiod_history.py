@@ -11,7 +11,7 @@ from monitoring_service.control_models import (
     ControlHistoryRange,
     PhotoperiodTimelinePointOut,
 )
-from monitoring_service.control_repository import ControlHistoryRepository
+from monitoring_service.control_history_repository import ControlHistoryRepository
 from monitoring_service.photoperiod_history import build_photoperiod_history
 
 NOW = datetime(2026, 8, 20, 12, tzinfo=UTC)

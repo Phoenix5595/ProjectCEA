@@ -15,7 +15,7 @@ from fastapi import status as http_status
 from pydantic import BaseModel, ConfigDict
 
 from monitoring_service.config import SERVICE_NAME, Settings
-from monitoring_service.control_repository import RuntimeControlReads
+from monitoring_service.control_reads import RuntimeControlReads
 from monitoring_service.control_routes import ControlReadService, register_control_routes
 from monitoring_service.database import ReadOnlyDatabase
 from monitoring_service.redis_resources import RedisReadClient

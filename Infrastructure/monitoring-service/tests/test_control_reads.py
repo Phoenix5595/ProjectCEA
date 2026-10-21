@@ -17,8 +17,8 @@ from monitoring_service.control_models import (
     CurrentPublicationResponse,
     ProjectionPublicationResponse,
 )
-from monitoring_service.control_repository import (
-    ControlHistoryRepository,
+from monitoring_service.control_history_repository import ControlHistoryRepository
+from monitoring_service.control_publication_repository import (
     ControlPublicationRepository,
     _publication_keys,
 )

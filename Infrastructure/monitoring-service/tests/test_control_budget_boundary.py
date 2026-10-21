@@ -6,7 +6,7 @@ from typing import final
 import pytest
 
 from monitoring_service.control_models import ControlHistoryRange
-from monitoring_service.control_repository import ControlHistoryRepository
+from monitoring_service.control_history_repository import ControlHistoryRepository
 
 NOW = datetime(2026, 8, 24, 12, tzinfo=UTC)
 

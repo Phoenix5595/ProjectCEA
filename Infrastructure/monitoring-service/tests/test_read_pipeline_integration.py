@@ -223,13 +223,19 @@ def test_monitoring_sql_constants_never_begin_with_a_write_verb() -> None:
     # Given: every module that owns or re-exports monitoring SQL constants.
     from monitoring_service import (
         control_history_queries,
-        control_repository,
+        control_history_repository,
+        relay_timeline_repository,
         sensor_repository,
         sensor_sql,
     )
 
-    modules = (sensor_sql, control_history_queries, sensor_repository, control_repository)
-
+    modules = (
+        sensor_sql,
+        control_history_queries,
+        sensor_repository,
+        control_history_repository,
+        relay_timeline_repository,
+    )
     # When: each SQL-named constant and statement mapping is collected.
     statements = (
         statement

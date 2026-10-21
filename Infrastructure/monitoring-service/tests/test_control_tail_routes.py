@@ -15,7 +15,10 @@ from monitoring_service.control_models import (
     CurrentPublicationResponse,
     ProjectionPublicationResponse,
 )
-from monitoring_service.control_repository import ControlHistoryDatabase, ControlHistoryRepository
+from monitoring_service.control_history_repository import (
+    ControlHistoryDatabase,
+    ControlHistoryRepository,
+)
 from monitoring_service.main import create_app
 from shared.monitoring_contracts import Quality
 

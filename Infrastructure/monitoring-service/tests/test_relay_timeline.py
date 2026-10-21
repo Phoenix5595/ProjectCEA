@@ -15,7 +15,7 @@ from monitoring_service.control_models import (
     RelayTimelineRange,
     RelayTimelineResponse,
 )
-from monitoring_service.control_repository import RelayTimelineRepository
+from monitoring_service.relay_timeline_repository import RelayTimelineRepository
 from monitoring_service.main import create_app
 from monitoring_service.relay_timeline import (
     RELAY_1MIN_PID_LOAD_SQL,
