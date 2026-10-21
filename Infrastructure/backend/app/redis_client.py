@@ -136,9 +136,7 @@ async def _read_sensor_snapshot() -> dict[str, _SensorSnapshotRecord]:
 
         candidates: list[tuple[str, str, str, str]] = []
         for key in key_names:
-            location, cluster, sensor_name = key.removeprefix("cea:sensor:").split(
-                ":", maxsplit=2
-            )
+            location, cluster, sensor_name = key.removeprefix("cea:sensor:").split(":", maxsplit=2)
             candidates.append((key, location, cluster, sensor_name))
 
         # Read values on every request; only the discovered key names are cached.

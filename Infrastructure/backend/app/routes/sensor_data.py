@@ -65,9 +65,7 @@ async def post_sensor_data(body: dict[str, Any]) -> dict[str, float]:
                 continue
             location, cluster, sensor_name = _parse_location_cluster(key)
             if location is not None and cluster is not None and sensor_name is not None:
-                candidates.append(
-                    (key, sensor_full(location, cluster, sensor_name), "sensor")
-                )
+                candidates.append((key, sensor_full(location, cluster, sensor_name), "sensor"))
 
         for key in keys:
             if "setpoint" not in key:
@@ -100,9 +98,7 @@ async def post_sensor_data(body: dict[str, Any]) -> dict[str, float]:
             candidates.append((key, f"cea:light:{location}:{cluster}:{device}", "light"))
 
         values = (
-            await client.mget([redis_key for _, redis_key, _ in candidates])
-            if candidates
-            else []
+            await client.mget([redis_key for _, redis_key, _ in candidates]) if candidates else []
         )
         for (key, _, kind), raw in zip(candidates, values, strict=True):
             if raw is None or (kind != "sensor" and key in result):

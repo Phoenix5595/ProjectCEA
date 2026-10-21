@@ -26,8 +26,8 @@ more.
 from __future__ import annotations
 
 import asyncio
-import logging
 from collections.abc import Mapping
+import logging
 import os
 from typing import Any
 
@@ -186,9 +186,7 @@ class DatabasePoolOwner:
 
     async def _connect_db(self) -> None:
         """Connect to TimescaleDB; retry/backoff handled by create_pool."""
-        self._pool = await create_pool(
-            self.db_config, application_name=self.application_name
-        )
+        self._pool = await create_pool(self.db_config, application_name=self.application_name)
         self._db_connected = True
 
     async def _get_pool(self) -> asyncpg.Pool:
