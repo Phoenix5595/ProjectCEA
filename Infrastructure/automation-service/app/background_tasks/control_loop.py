@@ -58,6 +58,7 @@ class ControlLoopMixin:
                 await self.control_engine.run_control_loop()
                 await self._maybe_run_calendar_mode_scheduler()
                 await self._record_control_success()
+                self._last_tick_completed_at = time.monotonic()
 
                 # Reset retry delay on success
                 retry_delay = 1.0

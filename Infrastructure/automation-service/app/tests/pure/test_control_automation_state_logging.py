@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+import logging
 from types import SimpleNamespace
 from typing import Any
 
@@ -12,6 +13,8 @@ import app.control.control_engine as control_engine_module
 from app.control.control_engine import ControlEngine
 from app.control.decision_event_policy import DecisionObservation
 from app.control.device_processor import DeviceProcessor
+from app.repositories.control_actions import ControlActionRepository
+from shared.replay_buffer import ReplayBuffer
 
 T0 = datetime(2026, 1, 1, 12, 0, 5, tzinfo=UTC)
 KEY = ("Flower Room", "main", "heater_f_1")
@@ -28,13 +31,16 @@ class _Clock:
 
 
 class _FakeRepository:
-    def __init__(self, outcomes: list[bool] | None = None) -> None:
+    def __init__(self, outcomes: list[bool | Exception] | None = None) -> None:
         self.outcomes = list(outcomes or [])
         self.batches: list[list[dict[str, Any]]] = []
 
     async def log_automation_state_batch(self, records: list[dict[str, Any]]) -> bool:
         self.batches.append([dict(record) for record in records])
-        return self.outcomes.pop(0) if self.outcomes else True
+        outcome = self.outcomes.pop(0) if self.outcomes else True
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
 
 
 class _FakeRelayManager:
@@ -94,7 +100,7 @@ def _engine(
     monkeypatch: pytest.MonkeyPatch,
     *,
     context: dict[str, Any] | None = None,
-    outcomes: list[bool] | None = None,
+    outcomes: list[bool | Exception] | None = None,
 ) -> tuple[ControlEngine, _FakeRepository]:
     _Clock.now_value = T0
     monkeypatch.setattr(control_engine_module, "datetime", _Clock)
@@ -103,6 +109,7 @@ def _engine(
     engine._automation_log_context = {KEY: context or {}}
     engine._automation_context = {KEY: {"live_only": "unchanged"}}
     engine._last_logged = {}
+    engine._automation_state_pending = ReplayBuffer(2_000, name="automation_state")
     engine.database = SimpleNamespace(control_action_repo=repository)
     engine.relay_manager = _FakeRelayManager()
     return engine, repository
@@ -148,26 +155,95 @@ async def test_heartbeat_slot_change_writes_again(monkeypatch: pytest.MonkeyPatc
 
 
 @pytest.mark.asyncio
-async def test_failed_batch_leaves_cache_unchanged_and_retries(
+async def test_failed_batch_remains_buffered_and_flushes_oldest_first_with_original_times(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     engine, repository = _engine(
         monkeypatch,
         context={"pid_output": 0.2, "control_reason": "none"},
-        outcomes=[True, False, True],
+        outcomes=[True, OSError("disposable transient database outage"), True],
     )
 
     await engine._log_automation_state(SNAPSHOT)
-    prior_cache = dict(engine._last_logged)
+    _Clock.now_value = T0 + timedelta(seconds=30)
     engine._automation_log_context[KEY]["pid_output"] = 0.8
     await engine._log_automation_state(SNAPSHOT)
 
-    assert engine._last_logged == prior_cache
+    assert len(engine._automation_state_pending) == 1
+    assert engine._automation_state_pending.peek(1)[0]["pid_output"] == 0.8
+    assert engine._last_logged[KEY][0][2] == 0.8
+
+    _Clock.now_value = T0 + timedelta(seconds=60)
+    engine._automation_log_context[KEY]["pid_output"] = 0.9
     await engine._log_automation_state(SNAPSHOT)
 
     assert len(repository.batches) == 3
-    assert repository.batches[2][0]["pid_output"] == 0.8
-    assert engine._last_logged != prior_cache
+    assert [record["pid_output"] for record in repository.batches[2]] == [0.8, 0.9]
+    assert [record["time"] for record in repository.batches[2]] == [
+        T0 + timedelta(seconds=30),
+        T0 + timedelta(seconds=60),
+    ]
+    assert len(engine._automation_state_pending) == 0
+
+
+@pytest.mark.asyncio
+async def test_permanent_error_drops_failed_batch_and_flushes_later_state_rows(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    engine, repository = _engine(
+        monkeypatch,
+        outcomes=[ValueError("disposable invalid row"), True],
+    )
+    records = [
+        {
+            "time": T0 + timedelta(seconds=index),
+            "location": KEY[0],
+            "cluster": KEY[1],
+            "device_name": KEY[2],
+            "device_state": 0,
+            "device_mode": "auto",
+        }
+        for index in range(501)
+    ]
+    assert engine._automation_state_pending.offer(records) == 501
+
+    with caplog.at_level(logging.ERROR, logger="app.control.control_engine"):
+        await engine._log_automation_state(SimpleNamespace(hierarchy={}))
+
+    assert [len(batch) for batch in repository.batches] == [500, 1]
+    assert repository.batches[1][0]["time"] == T0 + timedelta(seconds=500)
+    assert len(engine._automation_state_pending) == 0
+    assert any("Dropped 500 automation-state rows" in record.message for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_control_action_repository_propagates_batch_write_errors() -> None:
+    class _FailingConnection:
+        async def __aenter__(self) -> _FailingConnection:
+            return self
+
+        async def __aexit__(self, *_args: Any) -> None:
+            return None
+
+        async def copy_records_to_table(self, *_args: Any, **_kwargs: Any) -> None:
+            raise ValueError("permanent database error")
+
+    repository = ControlActionRepository(SimpleNamespace(acquire=lambda: _FailingConnection()))
+
+    with pytest.raises(ValueError, match="permanent database error"):
+        await repository.log_automation_state_batch(
+            [
+                {
+                    "time": T0,
+                    "location": KEY[0],
+                    "cluster": KEY[1],
+                    "device_name": KEY[2],
+                    "device_state": 0,
+                    "device_mode": "auto",
+                }
+            ]
+        )
 
 
 @pytest.mark.asyncio

@@ -54,8 +54,10 @@ from app.state import StateManager, get_state_manager
 # Third-party imports
 # (none in this file)
 # Local imports
+from shared.db_errors import is_transient_db_error
 from shared.infra_logging import get_logger
 from shared.monitoring_contracts import CurrentSnapshot, PhotoperiodPhase
+from shared.replay_buffer import ReplayBuffer
 from shared.room_light_authority import is_moon_authority_mode
 
 logger = get_logger(__name__)
@@ -153,7 +155,7 @@ class ControlEngine:
         )
 
         # Initialize pipeline components
-        self.sensor_reader = SensorReader(database, self._state)
+        self.sensor_reader = SensorReader(database, self._state, config)
         self.climate_resolver = ClimatePeriodResolver(scheduler, self.setpoint_manager, self._state)
         self.setpoint_calculator = SetpointCalculator()
 
@@ -165,6 +167,9 @@ class ControlEngine:
         self._automation_context: dict[tuple[str, str, str], dict[str, Any]] = {}
         self._automation_log_context: dict[tuple[str, str, str], dict[str, Any]] = {}
         self._last_logged: dict[tuple[str, str, str], tuple[tuple[Any, ...], int]] = {}
+        self._automation_state_pending: ReplayBuffer[dict[str, Any]] = ReplayBuffer(
+            2_000, name="automation_state"
+        )
         self._photoperiod_phases: dict[tuple[str, str], PhotoperiodPhase] = {}
 
         # Track current climate mode per location/cluster
@@ -887,8 +892,44 @@ class ControlEngine:
                     )
                     last_logged_updates[key] = logged_value
 
-        if records and await self.database.control_action_repo.log_automation_state_batch(records):
+        if records:
+            self._automation_state_pending.offer(records)
             self._last_logged.update(last_logged_updates)
+
+        while self._automation_state_pending:
+            batch = self._automation_state_pending.peek(500)
+            try:
+                persisted = await self.database.control_action_repo.log_automation_state_batch(
+                    batch
+                )
+            except Exception as error:
+                batch_count = len(batch)
+                if is_transient_db_error(error):
+                    logger.warning(
+                        "Retaining %d automation-state rows after transient database error: %s",
+                        batch_count,
+                        error,
+                    )
+                    break
+
+                self._automation_state_pending.consume(batch_count)
+                logger.error(
+                    "Dropped %d automation-state rows after permanent database error: %s",
+                    batch_count,
+                    error,
+                    exc_info=True,
+                )
+                continue
+
+            if not persisted:
+                batch_count = len(batch)
+                self._automation_state_pending.consume(batch_count)
+                logger.error(
+                    "Dropped %d automation-state rows after an unsuccessful batch result",
+                    batch_count,
+                )
+                continue
+            self._automation_state_pending.consume(len(batch))
 
     async def restore_ramp_state_from_database(self) -> None:
         """Handle ramp state on service startup.

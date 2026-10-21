@@ -1,8 +1,9 @@
 [Unit]
 Description=CEA CAN Processor - CAN bus to Redis/TimescaleDB
 After=can-setup.service redis-server.service postgresql.service network-online.target
-Requires=can-setup.service redis-server.service postgresql.service
-Wants=network-online.target
+Requires=can-setup.service
+Wants=network-online.target redis-server.service postgresql.service
+StartLimitIntervalSec=0
 OnFailure=service-error-handler@%n.service
 
 [Service]

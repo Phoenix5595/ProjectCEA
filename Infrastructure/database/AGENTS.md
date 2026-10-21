@@ -33,7 +33,13 @@ Schema changes ship as `migrations/NNNN_name.sql` files applied by `Infrastructu
 
 - SQL migration `0010_sensor_identity` assigns each registry row a permanent `sensor_uid`, tracks current and historical bus addresses, and links only exact unambiguous legacy device matches. A confirmed address seen again after ten minutes is detached and re-created as pending; the operator chooses `same` or `new` through the backend registry API. Same-identity merges take exclusive transaction advisory locks on both registry rows, shared with soil/CAN ingestion transactions that resolve devices and insert measurements. Merges transfer every pending-device measurement, including rows timestamped before `pending_since`, and reject ranges already removed by archive deletion.
 
+- SQL migration `0011_db_hardening` drops the production-only duplicate indexes `idx_setpoints_location_cluster_mode_updated` and `idx_notes_lookup` and the table `setpoints_backup` (no export; its down recreates only the structure), then ANALYZEs every plain public table.
+
 Historical note (2026-10-18): retired Grafana-only SQL migrations, views and verification scripts were removed: `grafana_performance_migration.sql`, `grafana_optimized_views.sql`, `grow_history_guards.sql`, `migrate_get_sensor_routing_1min_through_6h.sql`, `verify_get_sensor_routing.sql`, `verify_performance.sql`, `timescaledb_continuous_aggregates.sql`, and `timescaledb_compression.sql`. `latest_sensor_values` remains defined but has no in-repo consumer.
+
+## Server configuration
+
+`postgresql/cea-main.conf` is the canonical production `conf.d` file (memory, `shared_preload_libraries` with `pg_stat_statements` and `auto_explain`, `autovacuum_analyze_threshold = 5`, slow-query/autovacuum/lock/temp-file logging). Install on the owner's go with `sudo install -m0644 -o postgres -g postgres Infrastructure/database/postgresql/cea-main.conf /etc/postgresql/15/main/conf.d/cea-main.conf`, check `SELECT name, error FROM pg_file_settings WHERE error IS NOT NULL` returns nothing, then `sudo systemctl restart postgresql`. Service units use `Wants=` (not `Requires=`) for PostgreSQL and Redis, so a database restart no longer stops them.
 
 ## Completed one-off operations (2026-10-19)
 

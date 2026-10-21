@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from Infrastructure.shared.db_batch_writer import BatchQueue
+from shared.db_batch_writer import BatchQueue
 
 _SERVICE_ROOT = Path(__file__).resolve().parents[1]
 _REPO_ROOT = _SERVICE_ROOT.parents[1]
@@ -89,21 +89,113 @@ class BatchQueueShutdownTests(unittest.TestCase):
         self.assertEqual(batch_queue.stats()["flushed"], 2)
         self.assertEqual(batch_queue.stats()["dropped"], 0)
 
-    def test_flush_failure_is_dropped_not_counted_as_flushed(self) -> None:
+    def test_failed_batch_is_retried_before_newer_items(self) -> None:
+        attempts: list[list[object]] = []
+        first_failed = threading.Event()
+        newer_flushed = threading.Event()
+
+        def flush(items: list[object]) -> None:
+            batch = list(items)
+            attempts.append(batch)
+            if len(attempts) == 1:
+                first_failed.set()
+                raise RuntimeError("database write failed")
+            if batch == ["new"]:
+                newer_flushed.set()
+
+        batch_queue = BatchQueue(flush, flush_threshold=1, flush_interval_sec=0.01)
+        original_wait = batch_queue._stop_event.wait
+
+        def quick_wait(timeout: float | None = None) -> bool:
+            if timeout is not None:
+                timeout = min(timeout, 0.01)
+            return original_wait(timeout)
+
+        with patch.object(batch_queue._stop_event, "wait", side_effect=quick_wait):
+            batch_queue.start()
+            try:
+                self.assertTrue(batch_queue.put("old"))
+                self.assertTrue(first_failed.wait(1))
+                self.assertTrue(batch_queue.put("new"))
+                self.assertTrue(newer_flushed.wait(1))
+            finally:
+                batch_queue.stop()
+
+        self.assertEqual(attempts, [["old"], ["old"], ["new"]])
+        stats = batch_queue.stats()
+        self.assertEqual(stats["queued"], 2)
+        self.assertEqual(stats["flushed"], 2)
+        self.assertEqual(stats["dropped"], 0)
+        self.assertEqual(stats["in_queue"], 0)
+
+    def test_final_flush_failure_counts_retained_items_as_dropped(self) -> None:
+        attempts: list[list[object]] = []
+        retry_started = threading.Event()
+
         def fail_flush(items: list[object]) -> None:
-            self.assertEqual(items, ["measurement"])
+            attempts.append(list(items))
+            if len(attempts) == 2:
+                retry_started.set()
             raise RuntimeError("database write failed")
 
         batch_queue = BatchQueue(fail_flush, flush_threshold=1, flush_interval_sec=0.01)
-        batch_queue.start()
-        self.assertTrue(batch_queue.put("measurement"))
-        batch_queue.stop()
+        original_wait = batch_queue._stop_event.wait
 
+        def quick_wait(timeout: float | None = None) -> bool:
+            if timeout is not None:
+                timeout = min(timeout, 0.01)
+            return original_wait(timeout)
+
+        with patch.object(batch_queue._stop_event, "wait", side_effect=quick_wait):
+            batch_queue.start()
+            self.assertTrue(batch_queue.put("measurement"))
+            self.assertTrue(retry_started.wait(1))
+            batch_queue.stop()
+
+        self.assertEqual(
+            attempts,
+            [["measurement"], ["measurement"], ["measurement"]],
+        )
         stats = batch_queue.stats()
         self.assertEqual(stats["queued"], 1)
         self.assertEqual(stats["flushed"], 0)
         self.assertEqual(stats["dropped"], 1)
         self.assertEqual(stats["in_queue"], 0)
+
+    def test_non_retryable_batch_is_dropped_and_newer_items_flush(self) -> None:
+        attempts: list[list[object]] = []
+        poison_failed = threading.Event()
+        later_flushed = threading.Event()
+
+        def flush(items: list[object]) -> None:
+            batch = list(items)
+            attempts.append(batch)
+            if batch == ["poison"]:
+                poison_failed.set()
+                raise ValueError("invalid measurement")
+            if batch == ["later"]:
+                later_flushed.set()
+
+        batch_queue = BatchQueue(
+            flush,
+            flush_threshold=1,
+            flush_interval_sec=0.01,
+            is_retryable=lambda error: not isinstance(error, ValueError),
+        )
+        batch_queue.start()
+        try:
+            self.assertTrue(batch_queue.put("poison"))
+            self.assertTrue(poison_failed.wait(1))
+            self.assertTrue(batch_queue.put("later"))
+            self.assertTrue(later_flushed.wait(1))
+        finally:
+            batch_queue.stop()
+
+        self.assertEqual(attempts, [["poison"], ["later"]])
+        stats = batch_queue.stats()
+        self.assertEqual(stats["queued"], 2)
+        self.assertEqual(stats["flushed"], 1)
+        self.assertEqual(stats["dropped"], 1)
 
 
 class FakeClock:

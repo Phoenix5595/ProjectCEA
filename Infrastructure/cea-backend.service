@@ -1,8 +1,8 @@
 [Unit]
 Description=CEA Dashboard Backend
 After=redis-server.service postgresql.service can-processor.service network-online.target
-Requires=redis-server.service postgresql.service
-Wants=can-processor.service network-online.target
+Wants=can-processor.service network-online.target redis-server.service postgresql.service
+StartLimitIntervalSec=0
 OnFailure=service-error-handler@%n.service
 
 [Service]

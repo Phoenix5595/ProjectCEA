@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import datetime
+import time
 from typing import TYPE_CHECKING, Any
 
 from app.control.scheduler import LOCAL_TZ
+from app.repositories.climate_periods import select_active_period
 from shared.infra_logging import get_logger
 from shared.redis_keys import climate_period_cache_key
 
@@ -59,6 +61,8 @@ class ClimatePeriodResolver:
         self.scheduler = scheduler
         self.setpoint_manager = setpoint_manager
         self._state = state
+        self._last_good_periods: dict[str, list[dict[str, Any]]] = {}
+        self._climate_period_warning_times: dict[str, float] = {}
 
     async def resolve_period(
         self,
@@ -186,12 +190,26 @@ class ClimatePeriodResolver:
             # Minute mismatch falls through to a fresh lookup.
 
         try:
-            active_period = await database.climate_periods_repo.get_active_period(
-                location, cluster, time_str, mode_id=mode_id, submode_id=submode_id
+            rows = await database.climate_periods_repo.get_profile_periods(
+                location, cluster, mode_id, submode_id
             )
+            self._last_good_periods[cache_key] = rows
         except Exception as e:
-            logger.info(f"Database error fetching climate period for {location}/{cluster}: {e}")
-            return None
+            now = time.monotonic()
+            last_warning = self._climate_period_warning_times.get(cache_key)
+            if last_warning is None or now - last_warning >= 60.0:
+                self._climate_period_warning_times[cache_key] = now
+                logger.warning(
+                    "Climate periods unavailable for %s/%s; using last loaded schedule: %s",
+                    location,
+                    cluster,
+                    e,
+                )
+            rows = self._last_good_periods.get(cache_key)
+            if rows is None:
+                return None
+
+        active_period = select_active_period(rows, time_str)
 
         if self._state and active_period is not None:
             await self._state.set(

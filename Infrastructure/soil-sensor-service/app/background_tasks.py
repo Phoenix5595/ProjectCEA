@@ -15,7 +15,9 @@ import contextlib
 from datetime import datetime
 from typing import Any, cast
 
+from shared.db_errors import is_transient_db_error
 from shared.infra_logging import get_logger
+from shared.replay_buffer import ReplayBuffer
 from shared.service_settings import ServiceSettings
 
 from .config import ConfigLoader
@@ -50,6 +52,9 @@ class BackgroundTasks:
         self.registry_ids: dict[int, int] = {}  # modbus_id -> registry_id
         self.sensor_configs: dict[str, dict[str, Any]] = {}
         self.sensor_names: dict[str, dict[str, str]] = {}
+        self._pending_readings: ReplayBuffer[tuple[str, int, dict[str, float], datetime]] = (
+            ReplayBuffer(720, name="soil_measurements")
+        )
         self.rs485_port: str | None = None
         self.rs485_baudrate: int = 9600
 
@@ -119,9 +124,12 @@ class BackgroundTasks:
         reader = SoilSensorReader(cast(str, self.rs485_port), modbus_id, self.rs485_baudrate)
         reader.connect()
 
-        resolved_registry_id, _device_id, _sensor_ids, sensor_names = (
-            await self.database.register_sensor_device(registry_id, modbus_id, probe_name)
-        )
+        (
+            resolved_registry_id,
+            _device_id,
+            _sensor_ids,
+            sensor_names,
+        ) = await self.database.register_sensor_device(registry_id, modbus_id, probe_name)
 
         self.sensor_readers[probe_name] = reader
         self.sensor_names[probe_name] = sensor_names
@@ -133,9 +141,12 @@ class BackgroundTasks:
         probe_name = self._probe_name(modbus_id)
         registry_id = int(entry["registry_id"])
         if self.registry_ids.get(modbus_id) != registry_id:
-            resolved_registry_id, _device_id, _sensor_ids, sensor_names = (
-                await self.database.register_sensor_device(registry_id, modbus_id, probe_name)
-            )
+            (
+                resolved_registry_id,
+                _device_id,
+                _sensor_ids,
+                sensor_names,
+            ) = await self.database.register_sensor_device(registry_id, modbus_id, probe_name)
             self.sensor_names[probe_name] = sensor_names
             registry_id = resolved_registry_id
         self.registry_ids[modbus_id] = registry_id
@@ -253,14 +264,34 @@ class BackgroundTasks:
 
             await asyncio.sleep(interval)
 
+    async def _store_reading(
+        self, probe_name: str, modbus_id: int, readings: dict[str, float], timestamp: datetime
+    ) -> None:
+        entry = await self.database.observe_probe(modbus_id)
+        await self._apply_registry_entry(modbus_id, entry)
+        registry_id, _sensor_ids, sensor_names = await self.database.store_measurements(
+            int(entry["registry_id"]), modbus_id, probe_name, readings, timestamp
+        )
+        self.registry_ids[modbus_id] = registry_id
+        self.sensor_names[probe_name] = sensor_names
+
     async def _poll_all_sensors(self) -> None:
-        """Poll every wired probe.
+        """Poll every wired probe and replay failed database writes first."""
+        for pending in self._pending_readings.peek(50):
+            probe_name, modbus_id, readings, timestamp = pending
+            try:
+                await self._store_reading(probe_name, modbus_id, readings, timestamp)
+            except Exception as e:
+                if is_transient_db_error(e):
+                    logger.error(f"Error replaying soil measurements for {probe_name}: {e}")
+                    break
+                logger.error(
+                    f"Dropping soil measurement for {probe_name} after permanent database "
+                    f"error: {e}"
+                )
+            self._pending_readings.consume(1)
 
-        Measurements and the raw soil stream are written even while a probe
-        is unassigned (empty bed metadata); assigned probes include their
-        bed. The service never chooses a bed."""
         timestamp = datetime.now()
-
         for probe_name, config in self.sensor_configs.items():
             bed_name: str | None = config["bed_name"]
             room_name = "Flower Room"
@@ -270,29 +301,16 @@ class BackgroundTasks:
                 continue
 
             try:
-                # Read all parameters
                 readings = await asyncio.to_thread(reader.read_all_parameters)
+                if not readings:
+                    logger.warning(f"Failed to read sensor: {probe_name}")
+                    continue
 
-                if readings:
-                    # Resolve identity before storing a reading. A stale same-
-                    # address response becomes pending before it gets a device.
-                    modbus_id = int(config["modbus_id"])
-                    entry = await self.database.observe_probe(modbus_id)
-                    await self._apply_registry_entry(modbus_id, entry)
-                    bed_name = config["bed_name"]
-                    stored = await self.database.store_measurements(
-                        int(entry["registry_id"]), modbus_id, probe_name, readings, timestamp
-                    )
-                    if stored is not None:
-                        registry_id, _sensor_ids, sensor_names = stored
-                        self.registry_ids[modbus_id] = registry_id
-                        self.sensor_names[probe_name] = sensor_names
-
-                    # Write to Redis Stream (sensor:raw) with bed metadata
+                modbus_id = int(config["modbus_id"])
+                try:
                     await self.redis_client.write_to_stream(
                         probe_name, readings, bed_name, room_name
                     )
-
                     await self.redis_client.publish_all_readings(
                         probe_name,
                         readings,
@@ -300,19 +318,37 @@ class BackgroundTasks:
                         room_name,
                         sensor_names=self.sensor_names.get(probe_name),
                     )
-                    logger.info(
-                        f"Read {probe_name}: "
-                        f"T={readings.get('temperature', 0):.1f}°C, "
-                        f"H={readings.get('humidity', 0):.1f}%, "
-                        f"EC={readings.get('ec', 0):.1f}µS/cm, "
-                        f"pH={readings.get('ph', 0):.2f}"
-                    )
-                else:
-                    logger.warning(f"Failed to read sensor: {probe_name}")
+                except Exception as e:
+                    logger.error(f"Error publishing soil readings for {probe_name}: {e}")
 
+                pending = (probe_name, modbus_id, readings, timestamp)
+                if self._pending_readings:
+                    self._pending_readings.offer([pending])
+                else:
+                    try:
+                        await self._store_reading(*pending)
+                    except Exception as e:
+                        if is_transient_db_error(e):
+                            logger.warning(
+                                f"Database unavailable for soil measurements for "
+                                f"{probe_name}; buffering: {e}"
+                            )
+                            self._pending_readings.offer([pending])
+                        else:
+                            logger.error(
+                                f"Dropping soil measurement for {probe_name} after "
+                                f"permanent database error: {e}"
+                            )
+
+                logger.info(
+                    f"Read {probe_name}: "
+                    f"T={readings.get('temperature', 0):.1f}°C, "
+                    f"H={readings.get('humidity', 0):.1f}%, "
+                    f"EC={readings.get('ec', 0):.1f}µS/cm, "
+                    f"pH={readings.get('ph', 0):.2f}"
+                )
             except Exception as e:
                 logger.error(f"Error polling sensor {probe_name}: {e}")
-                # Try to reconnect
                 try:
                     if (
                         reader.modbus is None

@@ -505,48 +505,44 @@ class ControlActionRepository(BaseRepository):
             records: List of dicts, each containing all automation_state columns
 
         Returns:
-            True if successful, False otherwise
+            True if successful. Database errors propagate for caller classification.
         """
         if not records:
             return True
 
-        try:
-            async with self.pool.acquire() as conn:
-                # Build multi-row VALUES clause
-                columns = AUTOMATION_STATE_COLUMNS
+        async with self.pool.acquire() as conn:
+            # Build multi-row VALUES clause
+            columns = AUTOMATION_STATE_COLUMNS
 
-                # Use asyncpg's copy_records_to_table for efficient bulk insert
-                rows = []
-                for r in records:
-                    rows.append(
-                        (
-                            r.get("time", datetime.now()),
-                            r["location"],
-                            r["cluster"],
-                            r["device_name"],
-                            r["device_state"],
-                            r["device_mode"],
-                            r.get("pid_output"),
-                            r.get("duty_cycle_percent"),
-                            r.get("active_rule_ids", []),
-                            r.get("active_schedule_ids", []),
-                            r.get("control_reason", "unknown"),
-                            r.get("schedule_ramp_up_duration"),
-                            r.get("schedule_ramp_down_duration"),
-                            r.get("schedule_photoperiod_hours"),
-                            r.get("pid_kp"),
-                            r.get("pid_ki"),
-                            r.get("pid_kd"),
-                            datetime.now(),
-                        )
+            # Use asyncpg's copy_records_to_table for efficient bulk insert
+            rows = []
+            for r in records:
+                rows.append(
+                    (
+                        r.get("time", datetime.now()),
+                        r["location"],
+                        r["cluster"],
+                        r["device_name"],
+                        r["device_state"],
+                        r["device_mode"],
+                        r.get("pid_output"),
+                        r.get("duty_cycle_percent"),
+                        r.get("active_rule_ids", []),
+                        r.get("active_schedule_ids", []),
+                        r.get("control_reason", "unknown"),
+                        r.get("schedule_ramp_up_duration"),
+                        r.get("schedule_ramp_down_duration"),
+                        r.get("schedule_photoperiod_hours"),
+                        r.get("pid_kp"),
+                        r.get("pid_ki"),
+                        r.get("pid_kd"),
+                        datetime.now(),
                     )
-
-                await conn.copy_records_to_table(
-                    "automation_state",
-                    records=rows,
-                    columns=columns,
                 )
-                return True
-        except Exception as e:
-            logger.error(f"Failed to batch log automation state: {e}")
-            return False
+
+            await conn.copy_records_to_table(
+                "automation_state",
+                records=rows,
+                columns=columns,
+            )
+            return True

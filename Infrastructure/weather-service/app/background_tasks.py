@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from typing import Any
 
+from shared.db_errors import is_transient_db_error
 from shared.infra_logging import get_logger
+from shared.replay_buffer import ReplayBuffer
 
 from .database import DatabaseManager
 from .weather_client import WeatherClient
@@ -33,6 +36,7 @@ class BackgroundTasks:
         self.task: asyncio.Task | None = None
         self.sensor_ids: dict = {}
         self.device_id: int | None = None
+        self._pending: ReplayBuffer[dict[str, Any]] = ReplayBuffer(8, name="weather_measurements")
 
     async def start(self) -> None:
         """Start background polling task."""
@@ -63,10 +67,8 @@ class BackgroundTasks:
         self.running = False
         if self.task:
             self.task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self.task
-            except asyncio.CancelledError:
-                pass
 
         logger.info("Background weather polling task stopped")
 
@@ -86,38 +88,64 @@ class BackgroundTasks:
                 logger.error(f"Error in polling loop: {e}", exc_info=True)
             await asyncio.sleep(interval)
 
+    async def _store_weather_data(self, weather_data: dict[str, Any]) -> bool:
+        success = await self.database.store_weather_measurements(self.sensor_ids, weather_data)
+        if not success:
+            logger.error("Failed to store weather measurements in database")
+            return False
+
+        temp = weather_data.get("temperature", "N/A")
+        rh = weather_data.get("relative_humidity", "N/A")
+        pressure = weather_data.get("pressure", "N/A")
+        wind_speed = weather_data.get("wind_speed", "N/A")
+        wind_dir = weather_data.get("wind_direction", "N/A")
+        logger.info(
+            f"Weather data stored: "
+            f"T={temp}°C, "
+            f"RH={rh}%, "
+            f"P={pressure}hPa, "
+            f"Wind={wind_speed}m/s @ {wind_dir}°"
+        )
+        return True
+
     async def _poll_weather(self) -> None:
         """Poll weather API and store data."""
         try:
+            for pending in self._pending.peek(8):
+                try:
+                    stored = await self._store_weather_data(pending)
+                except Exception as e:
+                    if is_transient_db_error(e):
+                        logger.error(f"Error replaying weather measurements: {e}")
+                        break
+                    logger.error(f"Dropping weather report after permanent database error: {e}")
+                    self._pending.consume(1)
+                    continue
+                if not stored:
+                    break
+                self._pending.consume(1)
+
             logger.info("Fetching weather data...")
-
-            # Fetch METAR data
             weather_data = await self.weather_client.fetch_metar()
-
             if not weather_data:
                 logger.warning("Failed to fetch weather data")
                 return
 
-            # Store measurements in database
-            success = await self.database.store_weather_measurements(self.sensor_ids, weather_data)
+            if self._pending:
+                self._pending.offer([weather_data])
+                return
 
-            if success:
-                # Log successful fetch
-                temp = weather_data.get("temperature", "N/A")
-                rh = weather_data.get("relative_humidity", "N/A")
-                pressure = weather_data.get("pressure", "N/A")
-                wind_speed = weather_data.get("wind_speed", "N/A")
-                wind_dir = weather_data.get("wind_direction", "N/A")
-
-                logger.info(
-                    f"Weather data stored: "
-                    f"T={temp}°C, "
-                    f"RH={rh}%, "
-                    f"P={pressure}hPa, "
-                    f"Wind={wind_speed}m/s @ {wind_dir}°"
-                )
+            try:
+                stored = await self._store_weather_data(weather_data)
+            except Exception as e:
+                if is_transient_db_error(e):
+                    logger.warning(f"Database unavailable for weather measurements; buffering: {e}")
+                    self._pending.offer([weather_data])
+                else:
+                    logger.error(f"Dropping weather report after permanent database error: {e}")
             else:
-                logger.error("Failed to store weather measurements in database")
+                if not stored:
+                    self._pending.offer([weather_data])
 
         except Exception as e:
             logger.error(f"Error polling weather: {e}", exc_info=True)

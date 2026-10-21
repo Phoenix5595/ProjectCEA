@@ -14,6 +14,7 @@ import pytest
 
 from app.control.climate_resolver import ClimatePeriodResolver
 from app.control.scheduler import LOCAL_TZ
+from app.repositories.climate_periods import select_active_period
 from shared.redis_keys import climate_period_cache_key
 
 _LOCATION = "Flower Room"
@@ -61,18 +62,13 @@ _PERIODS: dict[tuple[int, int | None], dict[str, Any]] = {
 }
 
 
-def _covering_minutes(row: dict[str, Any], reference_time: str) -> bool:
-    start_parts = str(row["start_time"]).split(":")
-    end_parts = str(row["end_time"]).split(":")
-    start = int(start_parts[0]) * 60 + int(start_parts[1])
-    end = int(end_parts[0]) * 60 + int(end_parts[1])
-    ref_parts = reference_time.split(":")
-    ref = int(ref_parts[0]) * 60 + int(ref_parts[1])
-    if start == end:
-        return True
-    if start < end:
-        return start <= ref < end
-    return ref >= start or ref < end
+def test_select_active_period_handles_overnight_and_equal_bounds() -> None:
+    overnight = _period_row(1, None, "Overnight", 21.0, start_time="22:00", end_time="06:00")
+    all_day = _period_row(1, None, "All Day", 20.0, start_time="10:00", end_time="10:00")
+
+    assert select_active_period([overnight], "02:00") == overnight
+    assert select_active_period([overnight], "12:00") is None
+    assert select_active_period([all_day], "23:59") == all_day
 
 
 class _FakeClimatePeriodsRepository:
@@ -80,31 +76,25 @@ class _FakeClimatePeriodsRepository:
 
     def __init__(self, periods: dict[tuple[int, int | None], dict[str, Any]]) -> None:
         self.periods = periods
-        self.calls: list[tuple[str, str, str, int | None, int | None]] = []
+        self.calls: list[tuple[str, str, int | None, int | None]] = []
         self.fail = False
 
-    async def get_active_period(
+    async def get_profile_periods(
         self,
         location: str,
         cluster: str,
-        reference_time: str,
-        *,
-        mode_id: int | None = None,
-        submode_id: int | None = None,
-    ) -> dict[str, Any] | None:
-        self.calls.append((location, cluster, reference_time, mode_id, submode_id))
+        mode_id: int | None,
+        submode_id: int | None,
+    ) -> list[dict[str, Any]]:
+        self.calls.append((location, cluster, mode_id, submode_id))
         if self.fail:
             raise RuntimeError("database unavailable")
         row = self.periods.get((mode_id, submode_id))
-        if row is None or not _covering_minutes(row, reference_time):
-            return None
-        return dict(row)
+        return [] if row is None else [dict(row)]
 
 
 class _FakeScheduleRepository:
-    async def get_room_light_schedule(
-        self, _location: str, _cluster: str
-    ) -> list[dict[str, Any]]:
+    async def get_room_light_schedule(self, _location: str, _cluster: str) -> list[dict[str, Any]]:
         return [{"device_name": "light_f_1", "start": "06:00", "end": "18:00"}]
 
 
@@ -143,9 +133,7 @@ class _StubScheduler:
         return True
 
 
-def _resolver(
-    database: _FakeDatabase, state: _FakeState | None
-) -> ClimatePeriodResolver:
+def _resolver(database: _FakeDatabase, state: _FakeState | None) -> ClimatePeriodResolver:
     return ClimatePeriodResolver(_StubScheduler(), object(), state)
 
 
@@ -231,7 +219,7 @@ async def test_known_identity_queries_exact_null_safe_profile() -> None:
         _LOCATION, _CLUSTER, _MORNING, database, active_profile=_profile(2, None)
     )
 
-    assert climate_repo.calls == [(_LOCATION, _CLUSTER, "06:00", 2, None)]
+    assert climate_repo.calls == [(_LOCATION, _CLUSTER, 2, None)]
     assert result["setpoint_data"]["heating_setpoint"] == 26.0
 
 
@@ -257,10 +245,9 @@ async def test_mode_switch_same_minute_returns_new_profile_not_cached_old() -> N
     assert mode_one_again["setpoint_data"]["heating_setpoint"] == 22.0
     # One DB read per profile: the mode-2 lookup never reused the mode-1
     # entry, and the mode-1 re-read reused its own cached entry.
-    assert [call[3] for call in climate_repo.calls] == [1, 2]
-    assert (
-        climate_period_cache_key(_LOCATION, _CLUSTER, 1, None)
-        != climate_period_cache_key(_LOCATION, _CLUSTER, 2, None)
+    assert [call[2] for call in climate_repo.calls] == [1, 2]
+    assert climate_period_cache_key(_LOCATION, _CLUSTER, 1, None) != climate_period_cache_key(
+        _LOCATION, _CLUSTER, 2, None
     )
 
 
@@ -283,7 +270,7 @@ async def test_submode_identities_same_minute_stay_distinct() -> None:
     assert stretch["setpoint_data"]["climate_identity"] == (1, 4, "Stretch", "06:00", "18:00")
     assert bulk["setpoint_data"]["climate_identity"] == (1, 5, "Bulk", "06:00", "18:00")
     assert stretch_again["setpoint_data"]["climate_identity"] == (1, 4, "Stretch", "06:00", "18:00")
-    assert [call[4] for call in climate_repo.calls] == [4, 5]
+    assert [call[3] for call in climate_repo.calls] == [4, 5]
 
 
 @pytest.mark.asyncio
@@ -357,8 +344,8 @@ async def test_save_invalidation_is_immediate_and_scoped_to_the_profile_key() ->
     assert state.deletes == [saved_key]
     assert invalidated["setpoint_data"]["heating_setpoint"] == 26.0
     assert climate_repo.calls == [
-        (_LOCATION, _CLUSTER, "06:00", 2, None),
-        (_LOCATION, _CLUSTER, "06:00", 2, None),
+        (_LOCATION, _CLUSTER, 2, None),
+        (_LOCATION, _CLUSTER, 2, None),
     ]
     assert other_key in state.entries
 
@@ -387,9 +374,31 @@ async def test_database_error_returns_none_without_caching_empty_state() -> None
 
     assert len(climate_repo.calls) == 2  # failed read, then one recovery read
     assert recovered["setpoint_data"]["heating_setpoint"] == 26.0
-    assert state.entries[climate_period_cache_key(_LOCATION, _CLUSTER, 2, None)]["period"][
-        "heating_setpoint"
-    ] == 26.0
+    assert (
+        state.entries[climate_period_cache_key(_LOCATION, _CLUSTER, 2, None)]["period"][
+            "heating_setpoint"
+        ]
+        == 26.0
+    )
+
+
+@pytest.mark.asyncio
+async def test_resolver_falls_back_to_last_loaded_period_rows_during_db_outage() -> None:
+    climate_repo = _FakeClimatePeriodsRepository(_PERIODS)
+    database = _FakeDatabase(climate_repo, _FakeScheduleRepository())
+    resolver = _resolver(database, None)
+
+    loaded = await resolver.resolve_period(
+        _LOCATION, _CLUSTER, _MORNING, database, active_profile=_profile(2, None)
+    )
+    climate_repo.fail = True
+    during_outage = await resolver.resolve_period(
+        _LOCATION, _CLUSTER, _MORNING_NEXT_MINUTE, database, active_profile=_profile(2, None)
+    )
+
+    assert loaded["active_period"]["period_name"] == "Day"
+    assert during_outage["active_period"] == loaded["active_period"]
+    assert during_outage["setpoint_data"]["heating_setpoint"] == 26.0
 
 
 @pytest.mark.asyncio
@@ -413,7 +422,7 @@ async def test_climate_identity_uses_captured_ids_not_replacement_row_ids() -> N
     expected_identity = (2, None, "Day", "06:00", "18:00")
     assert fresh["setpoint_data"]["climate_identity"] == expected_identity
     assert cached["setpoint_data"]["climate_identity"] == expected_identity
-    assert climate_repo.calls[-1][3] == 2 and climate_repo.calls[-1][4] is None
+    assert climate_repo.calls[-1][2] == 2 and climate_repo.calls[-1][3] is None
 
 
 @pytest.mark.asyncio

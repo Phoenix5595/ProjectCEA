@@ -15,7 +15,6 @@ from shared.monitoring_contracts import CurrentSnapshot
 
 PublicationAction = Callable[[], Awaitable[bool | None]]
 _DEFAULT_INTERVAL: Final = timedelta(seconds=1)
-_RECOVERABLE_PUBLICATION_ERRORS = (ConnectionError, OSError, RuntimeError, TimeoutError, ValueError)
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,12 +85,12 @@ class _PublicationWorker:
         self._last_error: str | None = None
 
     async def run(self, interval: timedelta) -> None:
-        """Retry recoverable publication failures on the documented one-second cadence."""
+        """Retry publication failures on the documented one-second cadence."""
         while True:
             try:
                 published = await self._publish()
-            except _RECOVERABLE_PUBLICATION_ERRORS as error:
-                self._record_failure(str(error))
+            except Exception as error:
+                self._record_failure(f"{type(error).__name__}: {error}")
             else:
                 if published is True:
                     self._last_success_at = datetime.now(UTC)

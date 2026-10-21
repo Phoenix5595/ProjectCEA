@@ -358,9 +358,7 @@ class DatabaseManager:
             )
             sensor_ids[sensor_type] = int(sensor["sensor_id"])
             sensor_names[sensor_type] = str(sensor["name"])
-            logger.info(
-                f"Registered sensor: {sensor_full_name} (ID: {sensor['sensor_id']})"
-            )
+            logger.info(f"Registered sensor: {sensor_full_name} (ID: {sensor['sensor_id']})")
         return sensor_ids, sensor_names
 
     async def register_sensor_device(
@@ -371,9 +369,7 @@ class DatabaseManager:
         async with pool.acquire() as conn, conn.transaction():
             row = await self._resolve_current_registry_row(conn, registry_id, modbus_id)
             device_id = await self._ensure_registry_device(conn, row, probe_name)
-            sensor_ids, sensor_names = await self._ensure_soil_channels(
-                conn, device_id, probe_name
-            )
+            sensor_ids, sensor_names = await self._ensure_soil_channels(conn, device_id, probe_name)
             return int(row["registry_id"]), device_id, sensor_ids, sensor_names
 
     async def store_measurements(
@@ -383,7 +379,7 @@ class DatabaseManager:
         probe_name: str,
         readings: dict[str, float],
         timestamp: datetime | None = None,
-    ) -> tuple[int, dict[str, int], dict[str, str]] | None:
+    ) -> tuple[int, dict[str, int], dict[str, str]]:
         """Resolve channels and insert a poll while holding the shared identity lock."""
         if timestamp is None:
             timestamp = datetime.now()
@@ -405,7 +401,7 @@ class DatabaseManager:
                 return int(row["registry_id"]), sensor_ids, sensor_names
         except Exception as e:
             logger.error(f"Error storing measurements: {e}")
-            return None
+            raise
 
     async def get_sensor_id(self, sensor_name: str) -> int | None:
         """Get sensor_id by sensor name."""

@@ -18,6 +18,7 @@ import redis.exceptions
 from app.sensor_registry import ABSENCE, AssignmentCache, MetadataWorker, SensorAssignment
 from shared.db_batch_writer import BatchQueue
 from shared.db_credentials import load_postgres_password
+from shared.db_errors import is_transient_db_error
 from shared.infra_logging import get_logger
 from shared.redis_client import close_sync, create_sync_client
 from shared.redis_keys import (
@@ -122,6 +123,7 @@ class DataWriter:
             flush_threshold=50,
             flush_interval_sec=0.1,
             name="can-db-flush",
+            is_retryable=is_transient_db_error,
         )
 
         # Registry authority: nonblocking cache for the hot path, dedicated
@@ -230,6 +232,7 @@ class DataWriter:
                 for _registry_id, hardware_address, device_id in rows:
                     self.device_cache[int(hardware_address)] = int(device_id)
                 return
+
     def _ensure_channels(self, cursor: Any, by_device: dict[int, set[str]]) -> None:
         """Create observed metric channels instead of silently dropping them."""
         for device_id, names in by_device.items():
@@ -263,16 +266,16 @@ class DataWriter:
         """Flush callback invoked by :class:`BatchQueue`.
 
         BatchQueue owns the queued/flushed/dropped counters: a clean return
-        from this callback counts as ``flushed += len(items)``; raising
-        counts as ``dropped += len(items)`` and BatchQueue logs the error.
+        counts the batch as flushed; retryable failures are retained, while
+        permanent failures are dropped so newer batches can proceed.
         """
-        if not items or not self.db_enabled:
-            raise RuntimeError("db not enabled; dropping batch")
+        if not items:
+            return
         with self._db_write_lock:
             if not self._check_db_connection():
-                raise RuntimeError("db connection unavailable; dropping batch")
+                raise ConnectionError("db connection unavailable")
             if self.db_conn is None:
-                raise RuntimeError("db connection is None; dropping batch")
+                raise ConnectionError("db connection is None")
 
             previous_autocommit = self.db_conn.autocommit
             self.db_conn.autocommit = False
@@ -320,9 +323,11 @@ class DataWriter:
                     )
                 self.db_conn.commit()
             except Exception:
-                self.db_conn.rollback()
-                # Re-raise so BatchQueue counts the batch as dropped +
-                # emits the flush-callback error log.
+                try:  # noqa: SIM105
+                    self.db_conn.rollback()
+                except Exception:
+                    pass
+                # Re-raise so BatchQueue can classify the failure for retry.
                 raise
             finally:
                 if cursor is not None:
@@ -460,9 +465,6 @@ class DataWriter:
         timestamp,
         assignment: SensorAssignment | None = None,
     ) -> bool:
-        # When DB was lost, try reconnect once so recovery does not require service restart
-        if not self.db_enabled and not self.connect_db():
-            return False
         item = DBWriteItem(
             decoded=decoded,
             raw_data=raw_data,

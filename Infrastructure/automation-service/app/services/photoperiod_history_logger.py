@@ -49,7 +49,14 @@ CoverageReason: TypeAlias = Literal[
     "unclean_restart",
 ]
 
-_FLUSH_FAILED_EXC: Final = (asyncpg.PostgresError, ConnectionError, OSError, RuntimeError)
+_FLUSH_FAILED_EXC: Final = (
+    asyncpg.PostgresError,
+    asyncpg.InterfaceError,
+    ConnectionError,
+    OSError,
+    TimeoutError,
+    RuntimeError,
+)
 
 _PHASE_INSERT_SQL: Final = """
 INSERT INTO monitoring_room_photoperiod (

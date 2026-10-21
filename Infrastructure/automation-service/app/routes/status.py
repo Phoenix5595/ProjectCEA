@@ -14,6 +14,7 @@ from urllib.request import Request, urlopen
 from fastapi import APIRouter, Depends, Query
 import psutil
 
+from app.background_tasks import BackgroundTasks
 from app.config import ConfigLoader
 from app.control.performance_monitor import get_performance_monitor
 from app.control.relay_manager import RelayManager
@@ -52,6 +53,11 @@ def get_database() -> DatabaseManager:
 
 def get_relay_manager() -> RelayManager:
     """Dependency to get relay manager."""
+    raise RuntimeError("Dependency not injected")
+
+
+def get_background_tasks() -> BackgroundTasks:
+    """Dependency to get background tasks."""
     raise RuntimeError("Dependency not injected")
 
 
@@ -197,11 +203,12 @@ async def health_check(
 @router.get("/ready")
 async def ready_check(
     database: DatabaseManager = Depends(get_database),
+    background_tasks: BackgroundTasks = Depends(get_background_tasks),
 ) -> Any:
     """Readiness probe.
 
-    Verifies every hard dependency the control loop needs within 500ms via
-    shared.health: postgres pool answers SELECT 1, redis pings back.
+    Verifies PostgreSQL and Redis via shared.health, and checks control-loop
+    task/tick liveness.
     Returns 503 on any failure so orchestrators drain traffic. MCP/hardware
     state is advisory and reported elsewhere (/health, /api/status) but
     does not fail readiness — the control loop's own degraded-mode logic
@@ -222,6 +229,7 @@ async def ready_check(
         "checks": {
             "postgres": await check_postgres_pool(database.pool),
             "redis": await check_redis_sync_client(raw_client),
+            "control_loop": background_tasks.control_loop_check(),
         },
     }
     out["status"] = "ready" if all_ok(out["checks"]) else "not_ready"
@@ -287,7 +295,12 @@ async def get_status(
         for cluster, cluster_sensors in clusters.items():
             sensors[location][cluster] = {}
             sensor_names = [name for name in cluster_sensors.values() if name]
-            values = await database.sensor_repo.get_sensor_values_batch(sensor_names)
+            try:
+                values = await database.sensor_repo.get_sensor_values_batch(
+                    sensor_names, max_age_sec=config.get_last_good_hold_period()
+                )
+            except Exception:
+                values = dict.fromkeys(sensor_names)
             for sensor_type, sensor_name in cluster_sensors.items():
                 sensors[location][cluster][sensor_type] = (
                     values.get(sensor_name) if sensor_name else None

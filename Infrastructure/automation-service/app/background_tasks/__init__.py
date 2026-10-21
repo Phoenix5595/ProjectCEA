@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import time
+from typing import Any
 
 from app.alarm_manager import AlarmManager
 from app.control.control_engine import ControlEngine
@@ -87,6 +89,8 @@ class BackgroundTasks(
         self._degraded_active = False
         self._last_control_error_time: float = 0.0
         self._consecutive_control_errors: int = 0
+        self._last_tick_completed_at: float | None = None
+        self._scheduler_retry_task: asyncio.Task | None = None
         self._scheduler_ready = asyncio.Event()
         self._scheduler_loaded_once = False
 
@@ -113,7 +117,8 @@ class BackgroundTasks(
             logger.info("Scheduler data loaded and startup gate opened")
         except Exception as e:
             logger.error(f"Failed to load scheduler data at startup: {e}", exc_info=True)
-            # Gate remains unset; control loop will block until data is loaded
+            # Gate remains unset; control loop will block until data is loaded.
+            self._scheduler_retry_task = asyncio.create_task(self._retry_scheduler_load())
 
         try:
             scheduler = CalendarModeScheduler(
@@ -131,6 +136,31 @@ class BackgroundTasks(
             "Heartbeat, auto-persist, setpoint history, batch flush, and config event consumer tasks started"
         )
 
+    async def _retry_scheduler_load(self) -> None:
+        """Retry the startup scheduler load until the database is available."""
+        while self._running:
+            await asyncio.sleep(5)
+            try:
+                await self._load_scheduler_data()
+                self._scheduler_ready.set()
+                logger.info("Scheduler data loaded after retry")
+                return
+            except Exception as e:
+                logger.warning("Scheduler data retry failed: %s", e)
+
+    def control_loop_check(self) -> dict[str, Any]:
+        """Report whether a control tick completed within the expected interval."""
+        if not self._running or self._task is None or self._task.done():
+            return {"ok": False, "detail": "control loop task not running"}
+        if self._last_tick_completed_at is None:
+            return {"ok": False, "detail": "no completed control tick"}
+
+        age = time.monotonic() - self._last_tick_completed_at
+        limit = 3 * self._current_control_interval()
+        if age > limit:
+            return {"ok": False, "detail": f"last control tick {age:.1f}s ago (limit {limit}s)"}
+        return {"ok": True, "age_ms": round(age * 1000, 1)}
+
     async def stop(self) -> None:
         """Stop background control loop and tasks."""
         self._running = False
@@ -144,6 +174,7 @@ class BackgroundTasks(
             self._batch_flush_task,
             self._config_event_task,
             self._calendar_sync_task,
+            self._scheduler_retry_task,
         ]
         for task in tasks:
             if task:

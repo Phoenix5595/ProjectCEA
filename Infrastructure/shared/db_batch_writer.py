@@ -93,16 +93,14 @@ class BatchQueue:
     callback does NOT need to be thread-safe against itself.
 
     Overflow handling: if the queue is full when :meth:`put` is called,
-    the item is dropped and the drop counter is incremented. This is
-    intentional — it bounds memory even when the DB is unavailable, which
-    is strictly preferable to an unbounded queue that eventually OOM-kills
-    the service. Dropped items are also not retried (the assumption is
-    that the producer either tolerates data loss or is running in a
-    backpressure-friendly mode — e.g. CAN bus, where missing a sensor
-    sample for a cycle is fine).
+    the newest item is dropped and the drop counter is incremented. Failed
+    flush batches are retried with exponential backoff by default. Callers
+    can provide ``is_retryable`` to drop permanent failures immediately and
+    allow newer batches to proceed. On shutdown, one final flush is attempted.
 
     Metrics: :meth:`stats` returns ``{"queued": N, "flushed": N, "dropped": N}``
-    cumulative since construction.
+    cumulative since construction. ``dropped`` counts queue overflow,
+    permanent callback failures, and items that fail the final shutdown flush.
     """
 
     def __init__(
@@ -113,6 +111,7 @@ class BatchQueue:
         flush_threshold: int = 50,
         flush_interval_sec: float = 0.1,
         name: str = "batch-queue",
+        is_retryable: Callable[[BaseException], bool] | None = None,
     ) -> None:
         if max_queue <= 0:
             raise ValueError("max_queue must be > 0")
@@ -125,6 +124,7 @@ class BatchQueue:
         self._flush_threshold = flush_threshold
         self._flush_interval_sec = flush_interval_sec
         self._name = name
+        self._is_retryable = is_retryable
 
         self._q: queue.Queue[Any] = queue.Queue(maxsize=max_queue)
         self._thread: threading.Thread | None = None
@@ -133,6 +133,8 @@ class BatchQueue:
         self._queued_count = 0
         self._flushed_count = 0
         self._dropped_count = 0
+        self._retry_items: list[Any] = []
+        self._retry_delay = 1.0
         self._counter_lock = threading.Lock()
 
     # ------------------------------------------------------------------
@@ -195,27 +197,38 @@ class BatchQueue:
 
     def _run(self) -> None:
         while not self._stop_event.is_set():
+            if self._retry_items:
+                if self._stop_event.wait(self._retry_delay):
+                    break
+                if self._flush(self._retry_items):
+                    self._retry_items = []
+                    self._retry_delay = 1.0
+                else:
+                    self._retry_delay = min(self._retry_delay * 2, 30.0)
+                continue
+
             try:
                 items = self._drain_up_to_threshold()
-                if items:
-                    self._flush(items)
+                if items and not self._flush(items):
+                    self._retry_items = items
+                    self._retry_delay = 1.0
             except Exception as e:  # pragma: no cover — flush loop must never die
                 logger.error(f"BatchQueue[{self._name}] flush loop error: {e}")
-                time.sleep(self._flush_interval_sec)
+                self._stop_event.wait(self._flush_interval_sec)
 
-        # Final drain on shutdown: pull everything remaining and flush.
-        tail: list[Any] = []
+        # Final drain on shutdown keeps retained rows ahead of newer queued rows.
+        tail = self._retry_items.copy()
+        self._retry_items = []
         while True:
             try:
                 tail.append(self._q.get_nowait())
                 self._q.task_done()
             except queue.Empty:
                 break
-        if tail:
-            try:
-                self._flush(tail)
-            except Exception as e:
-                logger.error(f"BatchQueue[{self._name}] final-drain flush error: {e}")
+        if tail and not self._flush(tail):
+            logger.error(f"BatchQueue[{self._name}] final-drain flush failed")
+            with self._counter_lock:
+                self._dropped_count += len(tail)
 
     def _drain_up_to_threshold(self) -> list[Any]:
         """Pull items from the queue until we have ``flush_threshold`` items
@@ -234,20 +247,26 @@ class BatchQueue:
                 break
         return items
 
-    def _flush(self, items: list[Any]) -> None:
+    def _flush(self, items: list[Any]) -> bool:
         try:
             self._flush_callback(items)
             with self._counter_lock:
                 self._flushed_count += len(items)
+            return True
         except Exception as e:
-            # Callback failures count as drops — the flush thread keeps
-            # running and the caller can see the failure via stats().
+            if self._is_retryable is not None and not self._is_retryable(e):
+                logger.error(
+                    f"BatchQueue[{self._name}] flush callback raised non-retryable "
+                    f"{type(e).__name__}: {e} (dropping batch of {len(items)})"
+                )
+                with self._counter_lock:
+                    self._dropped_count += len(items)
+                return True
             logger.error(
                 f"BatchQueue[{self._name}] flush callback raised: {e} "
-                f"(dropping batch of {len(items)})"
+                f"(retaining batch of {len(items)})"
             )
-            with self._counter_lock:
-                self._dropped_count += len(items)
+            return False
 
 
 # ---------------------------------------------------------------------------

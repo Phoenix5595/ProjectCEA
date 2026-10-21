@@ -31,6 +31,7 @@ from app.services.photoperiod_history_logger import (
     PhotoperiodObservation,
     PhotoperiodRecorderState,
 )
+from shared.replay_buffer import ReplayBuffer
 
 T0 = datetime(2026, 8, 2, tzinfo=UTC)
 ROOM = "Veg Room"
@@ -791,6 +792,7 @@ def _engine_with(
     engine._automation_context = {}
     engine._automation_log_context = {}
     engine._last_logged = {}
+    engine._automation_state_pending = ReplayBuffer(2_000, name="automation_state")
     engine._photoperiod_phases = {}
     engine._current_climate_mode = {}
     engine._current_period_name = {}

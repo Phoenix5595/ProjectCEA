@@ -171,7 +171,10 @@ class DatabaseManager:
             timestamp: Timestamp for measurements (defaults to now or from weather_data)
 
         Returns:
-            True if successful, False otherwise
+            True on success.
+
+        Raises:
+            Database errors, so the polling task can classify retries.
         """
         if timestamp is None:
             timestamp = weather_data.get("timestamp", datetime.now())
@@ -200,4 +203,4 @@ class DatabaseManager:
             return True
         except Exception as e:
             logger.error(f"Error storing weather measurements: {e}")
-            return False
+            raise

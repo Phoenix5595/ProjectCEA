@@ -1,8 +1,8 @@
 [Unit]
 Description=CEA Grow Archive Service
 After=redis-server.service postgresql.service network-online.target
-Requires=redis-server.service postgresql.service
-Wants=network-online.target
+Wants=network-online.target redis-server.service postgresql.service
+StartLimitIntervalSec=0
 OnFailure=service-error-handler@%n.service
 
 [Service]

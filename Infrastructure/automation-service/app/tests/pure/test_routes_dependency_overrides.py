@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from app.events.mutation_dependencies import get_mutation_event_sink
-from app.routes import operational_events, routes
+from app.routes import operational_events, routes, status
 
 
 class _FakeService:
@@ -24,6 +24,7 @@ class _FakeContainer:
         self._database = _FakeDatabase()
         self._operational_event_sink = _FakeService()
         self._operational_event_reader = _FakeService()
+        self._background_tasks = _FakeService()
 
     def get_database(self) -> _FakeDatabase:
         return self._database
@@ -33,6 +34,9 @@ class _FakeContainer:
 
     def get_config(self) -> _FakeService:
         return _FakeService()
+
+    def get_background_tasks(self) -> _FakeService:
+        return self._background_tasks
 
     def get_dfr0971_manager(self) -> _FakeService:
         return _FakeService()
@@ -97,6 +101,9 @@ def test_central_registration_binds_operational_event_routes_and_dependencies() 
 
     # Then: event reads and mutation producers resolve only to runtime-owned resources.
     assert any(route.path == "/api/events/history" for route in app.routes)
+    assert (
+        app.dependency_overrides[status.get_background_tasks]() is container.get_background_tasks()
+    )
     assert (
         app.dependency_overrides[get_mutation_event_sink]()
         is container.get_operational_event_sink()

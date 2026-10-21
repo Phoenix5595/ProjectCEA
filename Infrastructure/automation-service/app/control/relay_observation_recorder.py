@@ -13,6 +13,7 @@ from uuid import UUID, uuid4
 import asyncpg
 
 from app.control.runtime_device_snapshot import RuntimeDeviceSnapshot
+from shared.db_errors import is_transient_db_error
 from shared.infra_logging import get_logger
 from shared.retry import retry_async
 
@@ -29,10 +30,11 @@ RelayObservationReason = Literal[
 ]
 
 HEARTBEAT_INTERVAL: Final = timedelta(seconds=30)
-QUEUE_CAPACITY: Final = 256
+QUEUE_CAPACITY: Final = 2_048
 FLUSH_BATCH_SIZE: Final = 64
 RETRY_ATTEMPTS: Final = 3
 _RETRYABLE_DATABASE_ERRORS: Final = (
+    asyncpg.InterfaceError,
     asyncpg.PostgresConnectionError,
     ConnectionError,
     OSError,
@@ -92,6 +94,8 @@ class RelayObservationRecorder:
         self._now = now
         self.session_id = session_id or uuid4()
         self._queue: asyncio.Queue[RelayObservation] = asyncio.Queue(maxsize=queue_capacity)
+        self._retry_batch: tuple[RelayObservation, ...] | None = None
+        self._stop_event = asyncio.Event()
         self._snapshot: RuntimeDeviceSnapshot | None = None
         self._identities: tuple[_RelayIdentity, ...] | None = None
         self._latest_channels: tuple[bool, ...] | None = None
@@ -109,8 +113,9 @@ class RelayObservationRecorder:
 
     @property
     def pending_count(self) -> int:
-        """Number of queued observations awaiting the persistence worker."""
-        return self._queue.qsize()
+        """Number of queued or in-flight observations awaiting persistence."""
+        retry_count = len(self._retry_batch) if self._retry_batch is not None else 0
+        return self._queue.qsize() + retry_count
 
     @property
     def coverage_incomplete(self) -> bool:
@@ -226,12 +231,14 @@ class RelayObservationRecorder:
             return
         self._accepting = True
         self._running = True
+        self._stop_event.clear()
         self._worker = asyncio.create_task(self._run(), name="relay-observation-recorder")
 
     async def stop(self) -> None:
-        """Stop accepting rows and drain the bounded queue before database shutdown."""
+        """Stop accepting rows and report any history lost after the final retry."""
         self._accepting = False
         self._running = False
+        self._stop_event.set()
         worker = self._worker
         if worker is not None:
             await worker
@@ -288,22 +295,30 @@ class RelayObservationRecorder:
         self._last_heartbeat_enqueued_at = None
 
     async def _run(self) -> None:
-        while self._running or not self._queue.empty():
-            try:
-                first = await asyncio.wait_for(self._queue.get(), timeout=0.1)
-            except TimeoutError:
+        retry_delay = 1.0
+        while self._running or not self._queue.empty() or self._retry_batch is not None:
+            if self._retry_batch is None:
+                try:
+                    first = await asyncio.wait_for(self._queue.get(), timeout=0.1)
+                except TimeoutError:
+                    continue
+
+                batch = [first]
+                while len(batch) < FLUSH_BATCH_SIZE:
+                    try:
+                        batch.append(self._queue.get_nowait())
+                    except asyncio.QueueEmpty:
+                        break
+                self._retry_batch = tuple(batch)
+
+            batch = self._retry_batch
+            if batch is None:
                 continue
 
-            batch = [first]
-            while len(batch) < FLUSH_BATCH_SIZE:
-                try:
-                    batch.append(self._queue.get_nowait())
-                except asyncio.QueueEmpty:
-                    break
-
+            stopping_before_attempt = not self._running
             try:
                 await retry_async(
-                    partial(self._store.append, tuple(batch)),
+                    partial(self._store.append, batch),
                     retry_on=_RETRYABLE_DATABASE_ERRORS,
                     max_attempts=RETRY_ATTEMPTS,
                     base_delay=0.05,
@@ -313,24 +328,62 @@ class RelayObservationRecorder:
             except asyncio.CancelledError:
                 raise
             except Exception as error:
-                self._mark_recording_gap(batch[0].observed_at)
-                self._discard_queued_rows()
-                logger.error("Relay observation batch could not be persisted: %s", error)
+                batch_count = len(batch)
+                if not is_transient_db_error(error):
+                    self._mark_recording_gap(batch[0].observed_at)
+                    self._retry_batch = None
+                    for _ in batch:
+                        self._queue.task_done()
+                    lost_count = batch_count + self._discard_queued_rows()
+                    logger.error(
+                        "Dropped %d relay observation rows after permanent database error: %s",
+                        lost_count,
+                        error,
+                    )
+                    continue
+
+                if stopping_before_attempt:
+                    self._mark_recording_gap(batch[0].observed_at)
+                    self._retry_batch = None
+                    for _ in batch:
+                        self._queue.task_done()
+                    lost_count = batch_count + self._discard_queued_rows()
+                    logger.error(
+                        "Relay observation recorder stopped with database unavailable; "
+                        "lost %d rows: %s",
+                        lost_count,
+                        error,
+                    )
+                    break
+
+                logger.warning(
+                    "Relay observation batch could not be persisted; retrying in %.1fs: %s",
+                    retry_delay,
+                    error,
+                )
+                if self._running:
+                    try:
+                        await asyncio.wait_for(self._stop_event.wait(), timeout=retry_delay)
+                    except TimeoutError:
+                        retry_delay = min(retry_delay * 2, 30.0)
             else:
                 for row in batch:
                     if row.reason == "heartbeat":
                         self._last_persisted_heartbeat_at = row.observed_at
-            finally:
+                self._retry_batch = None
                 for _ in batch:
                     self._queue.task_done()
+                retry_delay = 1.0
 
-    def _discard_queued_rows(self) -> None:
+    def _discard_queued_rows(self) -> int:
+        discarded = 0
         while True:
             try:
                 self._queue.get_nowait()
             except asyncio.QueueEmpty:
-                return
+                return discarded
             else:
+                discarded += 1
                 self._queue.task_done()
 
     @property

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from datetime import time as datetime_time
 from typing import TYPE_CHECKING, Any
@@ -37,6 +38,33 @@ def _period_minute(value: Any) -> int | None:
 def _hhmm(minute: int) -> str:
     """Render a minute-of-day (or 1440 day end) as HH:MM."""
     return f"{minute // 60:02d}:{minute % 60:02d}"
+
+
+def select_active_period(
+    rows: Sequence[Mapping[str, Any]], reference_time: str
+) -> dict[str, Any] | None:
+    """Select the period covering ``reference_time`` from ordered profile rows."""
+    if not rows:
+        return None
+
+    ref_parts = reference_time.split(":")
+    ref_mins = int(ref_parts[0]) * 60 + int(ref_parts[1])
+    for row in rows:
+        start_parts = str(row["start_time"]).split(":")
+        end_parts = str(row["end_time"]).split(":")
+        start_mins = int(start_parts[0]) * 60 + int(start_parts[1])
+        end_mins = int(end_parts[0]) * 60 + int(end_parts[1])
+
+        if start_mins == end_mins:
+            return dict(row)
+
+        if start_mins <= end_mins:
+            if start_mins <= ref_mins < end_mins:
+                return dict(row)
+        elif ref_mins >= start_mins or ref_mins < end_mins:
+            return dict(row)
+
+    return None
 
 
 def _coverage_gaps(period_times: list[tuple[int, int, str]]) -> list[str]:
@@ -279,15 +307,14 @@ class ClimatePeriodRepository(BaseRepository):
             logger.error(f"Failed to delete climate periods: {e}")
             return False
 
-    async def get_active_period(
+    async def get_profile_periods(
         self,
         location: str,
         cluster: str,
-        reference_time: str,
-        mode_id: int | None = None,
-        submode_id: int | None = None,
-    ) -> dict[str, Any] | None:
-        """Get the active period at a given time (HH:MM format)."""
+        mode_id: int | None,
+        submode_id: int | None,
+    ) -> list[dict[str, Any]]:
+        """Load every climate period for one exact profile without hiding failures."""
         query = """
             SELECT id, location, cluster, mode_id, submode_id, period_name,
                    start_time, end_time, ramp_minutes,
@@ -301,32 +328,23 @@ class ClimatePeriodRepository(BaseRepository):
             query += " AND mode_id = $3 AND submode_id IS NOT DISTINCT FROM $4"
             params.extend([mode_id, submode_id])
         query += " ORDER BY start_time"
+
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(query, *params)
+        return [dict(row) for row in rows]
+
+    async def get_active_period(
+        self,
+        location: str,
+        cluster: str,
+        reference_time: str,
+        mode_id: int | None = None,
+        submode_id: int | None = None,
+    ) -> dict[str, Any] | None:
+        """Get the active period at a given time (HH:MM format)."""
         try:
-            async with self.pool.acquire() as conn:
-                rows = await conn.fetch(query, *params)
-                if not rows:
-                    return None
-
-                ref_parts = reference_time.split(":")
-                ref_mins = int(ref_parts[0]) * 60 + int(ref_parts[1])
-
-                for row in rows:
-                    start_parts = str(row["start_time"]).split(":")
-                    end_parts = str(row["end_time"]).split(":")
-                    start_mins = int(start_parts[0]) * 60 + int(start_parts[1])
-                    end_mins = int(end_parts[0]) * 60 + int(end_parts[1])
-
-                    if start_mins == end_mins:
-                        return dict(row)
-
-                    if start_mins <= end_mins:
-                        if start_mins <= ref_mins < end_mins:
-                            return dict(row)
-                    else:
-                        if ref_mins >= start_mins or ref_mins < end_mins:
-                            return dict(row)
-
-                return None
+            rows = await self.get_profile_periods(location, cluster, mode_id, submode_id)
+            return select_active_period(rows, reference_time)
         except Exception as e:
             logger.error(f"Failed to get active period: {e}")
             return None

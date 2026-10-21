@@ -157,6 +157,7 @@ async def test_control_loop_uses_latest_interval_for_normal_and_error_sleep(monk
             self._running = True
             self._last_control_error_time = 0.0
             self._consecutive_control_errors = 0
+            self._last_tick_completed_at: float | None = None
 
         async def tick(self):
             self.config.interval = 4
@@ -184,11 +185,10 @@ async def test_control_loop_uses_latest_interval_for_normal_and_error_sleep(monk
         "asyncio",
         SimpleNamespace(sleep=fake_sleep, CancelledError=asyncio.CancelledError),
     )
-    monotonic_values = iter((10.0, 10.0))
     monkeypatch.setattr(
         control_loop_module,
         "time",
-        SimpleNamespace(monotonic=lambda: next(monotonic_values)),
+        SimpleNamespace(monotonic=lambda: 10.0),
     )
 
     await loop._control_loop()

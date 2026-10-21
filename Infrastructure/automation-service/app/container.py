@@ -594,6 +594,12 @@ class ServiceContainer:
             raise RuntimeError("Relay manager not initialized")
         return self.relay_manager
 
+    def get_background_tasks(self) -> BackgroundTasks:
+        """Get background tasks instance."""
+        if not self.background_tasks:
+            raise RuntimeError("Background tasks not initialized")
+        return self.background_tasks
+
     def get_device_command_service(self) -> DeviceCommandService:
         """Get the assigned-device command authority."""
         if not self.device_command_service:

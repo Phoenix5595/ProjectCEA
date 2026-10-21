@@ -2,19 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .base import BaseRepository, logger
+from .base import BaseRepository
 
 if TYPE_CHECKING:
     from asyncpg import Pool
 
-
-_SENSOR_VALUE_SQL = """
-SELECT m.value
-FROM measurement m
-WHERE m.sensor_id = (SELECT sensor_id FROM sensor WHERE name = $1)
-ORDER BY m.time DESC
-LIMIT 1
-"""
 
 _SENSOR_VALUES_BATCH_SQL = """
 WITH requested_names AS (
@@ -32,6 +24,7 @@ LEFT JOIN LATERAL (
     SELECT m.value
     FROM measurement m
     WHERE m.sensor_id = s.sensor_id
+      AND m.time > now() - make_interval(secs => $2)
     ORDER BY m.time DESC
     LIMIT 1
 ) latest ON s.sensor_id IS NOT NULL
@@ -45,21 +38,16 @@ class SensorRepository(BaseRepository):
     def __init__(self, pool: Pool | None = None) -> None:
         super().__init__(pool)
 
-    async def get_sensor_values_batch(self, sensor_names: list[str]) -> dict[str, float | None]:
-        """Read each unique sensor name's newest database measurement."""
+    async def get_sensor_values_batch(
+        self, sensor_names: list[str], *, max_age_sec: float
+    ) -> dict[str, float | None]:
+        """Read each unique sensor name's newest database measurement within its age limit."""
         names = list(dict.fromkeys(sensor_names))
         if not names:
             return {}
 
-        try:
-            async with self.pool.acquire() as conn:
-                rows = await conn.fetch(_SENSOR_VALUES_BATCH_SQL, names)
-        except Exception as exc:
-            logger.error("Database batch read failed; falling back to individual reads: %s", exc)
-            values: dict[str, float | None] = {}
-            for sensor_name in names:
-                values[sensor_name] = await self._get_sensor_value_fallback(sensor_name)
-            return values
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(_SENSOR_VALUES_BATCH_SQL, names, float(max_age_sec))
 
         values: dict[str, float | None] = dict.fromkeys(names)
         for row in rows:
@@ -68,13 +56,3 @@ class SensorRepository(BaseRepository):
             if sensor_name in values:
                 values[sensor_name] = None if value is None else float(value)
         return values
-
-    async def _get_sensor_value_fallback(self, sensor_name: str) -> float | None:
-        """Read one sensor with the original query when the batch query fails."""
-        try:
-            async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(_SENSOR_VALUE_SQL, sensor_name)
-            return float(row["value"]) if row else None
-        except Exception as exc:
-            logger.error("Database read failed for %s: %s", sensor_name, exc)
-            return None

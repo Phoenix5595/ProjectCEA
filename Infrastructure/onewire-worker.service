@@ -1,8 +1,8 @@
 [Unit]
 Description=CEA 1-Wire Worker (DS18B20 lab/water temp)
 After=redis-server.service network-online.target
-Requires=redis-server.service
-Wants=network-online.target
+Wants=network-online.target redis-server.service
+StartLimitIntervalSec=0
 OnFailure=service-error-handler@%n.service
 
 [Service]

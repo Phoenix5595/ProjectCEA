@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+import logging
 from uuid import UUID
 
 import pytest
@@ -11,13 +12,13 @@ from app.control.relay_board_state_manager import RelayBoardStateManager
 from app.control.relay_observation_recorder import RelayObservation, RelayObservationRecorder
 from app.control.runtime_device_snapshot import RuntimeDeviceSnapshot
 
-
 BASE = datetime(2026, 9, 25, 12, 0, tzinfo=UTC)
 
 
 class FakeStore:
-    def __init__(self, *, failures: int = 0) -> None:
+    def __init__(self, *, failures: int = 0, failure: Exception | None = None) -> None:
         self.failures = failures
+        self.failure = failure or OSError("disposable fake database outage")
         self.attempts = 0
         self.rows: list[tuple[RelayObservation, ...]] = []
         self.exhausted = asyncio.Event()
@@ -30,7 +31,7 @@ class FakeStore:
             self.failures -= 1
             if self.failures == 0:
                 self.exhausted.set()
-            raise OSError("disposable fake database outage")
+            raise self.failure
         self.rows.append(rows)
 
 
@@ -43,6 +44,17 @@ class BlockingStore(FakeStore):
         self.started.set()
         await self.release.wait()
         self.rows.append(rows)
+
+
+class BlockingPermanentFailureStore(FakeStore):
+    def __init__(self) -> None:
+        super().__init__(failures=1, failure=ValueError("disposable invalid row"))
+        self.release = asyncio.Event()
+
+    async def append(self, rows: tuple[RelayObservation, ...]) -> None:
+        self.started.set()
+        await self.release.wait()
+        await super().append(rows)
 
 
 class FakeRegistry:
@@ -65,9 +77,7 @@ def make_snapshot(
     assignments: dict[int, tuple[int, str, str, str, str]] | None = None,
 ) -> RuntimeDeviceSnapshot:
     hierarchy: dict[str, dict[str, dict[str, dict[str, object]]]] = {}
-    for channel, (device_id, location, cluster, name, device_type) in (
-        assignments or {}
-    ).items():
+    for channel, (device_id, location, cluster, name, device_type) in (assignments or {}).items():
         hierarchy.setdefault(location, {}).setdefault(cluster, {})[name] = {
             "device_id": device_id,
             "device_type": device_type,
@@ -95,9 +105,7 @@ def heartbeat_rows(rows: list[RelayObservation]) -> list[RelayObservation]:
 async def test_initial_off_and_rapid_off_on_off_samples_preserve_every_transition() -> None:
     store = FakeStore()
     recorder = RelayObservationRecorder(store)
-    registry = FakeRegistry(
-        make_snapshot(3, {0: (17, "flower", "main", "heater", "heating")})
-    )
+    registry = FakeRegistry(make_snapshot(3, {0: (17, "flower", "main", "heater", "heating")}))
     registry.subscribe(recorder.on_registry_snapshot)
     await recorder.start()
 
@@ -212,22 +220,17 @@ async def test_initial_persists_light_identity_and_unassigned_channel_facts() ->
     assert initial[0].location is None
 
 
-
 @pytest.mark.asyncio
 async def test_owner_change_while_on_uses_subscribed_snapshot_and_new_event_identity() -> None:
     store = FakeStore()
     recorder = RelayObservationRecorder(store, now=lambda: BASE + timedelta(seconds=4))
-    registry = FakeRegistry(
-        make_snapshot(10, {2: (20, "flower", "main", "heater-a", "heating")})
-    )
+    registry = FakeRegistry(make_snapshot(10, {2: (20, "flower", "main", "heater-a", "heating")}))
     registry.subscribe(recorder.on_registry_snapshot)
     await recorder.start()
 
     on = (False, False, True) + (False,) * 13
     recorder.observe_sample(on, BASE)
-    registry.publish(
-        make_snapshot(11, {2: (21, "flower", "main", "heater-b", "heating")})
-    )
+    registry.publish(make_snapshot(11, {2: (21, "flower", "main", "heater-b", "heating")}))
     await recorder.stop()
 
     rows = collected(store)
@@ -238,31 +241,23 @@ async def test_owner_change_while_on_uses_subscribed_snapshot_and_new_event_iden
     assert changed_owner[0].device_id == 21
     assert changed_owner[0].device_name == "heater-b"
     assert changed_owner[0].registry_version == 11
-    assert not any(
-        row.reason == "assignment_changed" and row.device_id == 20 for row in rows
-    )
+    assert not any(row.reason == "assignment_changed" and row.device_id == 20 for row in rows)
 
 
 @pytest.mark.asyncio
 async def test_assignment_change_while_stale_records_unknown_state_for_new_owner() -> None:
     store = FakeStore()
     recorder = RelayObservationRecorder(store, now=lambda: BASE + timedelta(seconds=3))
-    registry = FakeRegistry(
-        make_snapshot(1, {5: (40, "flower", "main", "heater-a", "heating")})
-    )
+    registry = FakeRegistry(make_snapshot(1, {5: (40, "flower", "main", "heater-a", "heating")}))
     registry.subscribe(recorder.on_registry_snapshot)
     await recorder.start()
 
     recorder.observe_sample((False,) * 5 + (True,) + (False,) * 10, BASE)
     recorder.observe_sample(None, BASE + timedelta(seconds=1))
-    registry.publish(
-        make_snapshot(2, {5: (41, "flower", "main", "heater-b", "heating")})
-    )
+    registry.publish(make_snapshot(2, {5: (41, "flower", "main", "heater-b", "heating")}))
     await recorder.stop()
 
-    assignment = [
-        row for row in collected(store) if row.reason == "assignment_changed"
-    ]
+    assignment = [row for row in collected(store) if row.reason == "assignment_changed"]
     assert len(assignment) == 1
     assert assignment[0].device_id == 41
     assert assignment[0].observed_state is None
@@ -344,32 +339,91 @@ async def test_queue_overflow_requires_gap_markers_before_fresh_baselines() -> N
 
 
 @pytest.mark.asyncio
-async def test_database_failure_discards_uncertain_rows_then_recovers_with_gap_and_baseline() -> None:
+async def test_database_failure_retains_rows_and_recovers_in_order_without_gap() -> None:
     store = FakeStore(failures=3)
     recorder = RelayObservationRecorder(store)
     await recorder.start()
     recorder.observe_sample((False,) * 16, BASE)
 
     await store.exhausted.wait()
-    for _ in range(100):
-        if recorder.coverage_incomplete:
-            break
-        await asyncio.sleep(0)
-    assert recorder.coverage_incomplete is True
+    assert recorder.coverage_incomplete is False
+    assert recorder.pending_count == 17
 
     recorder.observe_sample((True,) + (False,) * 15, BASE + timedelta(seconds=1))
-    await recorder._queue.join()
+    assert recorder.pending_count == 18
+    await asyncio.wait_for(recorder._queue.join(), timeout=3)
     await recorder.stop()
 
     rows = collected(store)
-    assert [row.reason for row in rows[:16]] == ["recording_gap"] * 16
-    assert [row.reason for row in rows[16:32]] == ["recovered"] * 16
-    assert all(row.observed_state is None for row in rows[:16])
-    assert rows[16].observed_state is True
-    assert rows[16].observed_at == BASE + timedelta(seconds=1)
+    assert [row.reason for row in rows] == ["initial"] * 16 + ["heartbeat", "state_changed"]
+    assert all(row.observed_state is False for row in rows[:16])
+    assert rows[16].reason == "heartbeat"
+    assert rows[17].observed_state is True
+    assert rows[17].observed_at == BASE + timedelta(seconds=1)
+    assert not any(row.reason == "recording_gap" for row in rows)
+    assert recorder.coverage_incomplete is False
+    assert store.attempts >= 5
+
+
+@pytest.mark.asyncio
+async def test_stop_marks_and_logs_rows_lost_after_final_database_attempt(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    store = FakeStore(failures=100)
+    recorder = RelayObservationRecorder(store)
+    await recorder.start()
+    recorder.observe_sample((False,) * 16, BASE)
+
+    for _ in range(1_000):
+        if store.attempts >= 3:
+            break
+        await asyncio.sleep(0.001)
+    assert store.attempts >= 3
+
+    with caplog.at_level(logging.ERROR, logger="app.control.relay_observation_recorder"):
+        await recorder.stop()
+
+    assert recorder.coverage_incomplete is True
+    assert recorder.pending_count == 0
+    assert collected(store) == []
+    assert store.attempts >= 6
+    assert any("lost 17 rows" in record.message for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_permanent_database_error_drops_poison_and_later_rows_recover(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    store = BlockingPermanentFailureStore()
+    recorder = RelayObservationRecorder(store)
+    await recorder.start()
+    recorder.observe_sample((False,) * 16, BASE)
+    await store.started.wait()
+
+    recorder.observe_sample((True,) + (False,) * 15, BASE + timedelta(seconds=1))
+    assert recorder.pending_count == 18
+    with caplog.at_level(logging.ERROR, logger="app.control.relay_observation_recorder"):
+        store.release.set()
+        await store.exhausted.wait()
+        for _ in range(100):
+            if recorder.coverage_incomplete:
+                break
+            await asyncio.sleep(0)
+
+        assert recorder.coverage_incomplete is True
+        assert recorder.pending_count == 0
+        recorder.observe_sample((True,) + (False,) * 15, BASE + timedelta(seconds=2))
+        await asyncio.wait_for(recorder._queue.join(), timeout=1)
+        await recorder.stop()
+
+    rows = collected(store)
+    assert [row.reason for row in rows] == ["recording_gap"] * 16 + ["recovered"] * 16 + [
+        "heartbeat"
+    ]
     assert rows[0].observed_at == BASE
-    assert rows[-1].reason == "heartbeat"
-    assert store.attempts >= 4
+    assert rows[16].observed_at == BASE + timedelta(seconds=2)
+    assert store.attempts == 2
+    assert any("Dropped 18 relay observation rows" in record.message for record in caplog.records)
 
 
 @pytest.mark.asyncio
@@ -427,6 +481,7 @@ async def test_sampler_callback_never_waits_for_database_or_issues_a_relay_comma
     rows = collected(store)
     assert [row.observed_state for row in rows if row.reason == "state_changed"] == [True]
 
+
 @pytest.mark.asyncio
 async def test_raised_sampler_failure_marks_stale_with_event_time_identity() -> None:
     class RaisingSampler:
@@ -435,9 +490,9 @@ async def test_raised_sampler_failure_marks_stale_with_event_time_identity() -> 
 
     store = FakeStore()
     recorder = RelayObservationRecorder(store)
-    FakeRegistry(
-        make_snapshot(5, {0: (17, "flower", "main", "heater", "heating")})
-    ).subscribe(recorder.on_registry_snapshot)
+    FakeRegistry(make_snapshot(5, {0: (17, "flower", "main", "heater", "heating")})).subscribe(
+        recorder.on_registry_snapshot
+    )
     await recorder.start()
     board = RelayBoardStateManager(
         RaisingSampler(),

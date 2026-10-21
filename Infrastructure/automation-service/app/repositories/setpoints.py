@@ -4,6 +4,9 @@ from datetime import datetime
 import time
 from typing import TYPE_CHECKING, Any
 
+from shared.db_errors import is_transient_db_error
+from shared.replay_buffer import ReplayBuffer
+
 from .base import BaseRepository, logger
 
 if TYPE_CHECKING:
@@ -16,7 +19,9 @@ class SetpointRepository(BaseRepository):
     def __init__(self, pool: Pool | None = None, redis_client: Any = None) -> None:
         super().__init__(pool)
         self._redis_client = redis_client
-        self._batch_buffer: list[dict[str, Any]] = []
+        self._batch_buffer: ReplayBuffer[dict[str, Any]] = ReplayBuffer(
+            12_000, name="effective_setpoints"
+        )
         # Reduced from 10s to 5s for faster dashboard updates (trade-off: more DB writes)
         self._batch_interval = 5.0
         self._last_batch_flush = time.time()
@@ -34,28 +39,22 @@ class SetpointRepository(BaseRepository):
             return 0
 
         flushed_count = 0
-        batch_data: list[dict[str, Any]] = []
-        try:
-            # Use a single batch insert for all buffered records
-            batch_data = self._batch_buffer.copy()
-            self._batch_buffer.clear()
-
-            if batch_data:
-                # Insert all records in a single transaction
+        insert_query = """
+                INSERT INTO effective_setpoints (
+                    "time", location, cluster, device_name, mode,
+                    effective_heating_setpoint, effective_cooling_setpoint, effective_humidity_setpoint,
+                    effective_co2_setpoint, effective_vpd_setpoint,
+                    nominal_heating_setpoint, nominal_cooling_setpoint, nominal_humidity_setpoint,
+                    nominal_co2_setpoint, nominal_vpd_setpoint,
+                    ramp_progress_heating, ramp_progress_cooling, ramp_progress_humidity,
+                    ramp_progress_co2, ramp_progress_vpd,
+                    effective_light_intensity, nominal_light_intensity, ramp_progress_light
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+            """
+        while self._batch_buffer:
+            batch_data = self._batch_buffer.peek(2_000)
+            try:
                 async with self.pool.acquire() as conn:
-                    # Prepare the insert statement
-                    insert_query = """
-                            INSERT INTO effective_setpoints (
-                                "time", location, cluster, device_name, mode,
-                                effective_heating_setpoint, effective_cooling_setpoint, effective_humidity_setpoint,
-                                effective_co2_setpoint, effective_vpd_setpoint,
-                                nominal_heating_setpoint, nominal_cooling_setpoint, nominal_humidity_setpoint,
-                                nominal_co2_setpoint, nominal_vpd_setpoint,
-                                ramp_progress_heating, ramp_progress_cooling, ramp_progress_humidity,
-                                ramp_progress_co2, ramp_progress_vpd,
-                                effective_light_intensity, nominal_light_intensity, ramp_progress_light
-                            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
-                        """
                     await conn.executemany(
                         insert_query,
                         [
@@ -87,14 +86,28 @@ class SetpointRepository(BaseRepository):
                             for record in batch_data
                         ],
                     )
+            except Exception as error:
+                batch_count = len(batch_data)
+                if is_transient_db_error(error):
+                    logger.warning(
+                        "Failed to flush batch buffer; retaining %d effective setpoint rows: %s",
+                        batch_count,
+                        error,
+                    )
+                    break
 
-                    flushed_count = len(batch_data)
-                logger.debug(f"Flushed {flushed_count} batched effective setpoint records")
+                self._batch_buffer.consume(batch_count)
+                logger.error(
+                    "Dropped %d effective setpoint rows after permanent database error: %s",
+                    batch_count,
+                    error,
+                    exc_info=True,
+                )
+                continue
 
-        except Exception as e:
-            logger.error(f"Failed to flush batch buffer: {e}", exc_info=True)
-            # Re-add failed records to buffer for retry
-            self._batch_buffer.extend(batch_data)
+            self._batch_buffer.consume(len(batch_data))
+            flushed_count += len(batch_data)
+            logger.debug("Flushed %d batched effective setpoint records", len(batch_data))
 
         self._last_batch_flush = time.time()
         return flushed_count
@@ -196,7 +209,7 @@ class SetpointRepository(BaseRepository):
                 "ramp_progress_light": ramp_progress_light,
             }
 
-            self._batch_buffer.append(record)
+            accepted = self._batch_buffer.offer([record])
 
             # Check if it's time to flush the batch
             current_time = time.time()
@@ -231,7 +244,7 @@ class SetpointRepository(BaseRepository):
                     mode=mode,
                 )
 
-            return True
+            return accepted == 1
         except Exception as e:
             logger.error(f"Error buffering effective setpoints: {e}")
             return False
