@@ -509,15 +509,6 @@ class _MemoryConnection:
                 rows, key=lambda row: (row["location"], row["cluster"], row["device_name"])
             )
         if "FROM schedules" in sql:
-            if "device_name = 'room_schedule'" in sql:
-                location, cluster = args
-                return [
-                    {"id": row_id}
-                    for row_id, row in sorted(store.schedules.items())
-                    if row["location"] == location
-                    and row["cluster"] == cluster
-                    and row["device_name"] == "room_schedule"
-                ]
             if "ORDER BY start_time" in sql:
                 rows = list(store.schedules.values())
                 if "WHERE location = $1 AND cluster = $2" in sql:

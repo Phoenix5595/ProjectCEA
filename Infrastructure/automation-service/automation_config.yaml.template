@@ -1,5 +1,5 @@
 # Automation Service Configuration
-# Copy this file to automation_config.yaml and fill in your device mappings
+# Copy this file to automation_config.yaml. Devices, relay channels and dimming boards come from the device registry in the database, not from this file.
 
 # Hardware Configuration
 # MCP23017 = relays only (on/off). DFR0971 = dimming only (0-10V). Use separate buses when possible.
@@ -10,51 +10,6 @@ hardware:
   i2c_address: 0x20        # MCP23017 I2C address (0x20-0x27, check with: i2cdetect -y 1)
   active_low: true         # SainSmart 16-channel relay board is active-LOW ("Low Level Trigger"); flip to false for active-HIGH boards
   require_mcp: true        # FATAL on probe failure — no silent simulation fallback (real hardware required)
-
-# Device Configuration
-# MCP: 16 relay channels (0-15). DFR0971: 6 dimming channels (3 boards × 2 channels each).
-# Map each device to its MCP23017 channel (0-15); lights also need dimming_board_id + dimming_channel (0 or 1).
-# Flower Room: all equipment under `main` only. Use `sensors:` (front/back/main) for sensor clusters.
-devices:
-  "Flower Room":
-    main:
-      heater_1:
-        channel: 0
-        device_type: "heater"
-        pid_enabled: true
-        interlock_with:
-          - "exhaust_fan"
-      exhaust_fan:
-        channel: 1
-        device_type: "fan"
-        pid_enabled: false
-        interlock_with: []
-      # Add lights, dehumidifier, etc.
-  
-  "Veg Room":
-    main:
-      # Devices for Veg Room main cluster
-      heater_1:
-        channel: 8
-        device_type: "heater"
-        pid_enabled: true
-        interlock_with:
-          - "exhaust_fan"
-      
-      exhaust_fan:
-        channel: 9
-        device_type: "fan"
-        pid_enabled: false
-        interlock_with: []
-      
-      # Add more devices...
-  
-  # Add more locations as needed...
-  # "Lab":
-  #   main:
-  #     device_name:
-  #       channel: X
-  #       ...
 
 # Control Parameters
 control:

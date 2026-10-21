@@ -107,33 +107,3 @@ class SensorReader:
             return dict.fromkeys(sensor_names)
 
         return values
-
-    def get_sensor_for_setpoint_type(
-        self, location: str, cluster: str, setpoint_type: str, sensor_mapping: dict[str, Any]
-    ) -> str | None:
-        """Get sensor name for a setpoint type.
-
-        Args:
-            location: Location name
-            cluster: Cluster name
-            setpoint_type: Setpoint type (e.g., 'heating_setpoint', 'cooling_setpoint', 'vpd_setpoint', 'co2')
-            sensor_mapping: Sensor mapping from config
-
-        Returns:
-            Sensor name or None if not found
-        """
-        location_sensors = sensor_mapping.get(location, {})
-        cluster_sensors = location_sensors.get(cluster, {})
-
-        # Map setpoint types to sensor names
-        if setpoint_type in ["heating_setpoint", "cooling_setpoint"]:
-            return cluster_sensors.get("temperature_sensor")
-        elif setpoint_type in ["vpd", "vpd_setpoint"]:
-            return cluster_sensors.get("vpd_sensor")
-        elif setpoint_type == "co2":
-            return cluster_sensors.get("co2_sensor")
-        elif setpoint_type in ["humidity", "humidity_setpoint"]:
-            return cluster_sensors.get("humidity_sensor")
-        else:
-            logger.warning(f"Unknown setpoint_type: {setpoint_type}")
-            return None

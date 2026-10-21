@@ -177,9 +177,6 @@ class _FakeDatabaseManager:
         self.pool = self._pool
         self.initialized = True
 
-    async def load_schedule_state_to_redis(self) -> None:
-        return None
-
     async def close(self) -> None:
         self.closed = True
 

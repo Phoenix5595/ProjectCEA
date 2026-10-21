@@ -386,31 +386,6 @@ class ScheduleRepository(BaseRepository):
             logger.error(f"Failed to delete schedule: {e}")
             return False
 
-    async def delete_schedules_by_device_name(
-        self, location: str, cluster: str, device_name: str
-    ) -> int:
-        """Delete all schedules referencing a specific device_name in a location/cluster."""
-        try:
-            async with self.pool.acquire() as conn:
-                result = await conn.execute(
-                    "DELETE FROM schedules WHERE location = $1 AND cluster = $2 AND device_name = $3",
-                    location,
-                    cluster,
-                    device_name,
-                )
-                deleted = int(result.split()[-1]) if result else 0
-                if deleted:
-                    await self._publish_schedule_changed(
-                        location=location,
-                        cluster=cluster,
-                        action="deleted",
-                        extra={"device_name": device_name, "count": deleted},
-                    )
-                return deleted
-        except Exception as e:
-            logger.error(f"Failed to delete schedules for {device_name}: {e}")
-            return 0
-
     async def delete_schedules_bulk(
         self, schedule_ids: list[int], conn: Connection | None = None
     ) -> int:
@@ -438,41 +413,6 @@ class ScheduleRepository(BaseRepository):
             if conn is not None:
                 raise
             logger.error(f"Failed to delete schedules: {e}")
-            return 0
-
-    async def fix_light_schedules_day_of_week(self) -> int:
-        """Force light schedules to be daily (day_of_week = NULL).
-
-        Targets schedules where:
-        - mode is SUN or DAY (light sun schedule)
-        - target_intensity IS NOT NULL (light dimming schedule)
-        - day_of_week IS NOT NULL (invalid for lights)
-
-        Returns:
-            Number of schedules updated.
-        """
-        try:
-            async with self.pool.acquire() as conn:
-                rows = await conn.fetch("""
-                    UPDATE schedules
-                    SET day_of_week = NULL
-                    WHERE mode IN ('SUN', 'DAY')
-                      AND target_intensity IS NOT NULL
-                      AND day_of_week IS NOT NULL
-                    RETURNING id
-                """)
-                fixed = len(rows)
-                if fixed:
-                    logger.info(f"Updated {fixed} light schedules to daily (day_of_week=NULL)")
-                    await self._publish_schedule_changed(
-                        location=None,
-                        cluster=None,
-                        action="fixed_light_weekday",
-                        extra={"count": fixed},
-                    )
-                return fixed
-        except Exception as e:
-            logger.error(f"Failed to fix light schedules day_of_week: {e}")
             return 0
 
     async def update_light_schedule_target(
@@ -521,14 +461,6 @@ class ScheduleRepository(BaseRepository):
             logger.error(f"Failed to update light schedule target: {e}")
             return 0
 
-    async def get_room_schedule(self, location: str, cluster: str) -> dict[str, Any] | None:
-        """Get room schedule (day/night times) for a location/cluster.
-
-        DEPRECATED: room_schedule rows are deleted in T10. This method now
-        returns None so callers fall back to mode_parameters.
-        """
-        return None
-
     async def update_light_schedule_ramp_times(
         self,
         location: str,
@@ -537,7 +469,7 @@ class ScheduleRepository(BaseRepository):
         ramp_down_minutes: int,
         conn: Connection | None = None,
     ) -> int:
-        """Update ramp times for all DAY light schedules and room_schedule in a location/cluster.
+        """Update ramp times for all DAY light schedules in a location/cluster.
 
         ``conn`` joins the caller's transaction and propagates SQL failures;
         its notifications are deferred to the owning post-commit boundary.
@@ -546,11 +478,7 @@ class ScheduleRepository(BaseRepository):
         query = """
                     UPDATE schedules
                     SET ramp_up_duration = $3, ramp_down_duration = $4
-                    WHERE location = $1 AND cluster = $2
-                    AND (
-                        device_name LIKE 'light%' AND mode IN ('SUN', 'DAY')
-                        OR device_name = 'room_schedule'
-                    )
+                    WHERE location = $1 AND cluster = $2 AND device_name LIKE 'light%' AND mode IN ('SUN', 'DAY')
                 """
         if conn is not None:
             result = await conn.execute(

@@ -254,11 +254,6 @@ class TickMixin:
                     "device_processing_time", device_time / 1000.0
                 )
 
-    # _get_sensor_values moved to SensorReader
-    # _get_sensor_for_setpoint_type moved to SensorReader
-    # _compute_effective_setpoints method moved to SetpointManager
-    # _process_vpd_control moved to device_controller
-
     async def _expire_manual_overrides(self) -> None:
         """Restore elapsed in-process timed commands without querying history."""
         if self.device_command_service is not None:

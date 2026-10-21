@@ -11,7 +11,6 @@ class AppConfig(BaseModel):
     """Validate YAML hardware, service-setting fallbacks, and sensor metadata."""
 
     hardware: dict[str, Any] | None = None
-    automation: dict[str, Any] | None = None
     control: dict[str, Any] | None = None
     model_config = ConfigDict(extra="allow")
 

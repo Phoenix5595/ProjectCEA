@@ -250,7 +250,3 @@ class SetpointRepository(BaseRepository):
         except Exception as e:
             logger.error(f"Error buffering effective setpoints: {e}")
             return False
-
-    def invalidate_all_cache(self) -> None:
-        """Full cache clear for this repository."""
-        self.clear_cache()

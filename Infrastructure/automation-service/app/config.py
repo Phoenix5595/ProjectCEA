@@ -66,9 +66,7 @@ class ConfigLoader:
             raise FileNotFoundError(f"Config file not found: {config_path}")
 
         self.config_path = Path(config_path)
-        self.schedules_path = self.config_path.parent / "schedules.yaml"
         self._config: dict[str, Any] = {}
-        self._schedules: list[dict[str, Any]] = []
         self._config_lock = threading.Lock()
         self._device_repo: DeviceRepository | None = None
         self._runtime_device_registry: RuntimeDeviceRegistry | None = None
@@ -98,19 +96,11 @@ class ConfigLoader:
             control.pop("default_setpoints", None)
         self._validate_config()
 
-        schedules_data = _load_yaml_file(self.schedules_path)
-        if schedules_data:
-            self._schedules = schedules_data.get("schedules", [])
-        elif "schedules" in self._config:
-            self._schedules = self._config["schedules"]
-
         self._settings_fallback_values = self._settings_from_yaml()
         if not self._service_settings_loaded:
             self._effective_settings = dict(self._settings_fallback_values)
 
         logger.info(f"Loaded config from {self.config_path}")
-        if self._schedules:
-            logger.info(f"Loaded {len(self._schedules)} schedules")
 
     async def load_service_settings(self, pool: Any) -> None:
         """Hydrate automation settings from DB, cache, then YAML fallback."""
@@ -169,19 +159,6 @@ class ConfigLoader:
 
         if "pid_defaults" in control:
             settings["pid_defaults"] = control["pid_defaults"]
-        else:
-            pid = control.get("pid") or {}
-            defaults: dict[str, dict[str, Any]] = {}
-            for device_type in ("heater", "fan", "co2", "default"):
-                gains = {
-                    gain: pid[key]
-                    for gain in ("kp", "ki", "kd")
-                    if (key := f"{device_type}_{gain}") in pid
-                }
-                if gains:
-                    defaults[device_type] = gains
-            if defaults:
-                settings["pid_defaults"] = defaults
         return settings
 
     def get(self, key: str, default: Any = None) -> Any:
@@ -222,19 +199,7 @@ class ConfigLoader:
         control = dict(self._config.get("control", {}))
         control.pop("default_setpoints", None)
         control.update(self._effective_settings)
-        control["pid"] = self.get_pid_config()
         return control
-
-    def get_pid_config(self) -> dict[str, Any]:
-        """Get PID settings in the legacy flattened shape used by callers."""
-        pid = dict(self._config.get("control", {}).get("pid", {}))
-        defaults = self._effective_settings.get("pid_defaults", {})
-        if isinstance(defaults, dict):
-            for device_type, gains in defaults.items():
-                if isinstance(gains, dict):
-                    for gain, value in gains.items():
-                        pid[f"{device_type}_{gain}"] = value
-        return pid
 
     def get_pid_defaults(self) -> dict[str, Any]:
         """Get current DB/cache/YAML PID defaults."""
@@ -284,10 +249,6 @@ class ConfigLoader:
         except (TypeError, ValueError):
             return 0.1
 
-    def get_schedules(self) -> list[dict[str, Any]]:
-        """Get schedules."""
-        return self._schedules
-
     def get_interlocks(self) -> list[dict[str, Any]]:
         """Get interlock rules."""
         return self._config.get("interlocks", [])
@@ -306,12 +267,6 @@ class ConfigLoader:
             "kd": gains.get("kd", 0.0),
         }
 
-    def invalidate_device_cache(self) -> None:
-        """Invalidate the in-memory device hierarchy cache."""
-        self._device_cache._device_hierarchy_cache = None
-        self._device_cache._cache_timestamp = None
-        logger.debug("Invalidated device hierarchy cache")
-
     async def refresh_runtime_device_snapshot(self) -> int:
         """Install one complete snapshot after a committed device-registry mutation."""
         if self._runtime_device_registry is None:
@@ -321,7 +276,6 @@ class ConfigLoader:
 
     def reload(self) -> None:
         """Reload configuration from files (incremental reload)."""
-        self._config.copy()
         self.load()
         logger.info("Configuration reloaded")
         # Note: Incremental reload - changes applied as loaded, not atomic
