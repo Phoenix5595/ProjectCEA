@@ -20,7 +20,7 @@ Sensor display names in the monitoring manifests follow frontend mappings; backe
 `src/config/clusterTopology.ts` mirrors `Infrastructure/shared/cluster_topology.py` and is the single registry of room → device cluster + sensor sub-clusters.
 
 - Poll `/api/devices/{room}/{cluster}` over `ZONES` (all `cluster: "main"`).
-- Poll `/api/sensors/{room}/{cluster}` over `getSensorPollZones()`.
+- Poll `/api/sensors/{room}/{cluster}/live` over `getSensorPollZones()`.
 - Use `getDashboardPollZones()` only for the bulk-Redis-key fan-out, which mixes both planes.
 
 ## Dashboard Status

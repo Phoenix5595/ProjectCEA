@@ -33,7 +33,7 @@ All new Redis keys must use builders from [`redis_keys.py`](redis_keys.py). Do n
 
 ## Blast-Radius Guidance
 
-Changing any file here requires checking every consumer. Use `codegraph_callers` or grep before editing. Run `python3 Infrastructure/scripts/validate_cluster_topology.py` after topology changes.
+Changing any file here requires checking every consumer. Use `git grep` before editing (plain grep misses tracked tests hidden by `.gitignore`). Run `python3 Infrastructure/scripts/validate_cluster_topology.py` after topology changes.
 
 ---
 

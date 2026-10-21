@@ -64,7 +64,7 @@ Regenerate with `Infrastructure/scripts/generate_schema_baseline.sh <release_pat
 
 ## Redis live vs Postgres time series
 
-- Redis current sensor values use `cea:sensor:{location}:{cluster}:{sensor_type}`. CAN values/timestamps persist without a TTL; soil and 1-Wire values/timestamps expire after 10 s. The telemetry stream `sensor:raw` is capped at 100,000 entries, and `cea:events:operational` is capped at 50,000 entries or 24 hours. `stream:control` is retired and no longer published.
+- Redis current sensor values use `cea:sensor:{location}:{cluster}:{sensor_type}`. CAN values/timestamps persist without a TTL; soil and 1-Wire values/timestamps expire after 10 s. The telemetry stream `sensor:raw` is capped at 100,000 entries, and `cea:events:operational` is capped at 50,000 entries or 24 hours.
 - TimescaleDB holds historical `measurement` rows and continuous aggregates.
 
 ## Aggregate ladders

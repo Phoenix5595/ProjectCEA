@@ -1,6 +1,6 @@
 # Control Layer
 
-Deterministic 1-second control loop for climate, lights, and hardware outputs.
+Deterministic control loop (1 s by default; `update_interval` allows 1–5 s) for climate, lights, and hardware outputs.
 
 ## Package layout
 

@@ -13,6 +13,10 @@ It may read TimescaleDB and Redis publication data; it never writes either.
 | `monitoring_service/main.py` | FastAPI app and read-client lifecycle |
 | `monitoring_service/config.py` | `MONITORING_*` environment boundary |
 | `monitoring_service/readiness.py` | Typed Postgres/Redis readiness contract |
+| `monitoring_service/control_reads.py` | Runtime facade over the control read repositories (`RuntimeControlReads`) |
+| `monitoring_service/control_history_repository.py` | Read-only control history (`ControlHistoryRepository`) |
+| `monitoring_service/relay_timeline_repository.py` | Read-only relay timeline (`RelayTimelineRepository`) |
+| `monitoring_service/control_publication_repository.py` | Current and future control publications from Redis (`ControlPublicationRepository`) |
 | `tests/test_smoke.py` | Endpoint and import-boundary smoke coverage |
 | `../shared/health.py` | Shared non-mutating Postgres/Redis probes |
 

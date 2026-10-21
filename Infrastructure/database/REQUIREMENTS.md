@@ -124,12 +124,6 @@ Redis owns live/current state; Postgres owns history and configuration. The moni
 - Drop min/max from rollups.
 - Rely on session timezone for exported data.
 
-## Database rename and grow-policy activation boundary
+## Grow-policy activation boundary
 
-Checked-in source defaults and operator examples target the lowercase
-`sj_cea` database. This is a source target only: it does not mean the deployed
-database has been renamed, external service settings have changed, or history
-retention has been activated. Production rename, configuration reconciliation,
-and lifecycle activation remain owner-authorized future actions. Source
-hypertables must not receive age-only compression or retention policies;
-grow/Veg lifecycle activation requires a read-only source-age policy preflight.
+Production is `sj_cea` (renamed from `cea_sensors` on 2026-10-19; see `AGENTS.md`). Grow/Veg lifecycle activation remains an owner-authorized action. Source hypertables must not receive retention policies, or compression policies with `compress_after` under 3 months; `grow_archive_service/policy_gate.py` checks this read-only before lifecycle work.

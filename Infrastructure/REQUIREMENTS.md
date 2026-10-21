@@ -15,8 +15,8 @@ Stable cross-service contracts for ProjectCEA. For current architecture, see `AR
 ## Redis Durability
 
 - AOF is on with `appendfsync everysec`. At most one second of writes is lost on crash.
-- `sensor:raw` is capped at 100,000 entries (`Infrastructure/shared/redis_keys.py`). `stream:control` is retired and no longer published; the purge tool preserves any existing key.
-- Current sensor values use only `cea:sensor:{location}:{cluster}:{sensor_type}` and its `_ts` timestamp companion; `sensor:{name}` short-key writes are retired.
+- `sensor:raw` is capped at 100,000 entries (`Infrastructure/shared/redis_keys.py`).
+- Current sensor values use only `cea:sensor:{location}:{cluster}:{sensor_type}` and its `_ts` timestamp companion.
 - New code must use the builders in `Infrastructure/shared/redis_keys.py`; do not introduce new top-level key namespaces without adding them here.
 
 ## Time Synchronization

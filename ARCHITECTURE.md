@@ -89,8 +89,8 @@ Startup installs one immutable `RuntimeDeviceSnapshot` per tick. The snapshot fr
 
 Each tick:
 
-1. Read sensor state from Redis.
-2. Capture the current `RuntimeDeviceSnapshot` once.
+1. Capture the current `RuntimeDeviceSnapshot` once.
+2. Read every room's mapped sensors in one database query (newest measurement within the last-good hold period); on a database error, fall back to the topology-qualified Redis values.
 3. Resolve photoperiod from `mode_parameters` and light targets from `light_target_intensity`.
 4. Apply supplemental or override light programs from `light_programs`.
 5. Evaluate VPD-led climate logic.
@@ -116,7 +116,7 @@ Sources of truth: `Infrastructure/shared/cluster_topology.py` (Python) and `Infr
 
 ## Redis and TimescaleDB
 
-Redis holds live state and streams. `sensor:raw` is the telemetry stream, capped at 100,000 entries. `stream:control` is retired and no longer published.
+Redis holds live state and streams. `sensor:raw` is the telemetry stream, capped at 100,000 entries.
 
 TimescaleDB on the Pi primary holds history and configuration. The read-only `monitoring-service` (`:8005`) reads TimescaleDB for history and Redis for current publications; it never writes either. Its database target is configured by `MONITORING_POSTGRES_DSN`.
 

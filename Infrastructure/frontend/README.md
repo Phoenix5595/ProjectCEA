@@ -107,19 +107,7 @@ src/
 
 ## API Endpoints Used
 
-- `GET /api/setpoints/{location}/{cluster}?mode={mode}` - Get setpoints
-- `POST /api/setpoints/{location}/{cluster}` - Update setpoints
-- `GET /api/setpoints/{location}/{cluster}/all-modes` - Get all mode setpoints
-- `GET /api/sensors/{location}/{cluster}/live` - Get live sensor data
-- `GET /api/devices` - Get all devices
-- `GET /api/pid/parameters/{device_type}` - Get PID parameters
-- `POST /api/pid/parameters/{device_type}` - Update PID parameters
-- `GET /api/schedules` - List schedules
-- `POST /api/schedules` - Create schedule
-- `PUT /api/schedules/{id}` - Update schedule
-- `DELETE /api/schedules/{id}` - Delete schedule
-- `GET /api/mode/{location}/{cluster}` - Get mode
-- `WebSocket /ws` - Real-time updates
+The typed clients in `src/services/api.ts` and `src/services/api/*`, plus the OpenAPI contract `src/generated/api.ts`, define the endpoints the SPA calls.
 
 ## Validation
 

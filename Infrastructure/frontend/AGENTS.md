@@ -1,19 +1,23 @@
 # CEA Frontend
 
-React 18 + TypeScript + Vite + Tailwind. The SPA is served as static `dist/` by `automation-service` after deploy.
+React 19 + TypeScript + Vite + Tailwind. The SPA is served as static `dist/` by `automation-service` after deploy.
 
 ## Entry Flow and Routes
 
 `src/App.tsx` lazy-loads pages under `BrowserRouter` + `Layout`:
 
 - `/` dashboard
-- `/laboratory`, `/laboratory/climate`, `/laboratory/water`, `/laboratory/infrastructure`
+- `/laboratory` (`/laboratory/climate`, `/laboratory/water`, `/laboratory/infrastructure` redirect here)
 - `/vegetation`, `/vegetation/monitoring`, `/vegetation/control`, `/vegetation/automation`
 - `/flower`, `/flower/monitoring`, `/flower/control`, `/flower/automation`, `/flower/soil`
 - `/devices` — device registry and relay/DFR management
 - `/settings/calendar` — grow-calendar configuration
 
 Native monitoring dashboards live at `/flower/monitoring` and `/vegetation/monitoring` (Historical variants at `/flower/historical`, `/vegetation/historical`) and are owned by `src/features/monitoring/`; history reads go through `monitoring-service` (`:8005` via Caddy).
+
+Old `/zone/{room}/main` and `/device-config` URLs redirect to the canonical pages.
+
+Shell modules (`App.tsx`, `components/Layout.tsx`, `Sidebar.tsx`, `TopRibbon.tsx`, `features/grow-archives/selection.ts`) import leaf modules, never the `features/monitoring/components` or `features/history-overview` barrels. The barrels re-export chart components, so importing them puts uPlot and its CSS on every page load.
 
 ## Grow archive Historical loads
 
