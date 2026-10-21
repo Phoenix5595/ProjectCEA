@@ -17,7 +17,6 @@ function makePollingFixture(
     sensorMeta: {
       [key]: { observedAtMs: now, receivedAtMs: now, source: 'poll', invalid: false },
     },
-    zoneStatus: {},
     lastPollAt: now,
     lightDisplayNames: {},
     flowerClusterWarnings: [],
@@ -146,32 +145,8 @@ describe('useDashboardLiveData', () => {
     expect(result.current.sensorMeta[key].receivedAtMs).toBe(now + 1000)
   })
 
-  it('projects merged zone status through the real summary helper with the polling error passthrough', () => {
-    currentPolling = {
-      ...makePollingFixture(),
-      zoneStatus: {
-        'Veg Room:main': {
-          quality: 'live',
-          newestObservedAtMs: now,
-          ageMs: 0,
-          source: 'poll',
-          error: 'Sensor request failed: Veg Room',
-        },
-      },
-    }
-    const { result } = renderLive()
-    // Real helper imports are not mocked; the polling error passes through to
-    // the merged status projection for the zone while the fresh ws meta wins.
-    expect(result.current.zoneStatus['Veg Room:main']).toEqual({
-      quality: 'live',
-      source: 'websocket',
-      ageMs: 0,
-      newestObservedAtMs: now,
-      error: 'Sensor request failed: Veg Room',
-    })
-  })
 
-  it('marks a retained last-good reading bad when its only metadata is invalid', () => {
+  it('keeps an invalid websocket sample value and metadata when no good sample exists', () => {
     currentPolling = makePollingFixture({ sensorData: {}, sensorMeta: {} })
     currentWebSocket = makeWebSocketFixture({
       sensorMeta: {
@@ -181,12 +156,5 @@ describe('useDashboardLiveData', () => {
     const { result } = renderLive()
     expect(result.current.sensorData[key]).toBe(22)
     expect(result.current.sensorMeta[key].invalid).toBe(true)
-    expect(result.current.zoneStatus['Veg Room:main']).toEqual({
-      quality: 'bad',
-      source: 'websocket',
-      ageMs: null,
-      newestObservedAtMs: null,
-      error: null,
-    })
   })
 })

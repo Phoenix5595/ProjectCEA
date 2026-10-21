@@ -1,23 +1,12 @@
+import type { components } from '../generated/api'
+
 /** Types for hardware configuration and the settings API contracts. */
 
 /** DFR0971 board entry in hardware config. */
-export interface DfrBoardConfig {
-  board_id: number
-  i2c_address: number
-  name: string
-}
+export type DfrBoardConfig = components['schemas']['DfrBoardUpdate']
 
-/** Hardware configuration group (matches backend HardwareGroup schema). */
-export interface HardwareConfig {
-  i2c_bus?: number | null
-  mcp_i2c_bus?: number | null
-  dfr0971_i2c_bus?: number | null
-  i2c_address?: number | null
-  simulation?: boolean | null
-  active_low?: boolean | null
-  require_mcp?: boolean | null
-  dfr0971_boards?: DfrBoardConfig[] | null
-}
+/** Hardware configuration group. */
+export type HardwareConfig = components['schemas']['HardwareGroup']
 
 /** PID limit pair for a single device type. */
 export interface PidLimitsPair {
@@ -126,9 +115,7 @@ export interface SystemConfigResponse {
 }
 
 /** PUT /api/config request body (hardware only). */
-export interface ConfigUpdateRequest {
-  hardware?: HardwareConfig | null
-}
+export type ConfigUpdateRequest = components['schemas']['ConfigUpdateRequest']
 
 /** PUT /api/config response shape. */
 export interface ConfigUpdateResponse {

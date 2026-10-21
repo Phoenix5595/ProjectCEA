@@ -15,8 +15,8 @@ export interface SensorDataResponse {
   }
 }
 export type SensorSource = 'poll' | 'websocket'
-
 export type SensorQuality = 'live' | 'stale' | 'bad' | 'missing'
+
 
 export interface SensorSampleMeta {
   observedAtMs: number | null
@@ -25,12 +25,5 @@ export interface SensorSampleMeta {
   invalid: boolean
 }
 
-export interface ZoneSensorStatus {
-  quality: SensorQuality
-  newestObservedAtMs: number | null
-  ageMs: number | null
-  source: SensorSource | null
-  error: string | null
-}
 
 export const SENSOR_STALE_AFTER_MS = 45_000

@@ -163,7 +163,6 @@ function makeApi(): Mocked<MonitoringApi> {
   return {
     sensorRange: vi.fn(),
     sensorLive: vi.fn(),
-    sensorStats: vi.fn(),
     controlRange: vi.fn(),
     controlTail: vi.fn(),
     controlProjection: vi.fn(),
@@ -214,7 +213,6 @@ describe('monitoring store', () => {
       { signal: expect.any(AbortSignal) }
     )
     expect(api.controlProjection).toHaveBeenCalledTimes(1)
-    expect(api.sensorStats).not.toHaveBeenCalled()
     expect(
       api.sensorRange.mock.calls.length +
         api.controlRange.mock.calls.length +
@@ -224,7 +222,6 @@ describe('monitoring store', () => {
     await vi.advanceTimersByTimeAsync(60000)
 
     expect(api.sensorRange).toHaveBeenCalledTimes(1)
-    expect(api.sensorStats).not.toHaveBeenCalled()
     expect(api.controlProjection).toHaveBeenCalledTimes(1)
     expect(api.controlTail.mock.calls.length).toBeGreaterThanOrEqual(60)
 
@@ -250,7 +247,6 @@ describe('monitoring store', () => {
     expect(api.sensorRange).toHaveBeenCalledTimes(2)
     expect(api.controlRange).toHaveBeenCalledTimes(2)
     expect(api.controlProjection).toHaveBeenCalledTimes(2)
-    expect(api.sensorStats).not.toHaveBeenCalled()
     unsub()
   })
 
@@ -556,14 +552,12 @@ describe('monitoring store', () => {
     await vi.advanceTimersByTimeAsync(0)
 
     expect(api.sensorRange).toHaveBeenCalledTimes(1)
-    expect(api.sensorStats).not.toHaveBeenCalled()
     const rangeFixture = controlResponse().range
     const fullSpan = rangeFixture.end.getTime() - rangeFixture.start.getTime()
 
     await vi.advanceTimersByTimeAsync(60000)
 
     expect(api.sensorRange).toHaveBeenCalledTimes(1)
-    expect(api.sensorStats).not.toHaveBeenCalled()
     expect(api.controlTail.mock.calls.length).toBeGreaterThan(0)
     for (const [, startArg, endArg] of api.controlTail.mock.calls) {
       const span = Date.parse(endArg as string) - Date.parse(startArg as string)
@@ -627,7 +621,6 @@ describe('monitoring store', () => {
     await vi.advanceTimersByTimeAsync(0)
 
     expect(api.sensorRange).toHaveBeenCalledTimes(2)
-    expect(api.sensorStats).not.toHaveBeenCalled()
     expect(api.controlRange.mock.calls.length).toBeGreaterThanOrEqual(2)
     unsub()
   })
@@ -673,7 +666,6 @@ describe('monitoring store', () => {
     expect(snapshot.errors).toContain('sensor range failed')
     expect(snapshot.lastGoodRangeAt).toEqual(new Date(T0))
     expect(snapshot.rangeErrorAt).toEqual(new Date(T0))
-    expect(api.sensorStats).not.toHaveBeenCalled()
     unsub()
   })
 

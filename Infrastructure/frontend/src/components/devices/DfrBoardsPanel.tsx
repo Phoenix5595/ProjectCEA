@@ -15,7 +15,7 @@ type DfrChannel = DfrBoard['channels'][number]
 type DfrAssignment = DfrChannel['assignment']
 
 export default function DfrBoardsPanel() {
-  const { snapshot, refresh } = useControlSnapshot()
+  const { snapshot, refresh, refreshNow } = useControlSnapshot()
   const [workingKey, setWorkingKey] = useState<string | null>(null)
   const [renameDraftByKey, setRenameDraftByKey] = useState<Record<string, string>>({})
   const [testProgressKey, setTestProgressKey] = useState<string | null>(null)
@@ -46,7 +46,7 @@ export default function DfrBoardsPanel() {
     setWorkingKey(`rename:${key}`)
     try {
       await apiClient.updateDevice(deviceId, { display_name: draft })
-      await refresh()
+      await refreshNow({ forceRegistry: true })
       toast.success('Light name updated')
     } catch (err) {
       logger.error('Failed to rename light', err)

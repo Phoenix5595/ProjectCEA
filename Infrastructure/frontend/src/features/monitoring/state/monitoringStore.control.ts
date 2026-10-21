@@ -15,31 +15,6 @@ import { mergeControlHistory } from './monitoringStore.merge'
 import { projectionTimeline } from './monitoringStore.projection'
 import type { StoreData } from './monitoringStore.types'
 
-/** Install the concurrent initial range/control/projection results. */
-export function applyInitial(
-  sensorRange: MonitoringResponse,
-  sensorStats: MonitoringResponse,
-  controlRange: ControlMonitoringResponse,
-  projection: ProjectionPublicationResponse
-): StoreData {
-  const proj = projectionTimeline(projection)
-  return {
-    series: sensorRange.series,
-    statistics: sensorStats.statistics,
-    live: [],
-    controlHistory: controlRange,
-    projectionHistory: proj.history,
-    photoperiod: controlRange.photoperiod,
-    cursors: controlRange.cursors,
-    projectionRevision: proj.revision,
-    projectionVersion: proj.version,
-    anchorFingerprint: null,
-    anchorQuality: proj.quality,
-    anchorValidUntil: proj.validUntil,
-    runtimeSnapshotVersion: controlRange.runtime_snapshot_version,
-    flushHealth: controlRange.flush_health,
-  }
-}
 
 /**
  * Install partial initial results, preserving last-good data for any source

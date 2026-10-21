@@ -287,7 +287,7 @@ export default function DeviceTable({
     setWorking(true)
     try {
       await apiClient.createDevice(body, confirmedRelaySteal)
-      await refreshNow()
+      await refreshNow({ forceRegistry: true })
       onRefresh?.()
       cancelAdd()
       toast.success('Device created')
@@ -328,7 +328,7 @@ export default function DeviceTable({
       } else {
         setDisplacedDeviceId(null)
       }
-      await refreshNow()
+      await refreshNow({ forceRegistry: true })
       cancelEdit()
       toast.success('Device updated')
     } catch (err) {
@@ -348,7 +348,7 @@ export default function DeviceTable({
     setWorking(true)
     try {
       await apiClient.deleteDevice(device.device_id)
-      await refreshNow()
+      await refreshNow({ forceRegistry: true })
       onRefresh?.()
       setDeleteConfirmId(null)
       toast.success('Device deleted')

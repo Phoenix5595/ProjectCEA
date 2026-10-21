@@ -25,7 +25,6 @@ import {
   parseRange,
   sensorLiveFixture,
   sensorRangeFixture,
-  sensorStatsFixture,
   wsFixtureMessage,
 } from './src/features/monitoring/config/fixtures.ts'
 import { SOIL_FIXTURE_ROUTES } from './src/features/soil/config/soilFixtures.ts'
@@ -1199,13 +1198,6 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
       const node = decodeURIComponent(parts[parts.length - 1] ?? '')
       const sequence = scenario === 'live-update' ? nextLiveFixtureSequence(req.url ?? '', node) : 0
       return sensorLiveFixture(node, scenario, sequence)
-    },
-  },
-  {
-    re: /^\/api\/sensors\/monitoring\/stats\/([^/]+)/,
-    handler: (req, scenario) => {
-      const { start, end } = parseRange(req.url ?? '')
-      return sensorStatsFixture(roomFrom(req.url ?? '', 4), start, end, scenario)
     },
   },
   {

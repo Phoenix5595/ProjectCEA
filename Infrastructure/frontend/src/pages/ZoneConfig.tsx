@@ -815,7 +815,7 @@ export default function ZoneConfig({
                   hiddenNormalControls={activeIsConstant} targetEditingEnabled={liveIdentityConfirmed && !activationPending} />
               </div>
               {activeIsConstant && (
-                <ManualLightControl location={location} cluster={cluster} compact />
+                <ManualLightControl location={location} cluster={cluster} snapshot={snapshot} compact />
               )}
             </div>
           </div>

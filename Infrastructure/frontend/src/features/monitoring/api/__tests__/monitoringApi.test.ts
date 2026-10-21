@@ -159,7 +159,7 @@ describe('monitoring api boundary', () => {
     vi.unstubAllGlobals()
   })
 
-  it('parses sensor range, live, stats and control history, projection contracts', async () => {
+  it('parses sensor range, live and control history, projection contracts', async () => {
     const fetchMock = vi.mocked(fetch)
     const api = new MonitoringApi()
 
@@ -175,10 +175,6 @@ describe('monitoring api boundary', () => {
     expect(live[0].sensor).toBe('dry_bulb')
     expect(live[0].timestamp).toBeInstanceOf(Date)
 
-    fetchMock.mockResolvedValueOnce(jsonResponse({ ...sensorRangePayload, series: [] }))
-    const stats = await api.sensorStats('Flower Room')
-    expect(stats.series).toHaveLength(0)
-    expect(stats.statistics[0].sample_count).toBe(3600)
 
     fetchMock.mockResolvedValueOnce(jsonResponse(controlPayload))
     const controlRange = await api.controlRange('Flower Room')
@@ -303,14 +299,6 @@ describe('monitoring api boundary', () => {
       expect.any(Object)
     )
 
-    fetchMock.mockResolvedValueOnce(jsonResponse({ ...sensorRangePayload, series: [] }))
-    await api.sensorStats('Flower Room', start, end, 2000)
-    expect(fetchMock).toHaveBeenLastCalledWith(
-      expect.stringContaining(
-        '/api/sensors/monitoring/stats/Flower%20Room?start=2026-08-02T11%3A00%3A00.000Z&end=2026-08-02T12%3A00%3A00.000Z&max_points=2000'
-      ),
-      expect.any(Object)
-    )
 
     fetchMock.mockResolvedValueOnce(jsonResponse(controlPayload))
     await api.controlRange('Flower Room', start, end, 1000)

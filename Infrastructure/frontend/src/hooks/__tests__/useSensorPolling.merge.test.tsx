@@ -70,9 +70,6 @@ describe('useSensorPolling merge behavior', () => {
 
     expect(result.current.sensorData['Veg Room_main_dry_bulb']).toBe(21)
     expect(result.current.sensorMeta['Veg Room_main_dry_bulb']).toBe(metaBeforeFailure)
-    expect(result.current.zoneStatus['Veg Room:main'].error).toBe(
-      'Sensor request failed: Veg Room'
-    )
   })
 
   it('replaces a retained reading with fresher data once the zone recovers', async () => {
@@ -96,7 +93,6 @@ describe('useSensorPolling merge behavior', () => {
       source: 'poll',
       invalid: false,
     })
-    expect(result.current.zoneStatus['Veg Room:main'].error).toBeNull()
   })
 
   it('removes only live keys of a successful zone refresh whose data is now empty', async () => {

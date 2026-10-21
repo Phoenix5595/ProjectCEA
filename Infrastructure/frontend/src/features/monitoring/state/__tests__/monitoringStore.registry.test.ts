@@ -34,7 +34,6 @@ function unresolvedApi(): MonitoringApi {
   return {
     sensorRange: () => pending(),
     sensorLive: () => pending(),
-    sensorStats: () => pending(),
     controlRange: () => pending(),
     controlTail: () => pending(),
     controlProjection: () => pending(),
@@ -249,7 +248,6 @@ describe('monitoring store device registry', () => {
     const api = {
       sensorRange: async () => sensorRange,
       sensorLive: async () => [],
-      sensorStats: async () => sensorRange,
       controlRange: async () => controlHistory,
       controlTail: async () => controlHistory,
       controlProjection: async () => projection,

@@ -17,12 +17,14 @@ export interface ControlSnapshotStoreState {
   loading: boolean
   error: string | null
 }
+type RefreshOptions = { forceRegistry?: boolean }
+
 
 export interface UseControlSnapshotReturn extends ControlSnapshotStoreState {
   /** Latest installed registry counter; null until a snapshot has arrived. */
   registryVersion: number | null
-  refresh: () => Promise<void>
-  refreshNow: () => Promise<void>
+  refresh: (options?: RefreshOptions) => Promise<void>
+  refreshNow: (options?: RefreshOptions) => Promise<void>
 }
 
 const POLL_INTERVAL_MS = 1000
@@ -50,6 +52,7 @@ let state: ControlSnapshotStoreState = INITIAL_STATE
 const listeners = new Set<() => void>()
 let timerId: ReturnType<typeof setInterval> | null = null
 let inFlight: Promise<void> | null = null
+let inFlightForceRegistry = false
 let sequence = 0
 
 function emit(): void {
@@ -146,17 +149,27 @@ function deriveRelayState(
   }
 }
 
-async function doFetch(): Promise<void> {
-  if (inFlight) return inFlight
+async function doFetch({ forceRegistry = false }: RefreshOptions = {}): Promise<void> {
+  if (inFlight) {
+    if (!forceRegistry || inFlightForceRegistry) return inFlight
+    await inFlight
+    return doFetch({ forceRegistry: true })
+  }
 
   const seq = ++sequence
   const fetchPromise = (async () => {
     try {
-      const [snapshot, registry] = await Promise.all([
-        apiClient.getControlSnapshot(),
-        apiClient.getDeviceRegistry(),
-      ])
+      const snapshot = await apiClient.getControlSnapshot()
+      if (seq !== sequence) return
 
+      const registryVersion = Number.isSafeInteger(snapshot.registry_version)
+        ? snapshot.registry_version
+        : null
+      const shouldFetchRegistry =
+        forceRegistry || state.snapshot === null || registryVersion !== state.registryVersion
+      const registry = shouldFetchRegistry
+        ? await apiClient.getDeviceRegistry()
+        : state.registry
       if (seq !== sequence) return
 
       const channels = deriveChannels(snapshot, registry)
@@ -169,9 +182,7 @@ async function doFetch(): Promise<void> {
         channels,
         relayState,
         mcpConnected,
-        registryVersion: Number.isSafeInteger(snapshot.registry_version)
-          ? snapshot.registry_version
-          : null,
+        registryVersion,
         loading: false,
         error: null,
       }
@@ -189,11 +200,13 @@ async function doFetch(): Promise<void> {
     } finally {
       if (seq === sequence) {
         inFlight = null
+        inFlightForceRegistry = false
       }
     }
   })()
 
   inFlight = fetchPromise
+  inFlightForceRegistry = forceRegistry
   return fetchPromise
 }
 
@@ -228,8 +241,8 @@ function getSnapshot(): ControlSnapshotStoreState {
   return state
 }
 
-function refreshNow(): Promise<void> {
-  return doFetch()
+function refreshNow(options?: RefreshOptions): Promise<void> {
+  return doFetch(options)
 }
 
 export function useControlSnapshot(): UseControlSnapshotReturn {

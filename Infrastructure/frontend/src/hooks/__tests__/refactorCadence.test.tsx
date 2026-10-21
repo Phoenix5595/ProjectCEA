@@ -2,6 +2,7 @@ import { act, cleanup, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useDashboardLiveData } from '../useDashboardLiveData'
+import { useSensorPolling } from '../useSensorPolling'
 
 const fixture = vi.hoisted(() => ({
   pollTimes: [] as number[],
@@ -70,15 +71,48 @@ describe('dashboard refresh cadence', () => {
     fixture.subscribers.clear()
   })
 
-  it('polls at 0/1/2 seconds even while a fresh socket sample is selected', async () => {
+  it('polls through REST at 0/1/2 seconds when the socket has no samples', async () => {
     const { result } = renderHook(() => useDashboardLiveData())
     await advance()
-    act(() => emitSensor(22, BASE_MS))
     await advance(1_000)
     await advance(1_000)
     expect(fixture.pollTimes).toEqual([BASE_MS, BASE_MS + 1_000, BASE_MS + 2_000])
-    expect(result.current.sensorData[KEY]).toBe(22)
+    expect(result.current.sensorMeta[KEY].source).toBe('poll')
+  })
+
+  it('stops REST polling while an open socket emits a sample every 0.5 seconds', async () => {
+    const { result } = renderHook(() => useDashboardLiveData())
+    await advance()
+    act(() => emitSensor(22, BASE_MS))
+    for (let sample = 1; sample <= 6; sample++) {
+      await advance(500)
+      act(() => emitSensor(22 + sample, Date.now()))
+    }
+    await advance(2_000)
+    expect(fixture.pollTimes).toEqual([BASE_MS])
     expect(result.current.sensorMeta[KEY].source).toBe('websocket')
+  })
+
+  it('resumes REST polling within six seconds after socket messages stop', async () => {
+    renderHook(() => useDashboardLiveData())
+    await advance()
+    act(() => emitSensor(22, BASE_MS))
+    await advance(5_999)
+    expect(fixture.pollTimes).toEqual([BASE_MS])
+    await advance(1)
+    expect(fixture.pollTimes).toEqual([BASE_MS, BASE_MS + 6_000])
+  })
+
+  it('refreshes immediately when enabled changes from false to true', async () => {
+    const { rerender } = renderHook(
+      ({ enabled }) => useSensorPolling({ interval: 1000, enabled }),
+      { initialProps: { enabled: false } }
+    )
+    await advance()
+    expect(fixture.pollTimes).toEqual([])
+    rerender({ enabled: true })
+    await advance()
+    expect(fixture.pollTimes).toEqual([BASE_MS])
   })
 
   it('applies between-tick expiry on the next existing one-second tick', async () => {
@@ -92,7 +126,6 @@ describe('dashboard refresh cadence', () => {
     await advance(999)
     expect(result.current.sensorData[KEY]).toBe(21)
     expect(result.current.sensorMeta[KEY].source).toBe('poll')
-    expect(result.current.zoneStatus['Veg Room:main'].quality).toBe('live')
   })
 
   it('stops polling and removes live socket recipients on unmount', async () => {

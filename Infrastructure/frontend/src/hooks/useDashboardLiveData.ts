@@ -1,21 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { getSensorPollZones } from '../config/zones'
 import type { Device } from '../types/device'
-import {
-  SENSOR_STALE_AFTER_MS,
-  type SensorSampleMeta,
-  type ZoneSensorStatus,
-} from '../types/sensor'
+import { SENSOR_STALE_AFTER_MS, type SensorSampleMeta } from '../types/sensor'
 
 import { useSensorPolling } from './useSensorPolling'
-import { projectZoneSensorStatus, summarizeZoneSensors } from './zoneSensorSummary'
 import { useWebSocket } from './useWebSocket'
 
 const EMPTY_DEVICES: Device[] = []
 const EMPTY_SENSOR_DATA: Record<string, number> = {}
 const EMPTY_SENSOR_META: Record<string, SensorSampleMeta> = {}
-const EMPTY_ZONE_STATUS: Record<string, ZoneSensorStatus> = {}
 
 interface MergedSensorSelection {
   sensorData: Record<string, number>
@@ -27,7 +20,6 @@ export interface DashboardLiveData {
   devices: Device[]
   sensorData: Record<string, number>
   sensorMeta: Record<string, SensorSampleMeta>
-  zoneStatus: Record<string, ZoneSensorStatus>
   lightDisplayNames: Record<string, string>
   flowerClusterWarnings: string[]
   loading: boolean
@@ -73,16 +65,26 @@ function sameMergedSelection(a: MergedSensorSelection, b: MergedSensorSelection)
 }
 
 export function useDashboardLiveData(): DashboardLiveData {
-  const polling = useSensorPolling({ interval: 1000 })
   const websocket = useWebSocket()
   const [nowMs, setNowMs] = useState(() => Date.now())
-  const pollingDevices = polling.devices ?? EMPTY_DEVICES
-  const pollingSensorData = polling.sensorData ?? EMPTY_SENSOR_DATA
-  const pollingSensorMeta = polling.sensorMeta ?? EMPTY_SENSOR_META
-  const pollingZoneStatus = polling.zoneStatus ?? EMPTY_ZONE_STATUS
   const websocketDevices = websocket.devices ?? EMPTY_DEVICES
   const websocketSensorData = websocket.sensorData ?? EMPTY_SENSOR_DATA
   const websocketSensorMeta = websocket.sensorMeta ?? EMPTY_SENSOR_META
+  const newestReceivedAtMs = useMemo(() => {
+    let newest: number | null = null
+    for (const meta of Object.values(websocketSensorMeta)) {
+      if (newest === null || meta.receivedAtMs > newest) newest = meta.receivedAtMs
+    }
+    return newest
+  }, [websocketSensorMeta])
+  const wsTransportFresh =
+    websocket.connectionState === 'open' &&
+    newestReceivedAtMs !== null &&
+    nowMs - newestReceivedAtMs <= 5_000
+  const polling = useSensorPolling({ interval: 1000, enabled: !wsTransportFresh })
+  const pollingDevices = polling.devices ?? EMPTY_DEVICES
+  const pollingSensorData = polling.sensorData ?? EMPTY_SENSOR_DATA
+  const pollingSensorMeta = polling.sensorMeta ?? EMPTY_SENSOR_META
 
   useEffect(() => {
     const clock = setInterval(() => setNowMs(Date.now()), 1000)
@@ -149,32 +151,6 @@ export function useDashboardLiveData(): DashboardLiveData {
     websocketSensorMeta,
   ])
 
-  const mergedZoneSummaries = useMemo(
-    () =>
-      Object.fromEntries(
-        getSensorPollZones().map(zone => {
-          const key = `${zone.location}:${zone.cluster}`
-          return [
-            key,
-            summarizeZoneSensors(`${zone.location}_${zone.cluster}_`, merged.sensorMeta),
-          ]
-        })
-      ),
-    [merged.sensorMeta]
-  )
-
-  const zoneStatus = useMemo(() => {
-    const status: Record<string, ZoneSensorStatus> = {}
-    for (const zone of getSensorPollZones()) {
-      const key = `${zone.location}:${zone.cluster}`
-      status[key] = projectZoneSensorStatus(
-        mergedZoneSummaries[key],
-        pollingZoneStatus[key]?.error ?? null,
-        nowMs
-      )
-    }
-    return status
-  }, [mergedZoneSummaries, nowMs, pollingZoneStatus])
 
   const transport = useMemo<DashboardLiveData['transport']>(() => {
     if (merged.selectedWebSocketSample) return 'websocket'
@@ -186,7 +162,6 @@ export function useDashboardLiveData(): DashboardLiveData {
     devices,
     sensorData: merged.sensorData,
     sensorMeta: merged.sensorMeta,
-    zoneStatus,
     lightDisplayNames: polling.lightDisplayNames ?? {},
     flowerClusterWarnings: polling.flowerClusterWarnings ?? [],
     loading: polling.loading ?? false,

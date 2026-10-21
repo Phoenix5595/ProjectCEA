@@ -63,20 +63,6 @@ export class MonitoringApi {
     return this.client.get(path, z.array(LiveSensorValue), options)
   }
 
-  sensorStats(
-    location: string,
-    start?: string,
-    end?: string,
-    maxPoints?: number,
-    options?: MonitoringRequestOptions
-  ): Promise<MonitoringResponse> {
-    const path = `/api/sensors/monitoring/stats/${encodeURIComponent(location)}${buildQuery({
-      start,
-      end,
-      max_points: maxPoints?.toString(),
-    })}`
-    return this.client.get(path, MonitoringResponse, options)
-  }
 
   controlRange(
     location: string,

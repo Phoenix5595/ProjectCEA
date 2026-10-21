@@ -10,7 +10,6 @@ import type {
 import {
   applyControl,
   applyControlFresh,
-  applyInitial,
   applyInitialPartial,
   applyProjection,
 } from '../monitoringStore.control'
@@ -113,33 +112,6 @@ function emptyProjection(): ProjectionPublicationResponse {
   return { quality: 'unavailable', value: [] }
 }
 
-describe('applyInitial', () => {
-  it('installs the recorded history phase list without the projection phases', () => {
-    const recorded = [
-      phasePoint(at(-120), 'UNKNOWN', UNAVAILABLE),
-      phasePoint(at(-90), 'SUN'),
-      phasePoint(at(-30), 'MOON'),
-    ]
-    const projection = photoperiodPublication([
-      { valid_from: at(0), valid_until: at(30), value: 1 },
-      { valid_from: at(30), valid_until: at(60), value: 0 },
-    ])
-
-    const data = applyInitial(
-      sensorResponse(),
-      sensorResponse(),
-      controlHistory({ start: at(-120), end: at(0) }, recorded),
-      projection
-    )
-
-    expect(data.photoperiod).toEqual(recorded)
-    expect(data.projectionHistory?.photoperiod.map(point => [point.time, point.phase])).toEqual([
-      [at(0), 'SUN'],
-      [at(30), 'MOON'],
-      [at(60), 'UNKNOWN'],
-    ])
-  })
-})
 
 describe('applyInitialPartial', () => {
   it('keeps the previous recorded list as the last good fallback when control fails', () => {

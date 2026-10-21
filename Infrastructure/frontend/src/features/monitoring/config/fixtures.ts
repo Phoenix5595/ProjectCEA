@@ -260,25 +260,6 @@ export function sensorLiveFixture(
   }))
 }
 
-/** Exact moving-range statistics without loading series envelopes. */
-export function sensorStatsFixture(
-  room: string,
-  start: string,
-  end: string,
-  _scenario: string | null = null
-): unknown {
-  const sensors = roomSensors(room)
-  return {
-    metadata: {
-      generated_at: T0,
-      tier: 'raw',
-      range: { start, end },
-      room: { room, nodes: roomNodes(room) },
-    },
-    series: [],
-    statistics: sensors.map(s => statisticsFor(s.sensor, s.node, mean(s.values))),
-  }
-}
 
 export {
   controlProjectionFixture,

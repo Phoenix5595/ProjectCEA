@@ -1,5 +1,5 @@
 /** Sensor polling hook for dashboard data. */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
   ZONES,
@@ -10,24 +10,20 @@ import {
 } from '../config/zones'
 import { apiClient } from '../services/api'
 import type { Device } from '../types/device'
-import {
-  type SensorSampleMeta,
-  type ZoneSensorStatus,
-} from '../types/sensor'
+import type { SensorSampleMeta } from '../types/sensor'
 import { logger } from '../utils/logger'
 import { parseLiveSnapshot } from '../utils/sensorLive'
-import { projectZoneSensorStatus, summarizeZoneSensors, type ZoneSensorSummary } from './zoneSensorSummary'
 
 
 export interface UseSensorPollingOptions {
   interval?: number
+  enabled?: boolean
 }
 
 export interface UseSensorPollingReturn {
   devices: Device[]
   sensorData: Record<string, number>
   sensorMeta: Record<string, SensorSampleMeta>
-  zoneStatus: Record<string, ZoneSensorStatus>
   lastPollAt: number | null
   /** `${location}_${cluster}_${device_name}` → config `display_name` for lights UI */
   lightDisplayNames: Record<string, string>
@@ -73,13 +69,12 @@ async function loadLightDisplayNamesMap(): Promise<Record<string, string>> {
  */
 export function useSensorPolling({
   interval = 5000,
+  enabled = true,
 }: UseSensorPollingOptions = {}): UseSensorPollingReturn {
   const [devices, setDevices] = useState<Device[]>([])
   const [sensorData, setSensorData] = useState<Record<string, number>>({})
   const [sensorMeta, setSensorMeta] = useState<Record<string, SensorSampleMeta>>({})
-  const [zoneErrors, setZoneErrors] = useState<Record<string, string | null>>({})
   const [lastPollAt, setLastPollAt] = useState<number | null>(null)
-  const [statusNowMs, setStatusNowMs] = useState(() => Date.now())
   const [lightDisplayNames, setLightDisplayNames] = useState<Record<string, string>>({})
   const [flowerClusterWarnings, setFlowerClusterWarnings] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
@@ -112,7 +107,10 @@ export function useSensorPolling({
 
   useEffect(() => {
     void loadInitialData()
+  }, [loadInitialData])
 
+  useEffect(() => {
+    if (!enabled) return
     const refreshLiveSensors = async () => {
       if (refreshInFlightRef.current) return
       refreshInFlightRef.current = true
@@ -127,8 +125,6 @@ export function useSensorPolling({
           values: Record<string, number>
           meta: Record<string, SensorSampleMeta>
         }> = []
-        const errors: Record<string, string | null> = {}
-        const successfulZoneKeys = new Set<string>()
 
         results.forEach((result, index) => {
           const zone = pollZones[index]
@@ -136,11 +132,7 @@ export function useSensorPolling({
           if (result.status === 'fulfilled') {
             const parsed = parseLiveSnapshot(zone.location, zone.cluster, result.value, Date.now())
             successful.push({ ...zone, values: parsed.values, meta: parsed.meta })
-            successfulZoneKeys.add(zoneKey)
-            errors[zoneKey] = null
           } else {
-            errors[zoneKey] =
-              result.reason instanceof Error ? result.reason.message : 'Sensor request failed'
             logger.warn(`[sensor-poll] ${zoneKey} failed`, result.reason)
           }
         })
@@ -169,15 +161,6 @@ export function useSensorPolling({
           removedLiveKeys.forEach(key => delete next[key])
           return { ...next, ...nextMeta }
         })
-        setZoneErrors(prev => {
-          const next = { ...prev }
-          for (const zone of pollZones) {
-            const key = `${zone.location}:${zone.cluster}`
-            if (successfulZoneKeys.has(key)) next[key] = errors[key] ?? null
-            else if (errors[key]) next[key] = errors[key]
-          }
-          return next
-        })
         setLastPollAt(Date.now())
       } catch (error) {
         logger.warn('Live sensor refresh failed', error)
@@ -189,12 +172,8 @@ export function useSensorPolling({
     void refreshLiveSensors()
     const sensorInterval = setInterval(() => void refreshLiveSensors(), interval)
     return () => clearInterval(sensorInterval)
-  }, [interval, loadInitialData])
+  }, [enabled, interval])
 
-  useEffect(() => {
-    const clock = setInterval(() => setStatusNowMs(Date.now()), 1000)
-    return () => clearInterval(clock)
-  }, [])
 
   useEffect(() => {
     const refreshNames = async () => {
@@ -244,43 +223,11 @@ export function useSensorPolling({
     return () => clearInterval(warningInterval)
   }, [])
 
-  // Per-configured-zone summaries depend only on the meta record; the status
-  // projection runs whenever a status clock tick, zone error change, or new
-  // metadata arrives so ages stay fresh without re-deriving the summaries.
-  const zoneSummaries: Record<string, ZoneSensorSummary> = useMemo(
-    () =>
-      Object.fromEntries(
-        getSensorPollZones().map(zone => {
-          const key = `${zone.location}:${zone.cluster}`
-          return [key, summarizeZoneSensors(`${zone.location}_${zone.cluster}_`, sensorMeta)]
-        })
-      ),
-    [sensorMeta]
-  )
-
-  const zoneStatus = useMemo(
-    () =>
-      Object.fromEntries(
-        getSensorPollZones().map(zone => {
-          const key = `${zone.location}:${zone.cluster}`
-          return [
-            key,
-            projectZoneSensorStatus(
-              zoneSummaries[key],
-              zoneErrors[key] ?? null,
-              statusNowMs
-            ),
-          ]
-        })
-      ),
-    [zoneSummaries, statusNowMs, zoneErrors]
-  )
 
   return {
     devices,
     sensorData,
     sensorMeta,
-    zoneStatus,
     lastPollAt,
     lightDisplayNames,
     flowerClusterWarnings,

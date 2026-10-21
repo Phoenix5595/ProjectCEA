@@ -3,10 +3,12 @@ import { useState, useEffect } from 'react'
 import { apiClient } from '../services/api'
 import { extractErrorMessage } from '../utils/errors'
 import { logger } from '../utils/logger'
+import type { ControlSnapshotResponse } from '../services/api/devices'
 
 interface ManualLightControlProps {
   location: string
   cluster: string
+  snapshot: ControlSnapshotResponse | null
   compact?: boolean
 }
 
@@ -15,19 +17,52 @@ interface LightDeviceDetails {
   display_name?: string
 }
 
-type ActiveMode = 'auto' | 'off' | '5m' | '30m' | '1h' | '8h' | null
+type ActiveMode = 'auto' | 'off' | null
 
 export default function ManualLightControl({
   location,
   cluster,
+  snapshot,
   compact = false,
 }: ManualLightControlProps) {
   const [lightDetails, setLightDetails] = useState<LightDeviceDetails[]>([])
   const [loadingDetails, setLoadingDetails] = useState(true)
-  const [activeTimer, setActiveTimer] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [activeMode, setActiveMode] = useState<ActiveMode>(null)
+
+  let activeTimer: number | null = null
+  let hasAutomatic = false
+  let hasManualOff = false
+  if (lightDetails.length > 0 && snapshot) {
+    for (const relay of snapshot.relays) {
+      const assignment = relay.assignment
+      if (
+        assignment?.location !== location ||
+        assignment.cluster !== cluster ||
+        assignment.device_type !== 'light'
+      ) {
+        continue
+      }
+      hasAutomatic ||= relay.command_mode === 'auto' || relay.command_mode === 'scheduled'
+      hasManualOff ||= relay.command_mode === 'manual_off'
+      const raw = relay.command_expires_at
+      if (!raw) continue
+      const expiresAt = Date.parse(raw)
+      if (Number.isNaN(expiresAt)) continue
+      const remainingMs = expiresAt - Date.now()
+      if (remainingMs <= 0) continue
+      const remainingMin = Math.ceil(remainingMs / 60000)
+      if (activeTimer === null || remainingMin < activeTimer) activeTimer = remainingMin
+    }
+  }
+  const activeMode: ActiveMode =
+    activeTimer !== null
+      ? null
+      : hasAutomatic && !hasManualOff
+        ? 'auto'
+        : hasManualOff && !hasAutomatic
+          ? 'off'
+          : null
 
   useEffect(() => {
     let cancelled = false
@@ -51,61 +86,6 @@ export default function ManualLightControl({
     return () => { cancelled = true }
   }, [location, cluster])
 
-  // Keep the existing 5s timer refresh, using the command owner's expiry projection.
-  useEffect(() => {
-    if (lightDetails.length === 0) {
-      setActiveTimer(null)
-      return
-    }
-
-    let cancelled = false
-
-    async function refreshExpiry() {
-      try {
-        const snapshot = await apiClient.getControlSnapshot()
-        if (cancelled) return
-        let earliest: number | null = null
-        let hasAutomatic = false
-        let hasManualOff = false
-        for (const relay of snapshot.relays) {
-          const assignment = relay.assignment
-          if (
-            assignment?.location !== location ||
-            assignment.cluster !== cluster ||
-            assignment.device_type !== 'light'
-          ) {
-            continue
-          }
-          hasAutomatic ||= relay.command_mode === 'auto' || relay.command_mode === 'scheduled'
-          hasManualOff ||= relay.command_mode === 'manual_off'
-          const raw = relay.command_expires_at
-          if (!raw) continue
-          const expiresAt = Date.parse(raw)
-          if (Number.isNaN(expiresAt)) continue
-          const remainingMs = expiresAt - Date.now()
-          if (remainingMs <= 0) continue
-          const remainingMin = Math.ceil(remainingMs / 60000)
-          if (earliest === null || remainingMin < earliest) earliest = remainingMin
-        }
-        setActiveTimer(earliest)
-        if (earliest === null) {
-          setActiveMode(
-            hasAutomatic && !hasManualOff ? 'auto' : hasManualOff && !hasAutomatic ? 'off' : null
-          )
-        }
-      } catch (err) {
-        logger.error('ManualLightControl: Error polling command expiry:', err)
-      }
-    }
-
-    refreshExpiry()
-    const poll = setInterval(refreshExpiry, 5000)
-
-    return () => {
-      cancelled = true
-      clearInterval(poll)
-    }
-  }, [location, cluster, lightDetails])
 
   async function turnOnLights(durationMinutes: number) {
     setLoading(true)
@@ -127,20 +107,6 @@ export default function ManualLightControl({
         }
       }
 
-      // Set active mode based on duration
-      const modeKey: ActiveMode =
-        durationMinutes === 5
-          ? '5m'
-          : durationMinutes === 30
-            ? '30m'
-            : durationMinutes === 60
-              ? '1h'
-              : durationMinutes === 480
-                ? '8h'
-                : null
-      setActiveMode(modeKey)
-
-      setActiveTimer(durationMinutes)
     } catch (err) {
       logger.error('Error turning on lights:', err)
       setError(extractErrorMessage(err, 'Failed to turn on lights'))
@@ -154,11 +120,6 @@ export default function ManualLightControl({
     setError(null)
 
     try {
-      setActiveTimer(null)
-
-      // Set active mode to 'off'
-      setActiveMode('off')
-
       // Turn off all lights
       for (const light of lightDetails) {
         try {
@@ -184,10 +145,6 @@ export default function ManualLightControl({
     setError(null)
 
     try {
-      setActiveTimer(null)
-
-      // Set active mode to 'auto' (schedule is now active)
-      setActiveMode('auto')
 
       for (const light of lightDetails) {
         try {
@@ -273,36 +230,28 @@ export default function ManualLightControl({
           <button
             onClick={() => turnOnLights(5)}
             disabled={loading}
-            className={`px-3 py-1.5 text-sm font-medium bg-status-success-bg text-status-success-text rounded hover:bg-status-success-bg disabled:opacity-50 disabled:cursor-not-allowed ${
-              activeMode === '5m' ? 'ring-2 ring-status-success ring-offset-2' : ''
-            }`}
+            className="px-3 py-1.5 text-sm font-medium bg-status-success-bg text-status-success-text rounded hover:bg-status-success-bg disabled:opacity-50 disabled:cursor-not-allowed"
           >
             5m
           </button>
           <button
             onClick={() => turnOnLights(30)}
             disabled={loading}
-            className={`px-3 py-1.5 text-sm font-medium bg-status-success-bg text-status-success-text rounded hover:bg-status-success-bg disabled:opacity-50 disabled:cursor-not-allowed ${
-              activeMode === '30m' ? 'ring-2 ring-status-success ring-offset-2' : ''
-            }`}
+            className="px-3 py-1.5 text-sm font-medium bg-status-success-bg text-status-success-text rounded hover:bg-status-success-bg disabled:opacity-50 disabled:cursor-not-allowed"
           >
             30m
           </button>
           <button
             onClick={() => turnOnLights(60)}
             disabled={loading}
-            className={`px-3 py-1.5 text-sm font-medium bg-status-success-bg text-status-success-text rounded hover:bg-status-success-bg disabled:opacity-50 disabled:cursor-not-allowed ${
-              activeMode === '1h' ? 'ring-2 ring-status-success ring-offset-2' : ''
-            }`}
+            className="px-3 py-1.5 text-sm font-medium bg-status-success-bg text-status-success-text rounded hover:bg-status-success-bg disabled:opacity-50 disabled:cursor-not-allowed"
           >
             1h
           </button>
           <button
             onClick={() => turnOnLights(480)}
             disabled={loading}
-            className={`px-3 py-1.5 text-sm font-medium bg-status-success-bg text-status-success-text rounded hover:bg-status-success-bg disabled:opacity-50 disabled:cursor-not-allowed ${
-              activeMode === '8h' ? 'ring-2 ring-status-success ring-offset-2' : ''
-            }`}
+            className="px-3 py-1.5 text-sm font-medium bg-status-success-bg text-status-success-text rounded hover:bg-status-success-bg disabled:opacity-50 disabled:cursor-not-allowed"
           >
             8h
           </button>
