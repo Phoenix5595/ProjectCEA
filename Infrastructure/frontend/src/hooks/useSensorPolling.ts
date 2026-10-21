@@ -3,7 +3,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
   ZONES,
-  FLOWER_DASHBOARD_CLUSTERS,
   getDashboardPollZones,
   getSensorPollZones,
   buildDashboardBulkSensorKeys,
@@ -13,7 +12,6 @@ import type { Device } from '../types/device'
 import type { SensorSampleMeta } from '../types/sensor'
 import { logger } from '../utils/logger'
 import { parseLiveSnapshot } from '../utils/sensorLive'
-
 
 export interface UseSensorPollingOptions {
   interval?: number
@@ -27,8 +25,6 @@ export interface UseSensorPollingReturn {
   lastPollAt: number | null
   /** `${location}_${cluster}_${device_name}` → config `display_name` for lights UI */
   lightDisplayNames: Record<string, string>
-  /** Temporary hybrid warning layer: DB/ingestion-observed clusters vs configured clusters. */
-  flowerClusterWarnings: string[]
   loading: boolean
   refresh: () => Promise<void>
 }
@@ -76,7 +72,6 @@ export function useSensorPolling({
   const [sensorMeta, setSensorMeta] = useState<Record<string, SensorSampleMeta>>({})
   const [lastPollAt, setLastPollAt] = useState<number | null>(null)
   const [lightDisplayNames, setLightDisplayNames] = useState<Record<string, string>>({})
-  const [flowerClusterWarnings, setFlowerClusterWarnings] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const liveKeysRef = useRef(new Set<string>())
   const refreshInFlightRef = useRef(false)
@@ -184,53 +179,12 @@ export function useSensorPolling({
     return () => clearInterval(nameInterval)
   }, [])
 
-  useEffect(() => {
-    const refreshClusterWarnings = async () => {
-      try {
-        const allLive = await apiClient.getAllLiveSensorData()
-        const discovered = new Set<string>()
-        for (const row of allLive) {
-          const name = row?.sensor ?? ''
-          if (name.endsWith('_f')) discovered.add('front')
-          if (name.endsWith('_b')) discovered.add('back')
-        }
-        const configured = new Set(FLOWER_DASHBOARD_CLUSTERS)
-        const warnings: string[] = []
-
-        for (const c of configured) {
-          if (!discovered.has(c)) {
-            warnings.push(`Configured Flower cluster '${c}' has no live sensor stream.`)
-          }
-        }
-        for (const c of discovered) {
-          if (!configured.has(c)) {
-            warnings.push(`Live Flower cluster '${c}' is discovered but not configured.`)
-          }
-        }
-
-        setFlowerClusterWarnings(warnings)
-        for (const message of warnings) {
-          logger.warn(`[flower-cluster-warning] ${message}`)
-        }
-      } catch (error) {
-        setFlowerClusterWarnings(['Failed to compare configured vs discovered Flower clusters.'])
-        logger.warn('[flower-cluster-warning] comparison failed', error)
-      }
-    }
-
-    void refreshClusterWarnings()
-    const warningInterval = setInterval(() => void refreshClusterWarnings(), 60000)
-    return () => clearInterval(warningInterval)
-  }, [])
-
-
   return {
     devices,
     sensorData,
     sensorMeta,
     lastPollAt,
     lightDisplayNames,
-    flowerClusterWarnings,
     loading,
     refresh: loadInitialData,
   }

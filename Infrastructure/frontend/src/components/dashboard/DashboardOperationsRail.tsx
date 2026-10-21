@@ -5,8 +5,6 @@ import type { UseSystemStatusReturn } from '../../hooks/useSystemStatus'
 
 export interface DashboardOperationsRailProps {
   sensorData: Record<string, number>
-  /** Kept for API compatibility; service/machine status lives in the ribbon. */
-  systemStats?: UseSystemStatusReturn['systemStats']
   degraded?: UseSystemStatusReturn['degraded']
   /** Canonical tank level percent; null when no real level sensor exists. */
   waterLevelPercent: number | null

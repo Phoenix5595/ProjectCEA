@@ -2,8 +2,6 @@ import type { ClimatePeriod } from '../types/climatePeriod'
 
 import { timeToMinutes } from './timeMath'
 
-export { timeToMinutes }
-
 /** Exclusive end semantics: [start, end) or wrap [start,1440) U [0,end). */
 export function isMinuteInPeriod(minute: number, startMin: number, endMin: number): boolean {
   if (startMin < endMin) {
@@ -119,30 +117,4 @@ export function sampleMetricSeries(
   }
 
   return out
-}
-
-export function seriesMinMax(values: (number | null)[]): { min: number; max: number } | null {
-  let min = Infinity
-  let max = -Infinity
-  for (const v of values) {
-    if (v == null || Number.isNaN(v)) continue
-    min = Math.min(min, v)
-    max = Math.max(max, v)
-  }
-  if (!Number.isFinite(min) || !Number.isFinite(max)) return null
-  if (min === max) {
-    return { min: min - 1, max: max + 1 }
-  }
-  return { min, max }
-}
-
-/** Padding for axis (°C vs kPa). */
-export function paddedRange(
-  min: number,
-  max: number,
-  padFraction: number
-): { min: number; max: number } {
-  const span = max - min
-  const pad = span * padFraction || 0.5
-  return { min: min - pad, max: max + pad }
 }

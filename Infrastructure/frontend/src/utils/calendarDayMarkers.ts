@@ -127,19 +127,3 @@ export function buildCalendarDayMarkers(events: CalendarEventDto[]): Map<string,
   }
   return map
 }
-
-export const MARKER_LIMITS = { tasks: 2, notes: 2, scheduleBars: 3 } as const
-const DEFAULT_LABEL_MAX = 16
-
-export function truncateMarkerLabel(text: string, maxLen: number = DEFAULT_LABEL_MAX): string {
-  const trimmed = text.trim().replace(/\s+/g, ' ')
-  if (!trimmed) return '—'
-  if (trimmed.length <= maxLen) return trimmed
-  return `${trimmed.slice(0, Math.max(1, maxLen - 1))}…`
-}
-
-export function noteMarkerLabel(ev: CalendarEventDto, maxLen?: number): string {
-  const raw = ev.notes?.trim()
-  const line = raw ? raw.split(/\r?\n/)[0] : ev.title
-  return truncateMarkerLabel(line, maxLen)
-}

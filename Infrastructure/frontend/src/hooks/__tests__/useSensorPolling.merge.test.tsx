@@ -10,7 +10,6 @@ vi.mock('../../services/api', () => ({
       Object.fromEntries(bulkKeys.map(key => [key, 42]))
     ),
     getDevicesForLocationCluster: vi.fn(async () => ({ devices: {} })),
-    getAllLiveSensorData: vi.fn(async () => []),
     getLiveSensorData: vi.fn(async (location: string, cluster: string) => {
       const fixture = liveSensorFixtures[`${location}:${cluster}`]
       if (fixture === undefined) throw new Error(`Sensor request failed: ${location}:${cluster}`)

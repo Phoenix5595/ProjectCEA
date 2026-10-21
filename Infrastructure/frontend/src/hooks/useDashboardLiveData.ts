@@ -21,7 +21,6 @@ export interface DashboardLiveData {
   sensorData: Record<string, number>
   sensorMeta: Record<string, SensorSampleMeta>
   lightDisplayNames: Record<string, string>
-  flowerClusterWarnings: string[]
   loading: boolean
   lastPollAt: number | null
   transport: 'websocket' | 'polling' | 'degraded'
@@ -163,7 +162,6 @@ export function useDashboardLiveData(): DashboardLiveData {
     sensorData: merged.sensorData,
     sensorMeta: merged.sensorMeta,
     lightDisplayNames: polling.lightDisplayNames ?? {},
-    flowerClusterWarnings: polling.flowerClusterWarnings ?? [],
     loading: polling.loading ?? false,
     lastPollAt: polling.lastPollAt ?? null,
     transport,

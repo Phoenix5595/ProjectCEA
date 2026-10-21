@@ -110,29 +110,6 @@ export function sensorUrlClustersFor(room: string): readonly string[] {
   return t.sensorSubclusters.length > 0 ? t.sensorSubclusters : [t.deviceCluster]
 }
 
-/** @deprecated Prefer `sensorUrlClustersFor`. */
-export function sensorClustersFor(room: string): readonly string[] {
-  return sensorUrlClustersFor(room)
-}
-
-export function isDeviceCluster(room: string, cluster: string): boolean {
-  return TOPOLOGY[room]?.deviceCluster === cluster
-}
-
-/**
- * True only for *physical* sensor sub-clusters (Flower's `front`/`back`).
- * Returns `false` for the device-cluster sentinel even on unsplit rooms
- * where `cluster === 'main'` is a valid sensor URL slug.
- */
-export function isSensorSubcluster(room: string, cluster: string): boolean {
-  return TOPOLOGY[room]?.sensorSubclusters.includes(cluster) ?? false
-}
-
-/** True if `cluster` is any valid sensor URL slug for `room`. */
-export function isSensorCluster(room: string, cluster: string): boolean {
-  return sensorUrlClustersFor(room).includes(cluster)
-}
-
 export const CAN_LOCATION_SLUGS = ['front', 'back', 'main'] as const
 export type CanSlug = (typeof CAN_LOCATION_SLUGS)[number]
 

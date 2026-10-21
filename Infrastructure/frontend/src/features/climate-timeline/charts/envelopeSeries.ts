@@ -1,4 +1,5 @@
-import { isMinuteInPeriod, timeToMinutes } from '../../../utils/climatePeriodTimeline'
+import { isMinuteInPeriod } from '../../../utils/climatePeriodTimeline'
+import { timeToMinutes } from '../../../utils/timeMath'
 import type { RichTrajectoryEnvelope } from '../api/contracts'
 import { scheduleClockMinutes, scheduleOccurrences } from './scheduleClock'
 

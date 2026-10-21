@@ -781,107 +781,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/control/history": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Control History */
-        get: operations["get_api_control_history"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/debug/light-schedule-health/{location}/{cluster}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Light Schedule Health
-         * @description Per-light schedule resolution and last DB sample age (effective_setpoints).
-         */
-        get: operations["get_api_debug_light-schedule-health_{location}_{cluster}"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/debug/mode-history/{location}/{cluster}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Mode History
-         * @description Returns recent mode transitions from mode_transition_history table.
-         */
-        get: operations["get_api_debug_mode-history_{location}_{cluster}"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/debug/mode-state/{location}/{cluster}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Mode State
-         * @description Returns current mode state from all sources for comparison:
-         *     - room_active_mode table (UI mode)
-         *     - climate_periods active period
-         *     - mode_parameters for current mode
-         *     - effective setpoints from memory
-         */
-        get: operations["get_api_debug_mode-state_{location}_{cluster}"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/debug/ramps/{location}/{cluster}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Ramp States
-         * @description Returns current ramp states from Redis and scheduler memory.
-         */
-        get: operations["get_api_debug_ramps_{location}_{cluster}"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/devices": {
         parameters: {
             query?: never;
@@ -1326,32 +1225,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/lights/{location}/{cluster}/{device_name}/intensity": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Set Intensity
-         * @description Set dimming intensity for a light device.
-         *
-         *     The device must be configured in automation_config.yaml with:
-         *     - dimming_enabled: true
-         *     - dimming_type: "dfr0971"
-         *     - dimming_board_id: <board_id>
-         *     - dimming_channel: <0 or 1>
-         */
-        post: operations["post_api_lights_{location}_{cluster}_{device_name}_intensity"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/lights/{location}/{cluster}/{device_name}/schedule": {
         parameters: {
             query?: never;
@@ -1401,28 +1274,6 @@ export interface paths {
         put?: never;
         /** Set Target Intensity */
         post: operations["post_api_lights_{location}_{cluster}_{device_name}_target"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/lights/{location}/{cluster}/{device_name}/voltage": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Set Voltage
-         * @description Set voltage directly for a light device (0-10V).
-         *
-         *     This is an alternative to set_intensity for direct voltage control.
-         */
-        post: operations["post_api_lights_{location}_{cluster}_{device_name}_voltage"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1728,35 +1579,6 @@ export interface paths {
          *         Reset PID parameters from config
          */
         post: operations["post_api_pid_parameters_{location}_{cluster}_{device_type}_reset"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/redis-state/schedule/{location}/{cluster}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Schedule State
-         * @description Get schedule state from database.
-         *
-         *     This endpoint is used by the native monitoring UI to query current schedule state.
-         *
-         *     Args:
-         *         location: Location name (e.g., 'Veg Room', 'Flower Room')
-         *         cluster: Cluster name (e.g., 'main')
-         *
-         *     Returns:
-         *         Complete schedule state matching canonical schema structure
-         */
-        get: operations["get_api_redis-state_schedule_{location}_{cluster}"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2139,8 +1961,8 @@ export interface paths {
          * Ready Check
          * @description Readiness probe.
          *
-         *     Verifies every hard dependency the control loop needs within 500ms via
-         *     shared.health: postgres pool answers SELECT 1, redis pings back.
+         *     Verifies PostgreSQL and Redis via shared.health, and checks control-loop
+         *     task/tick liveness.
          *     Returns 503 on any failure so orchestrators drain traffic. MCP/hardware
          *     state is advisory and reported elsewhere (/health, /api/status) but
          *     does not fail readiness — the control loop's own degraded-mode logic
@@ -3373,16 +3195,6 @@ export interface components {
             stddev_quality: components["schemas"]["StddevQuality"];
             /** Stddev Samp */
             stddev_samp?: number | null;
-        };
-        /**
-         * IntensityControl
-         * @description Request model for intensity control.
-         */
-        IntensityControl: {
-            /** Duration */
-            duration?: number | null;
-            /** Intensity */
-            intensity: number;
         };
         /**
          * LightDevice
@@ -4780,16 +4592,6 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
-        };
-        /**
-         * VoltageControl
-         * @description Request model for voltage control.
-         */
-        VoltageControl: {
-            /** Duration */
-            duration?: number | null;
-            /** Voltage */
-            voltage: number;
         };
     };
     responses: never;
@@ -6382,172 +6184,6 @@ export interface operations {
             };
         };
     };
-    get_api_control_history: {
-        parameters: {
-            query?: {
-                location?: string | null;
-                cluster?: string | null;
-                limit?: number;
-                channel?: number | null;
-                since?: string | null;
-                until?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never>[];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    "get_api_debug_light-schedule-health_{location}_{cluster}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                location: string;
-                cluster: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    "get_api_debug_mode-history_{location}_{cluster}": {
-        parameters: {
-            query?: {
-                limit?: number;
-            };
-            header?: never;
-            path: {
-                location: string;
-                cluster: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    "get_api_debug_mode-state_{location}_{cluster}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                location: string;
-                cluster: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    "get_api_debug_ramps_{location}_{cluster}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                location: string;
-                cluster: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     get_api_devices: {
         parameters: {
             query?: never;
@@ -7264,43 +6900,6 @@ export interface operations {
             };
         };
     };
-    "post_api_lights_{location}_{cluster}_{device_name}_intensity": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                location: string;
-                cluster: string;
-                device_name: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["IntensityControl"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never>;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     "get_api_lights_{location}_{cluster}_{device_name}_schedule": {
         parameters: {
             query?: never;
@@ -7418,43 +7017,6 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["TargetIntensityControl"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never>;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    "post_api_lights_{location}_{cluster}_{device_name}_voltage": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                location: string;
-                cluster: string;
-                device_name: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["VoltageControl"];
             };
         };
         responses: {
@@ -7925,38 +7487,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": Record<string, never> | null;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    "get_api_redis-state_schedule_{location}_{cluster}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                location: string;
-                cluster: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": Record<string, never>;
                 };
             };
             /** @description Validation Error */

@@ -14,10 +14,6 @@ vi.mock('../../services/api', () => ({
     getAllDevices: vi.fn(async () => []),
     getSensorDataBulk: vi.fn(async () => ({})),
     getDevicesForLocationCluster: vi.fn(async () => ({ devices: {} })),
-    getAllLiveSensorData: vi.fn(async () => [
-      { sensor: 'dry_bulb_f' },
-      { sensor: 'dry_bulb_b' },
-    ]),
     getLiveSensorData: vi.fn(async (location: string) => {
       if (location !== 'Veg Room') return {}
       fixture.pollTimes.push(Date.now())

@@ -19,7 +19,6 @@ function makePollingFixture(
     },
     lastPollAt: now,
     lightDisplayNames: {},
-    flowerClusterWarnings: [],
     loading: false,
     refresh: vi.fn(),
     ...overrides,

@@ -7,8 +7,6 @@ export type RelayMatrixVariant = 'panel' | 'compact'
 interface RelayChannelMatrixProps {
   channels: RelayChannelViewModel[]
   nowMs: number
-  /** @deprecated Use variant="compact" instead */
-  compact?: boolean
   variant?: RelayMatrixVariant
   location?: string
   editingChannel?: number | null
@@ -70,8 +68,7 @@ const RELAY_GRID_COLUMNS = 'var(--relay-w) var(--relay-w)'
 export default function RelayChannelMatrix({
   channels,
   nowMs,
-  compact = false,
-  variant: variantProp,
+  variant = 'panel',
   location,
   editingChannel = null,
   onSelectChannel,
@@ -79,7 +76,6 @@ export default function RelayChannelMatrix({
   onToggleMenu,
   onMenuAction,
 }: RelayChannelMatrixProps) {
-  const variant: RelayMatrixVariant = variantProp ?? (compact ? 'compact' : 'panel')
   const { rows } = splitRelayByPhysicalLayout(channels)
 
   const boxProps: ChannelBoxRenderProps = {

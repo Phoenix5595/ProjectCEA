@@ -1,7 +1,6 @@
 /** Device-related API methods (automation service). */
 import type { components } from '../../generated/api'
-import type { Device, DeviceRegistryEntry, ControlHistoryEntry } from '../../types/device'
-import type { RelayBoardStateResponse } from '../../types/relay'
+import type { Device, DeviceRegistryEntry } from '../../types/device'
 import type { ApiClientCore } from '../api'
 
 /** Generated control snapshot response — the single typed read model for the control plane. */
@@ -79,10 +78,6 @@ export interface DeviceApi {
     location: string,
     cluster: string
   ): Promise<{ location: string; cluster: string; devices: Record<string, RawDevice> }>
-  getDevicesForLocationClusterWithDetails(
-    location: string,
-    cluster: string
-  ): Promise<Record<string, RawDevice>>
   getLightsForZone(
     location: string,
     cluster: string
@@ -95,16 +90,7 @@ export interface DeviceApi {
       dimming_channel?: number | null
     }>
   >
-  getRelayBoardState(): Promise<RelayBoardStateResponse>
   testLight(device_id: number): Promise<{ success: boolean }>
-  controlDevice(
-    location: string,
-    cluster: string,
-    device: string,
-    state: number,
-    reason?: string,
-    durationSeconds?: number
-  ): Promise<JsonObject>
   commandDevice(
     location: string,
     cluster: string,
@@ -112,17 +98,6 @@ export interface DeviceApi {
     command: DeviceCommandBody
   ): Promise<JsonObject>
   controlChannel(channel: number, state: 0 | 1, durationSeconds?: number): Promise<JsonObject>
-  setDeviceMode(
-    location: string,
-    cluster: string,
-    device: string,
-    mode: 'manual' | 'auto' | 'scheduled'
-  ): Promise<JsonObject>
-  getControlHistory(
-    location: string,
-    cluster: string,
-    limit?: number
-  ): Promise<ControlHistoryEntry[]>
 }
 
 export const deviceMethods = {
@@ -185,14 +160,6 @@ export const deviceMethods = {
     return response.data
   },
 
-  async getDevicesForLocationClusterWithDetails(
-    this: ApiClientCore,
-    location: string,
-    cluster: string
-  ): Promise<Record<string, RawDevice>> {
-    const response = await this.automationClient.get(`/api/devices/${location}/${cluster}`)
-    return response.data.devices || {}
-  },
 
   async getLightsForZone(
     this: ApiClientCore,
@@ -221,10 +188,6 @@ export const deviceMethods = {
   },
 
   // Channels & relay state
-  async getRelayBoardState(this: ApiClientCore): Promise<RelayBoardStateResponse> {
-    const response = await this.automationClient.get('/api/hardware/relays/state')
-    return response.data
-  },
 
   async testLight(this: ApiClientCore, device_id: number): Promise<{ success: boolean }> {
     const response = await this.automationClient.post(`/api/lights/${device_id}/test`)
@@ -246,25 +209,6 @@ export const deviceMethods = {
     return response.data
   },
 
-  async controlDevice(
-    this: ApiClientCore,
-    location: string,
-    cluster: string,
-    device: string,
-    state: number,
-    reason?: string,
-    durationSeconds?: number
-  ): Promise<JsonObject> {
-    const response = await this.automationClient.post(
-      `/api/devices/${location}/${cluster}/${device}/control`,
-      {
-        state,
-        reason: reason || 'Manual override',
-        duration_seconds: durationSeconds,
-      }
-    )
-    return response.data
-  },
 
   async controlChannel(
     this: ApiClientCore,
@@ -279,30 +223,4 @@ export const deviceMethods = {
     return response.data
   },
 
-  async setDeviceMode(
-    this: ApiClientCore,
-    location: string,
-    cluster: string,
-    device: string,
-    mode: 'manual' | 'auto' | 'scheduled'
-  ): Promise<JsonObject> {
-    const response = await this.automationClient.post(
-      `/api/devices/${location}/${cluster}/${device}/mode`,
-      { mode }
-    )
-    return response.data
-  },
-
-  // Control history
-  async getControlHistory(
-    this: ApiClientCore,
-    location: string,
-    cluster: string,
-    limit?: number
-  ): Promise<ControlHistoryEntry[]> {
-    const response = await this.automationClient.get('/api/control/history', {
-      params: { location, cluster, limit: limit ?? 10 },
-    })
-    return response.data ?? []
-  },
 }

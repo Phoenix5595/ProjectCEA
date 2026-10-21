@@ -156,7 +156,7 @@ describe('DashboardZoneRow', () => {
   })
 
 
-  it('renders as a link to zone page', () => {
+  it('renders as a link to the canonical room page', () => {
     const { container } = renderWithRouter(
       <DashboardZoneRow
         location="Veg Room"
@@ -168,7 +168,7 @@ describe('DashboardZoneRow', () => {
       />
     )
     const link = container.querySelector('a')
-    expect(link).toHaveAttribute('href', '/zone/Veg%20Room/main')
+    expect(link).toHaveAttribute('href', '/vegetation/control')
   })
 
   it('shows separate Front and Back freshness beside their own readings', () => {
@@ -375,7 +375,7 @@ describe('DashboardZoneRow', () => {
     ).toHaveTextContent('Mode: —')
 
     const lab = screen.getByRole('link', { name: /Lab/ })
-    expect(lab).toHaveAttribute('href', '/zone/Lab/main')
+    expect(lab).toHaveAttribute('href', '/laboratory')
     expect(lab).not.toHaveTextContent(
       /Mode:|No scheduled transition|TEMP IN BAND|AUTO|Setpoints|Lab lights/
     )

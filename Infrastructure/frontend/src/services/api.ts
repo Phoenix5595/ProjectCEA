@@ -17,7 +17,6 @@ import type {
   CalendarEventCreate,
   CalendarEventDto,
   CalendarEventUpdate,
-  CalendarRoomProfile,
   FlowerCalendarModeTransitionSetting,
   FlowerGrowPlanRequest,
   ModeScheduleResponse,
@@ -28,15 +27,12 @@ import type {
   CalendarTestResult,
   CalendarConnection,
 } from '../types/calendar'
-import type { LightStatus, LightTargetSetResponse } from '../types/light'
+import type { LightTargetSetResponse } from '../types/light'
 import type {
   RoomMode,
   FlowerSubmode,
-  RoomModeWithParams,
   ModeActivationResponse,
-  ModeParametersUpdateResponse,
   SetModeRequest,
-  UpdateParametersRequest,
 } from '../types/modes'
 import type {
   SystemConfigResponse,
@@ -190,21 +186,6 @@ class ApiClient implements ApiClientCore {
   }
 
   // Modes (automation service)
-  async getMode(
-    location: string,
-    cluster: string
-  ): Promise<{ location: string; cluster: string; mode: string }> {
-    const response = await this.automationClient.get(`/api/mode/${location}/${cluster}`)
-    return response.data
-  }
-
-  async getAllModes(): Promise<
-    Record<string, { location: string; cluster: string; mode: string }>
-  > {
-    const response = await this.automationClient.get('/api/mode')
-    return response.data
-  }
-
   async getActiveRoomMode(
     location: string,
     cluster: string
@@ -216,17 +197,6 @@ class ApiClient implements ApiClientCore {
   }
 
   // Lights (automation service)
-  async getLightStatus(
-    location: string,
-    cluster: string,
-    deviceName: string
-  ): Promise<LightStatus> {
-    const response = await this.automationClient.get(
-      `/api/lights/${location}/${cluster}/${deviceName}/status`
-    )
-    return response.data
-  }
-
   async getZoneLightsStatus(
     location: string,
     cluster: string
@@ -267,46 +237,6 @@ class ApiClient implements ApiClientCore {
     return response.data
   }
 
-  async updateLightIntensity(
-    deviceId: number,
-    intensity: number,
-    options?: { expectedModeId?: number }
-  ): Promise<{ success: boolean; device_id: number; target_intensity: number }> {
-    const response = await this.automationClient.put(`/api/lights/${deviceId}/intensity`, {
-      target_intensity: intensity,
-      ...(options?.expectedModeId != null ? { expected_mode_id: options.expectedModeId } : {}),
-    })
-    return response.data
-  }
-
-  async getLightSchedule(
-    location: string,
-    cluster: string,
-    deviceName: string
-  ): Promise<{ start_time: string; end_time: string; target_intensity: number }> {
-    const response = await this.automationClient.get(
-      `/api/lights/${location}/${cluster}/${deviceName}/schedule`
-    )
-    return response.data
-  }
-
-  async updateLightSchedule(
-    location: string,
-    cluster: string,
-    deviceName: string,
-    startTime: string,
-    endTime: string
-  ): Promise<JsonObject> {
-    const response = await this.automationClient.put(
-      `/api/lights/${location}/${cluster}/${deviceName}/schedule`,
-      {
-        start_time: startTime,
-        end_time: endTime,
-      }
-    )
-    return response.data
-  }
-
   // Weather Service
   async getLatestWeather(): Promise<WeatherResponse> {
     const response = await this.weatherClient.get('/weather/latest')
@@ -335,11 +265,6 @@ class ApiClient implements ApiClientCore {
     return response.data
   }
 
-  async getRoomModeWithParams(location: string, cluster: string): Promise<RoomModeWithParams> {
-    const response = await this.automationClient.get(`/api/room-modes/room/${location}/${cluster}`)
-    return response.data
-  }
-
   async setRoomMode(
     location: string,
     cluster: string,
@@ -352,24 +277,7 @@ class ApiClient implements ApiClientCore {
     return response.data
   }
 
-  async updateRoomParameters(
-    location: string,
-    cluster: string,
-    params: UpdateParametersRequest
-  ): Promise<ModeParametersUpdateResponse> {
-    const response = await this.automationClient.put(
-      `/api/room-modes/room/${location}/${cluster}/parameters`,
-      params
-    )
-    return response.data
-  }
-
   // Calendar (automation service)
-  async getCalendarRooms(): Promise<CalendarRoomProfile[]> {
-    const response = await this.automationClient.get('/api/calendar/rooms')
-    return response.data
-  }
-
   async getFlowerCalendarModeTransitions(): Promise<FlowerCalendarModeTransitionSetting> {
     const response = await this.automationClient.get('/api/calendar/flower-mode-transitions')
     return response.data
@@ -435,10 +343,6 @@ class ApiClient implements ApiClientCore {
     return response.data
   }
 
-  async deleteGrowPlan(growPlanId: string): Promise<{ deleted: number }> {
-    const response = await this.automationClient.delete(`/api/calendar/grow-plans/${growPlanId}`)
-    return response.data
-  }
 
   async getModeSchedule(
     location: string,
@@ -542,9 +446,6 @@ class ApiClient implements ApiClientCore {
     return response.data
   }
 
-  async deleteCalendarSyncConnection(): Promise<void> {
-    await this.automationClient.delete('/api/calendar/sync/connections')
-  }
 
   // System Config (automation service)
   async getConfig(): Promise<SystemConfigResponse> {

@@ -7,7 +7,6 @@ import { getDashboardMode, useDashboardScheduleContext } from '../useDashboardSc
 vi.mock('../../services/api', () => ({
   apiClient: {
     getActiveRoomMode: vi.fn(),
-    getAllModes: vi.fn(),
     getSchedules: vi.fn(),
   },
 }))
@@ -56,7 +55,6 @@ describe('useDashboardScheduleContext', () => {
     expect(getDashboardMode(result.current.modes, 'Flower Room', 'main')).toBeNull()
     expect(result.current.modeErrors['Veg Room:main']).toBeNull()
     expect(result.current.error).toContain('grow mode unavailable')
-    expect(apiClient.getAllModes).not.toHaveBeenCalled()
   })
 
   it('preserves each last known mode and schedules across independent failures', async () => {
@@ -100,7 +98,6 @@ describe('useDashboardScheduleContext', () => {
     expect(result.current.modeErrors['Veg Room:main']).toBe('Veg refresh failed')
     expect(result.current.schedules).toEqual([])
     expect(result.current.error).toContain('grow mode unavailable')
-    expect(apiClient.getAllModes).not.toHaveBeenCalled()
   })
 
   it('rejects active modes with a mismatched room or an empty mode name', async () => {

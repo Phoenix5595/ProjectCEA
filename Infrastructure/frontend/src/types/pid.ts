@@ -46,28 +46,6 @@ export interface PIDModeUpdate {
 }
 
 /** Autotune state from API */
-export interface AutotuneState {
-  device_type: string
-  is_active: boolean
-  status: AutotuneStatus
-  cycles_completed: number
-  estimated_remaining_cycles: number
-  current_ku?: number
-  current_tu?: number
-  suggested_kp?: number
-  suggested_ki?: number
-  suggested_kd?: number
-  last_change_reason?: string
-}
-
-/** Notification when PID parameters change (for WebSocket) */
-export interface PIDChangeNotification {
-  device_type: string
-  old_values: { kp: number; ki: number; kd: number }
-  new_values: { kp: number; ki: number; kd: number }
-  reason: string
-  timestamp: string
-}
 
 /** PID parameter history entry */
 export interface PIDHistoryEntry {

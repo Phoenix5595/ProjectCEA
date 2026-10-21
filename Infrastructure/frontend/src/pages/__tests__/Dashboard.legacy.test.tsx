@@ -16,7 +16,6 @@ vi.mock('../../hooks/useSensorPolling', () => ({
     sensorMeta: {},
     lastPollAt: null,
     lightDisplayNames: {},
-    flowerClusterWarnings: [],
     loading: false,
   }),
 }))
@@ -26,7 +25,6 @@ vi.mock('../../hooks/useDashboardLiveData', () => ({
     sensorData: {},
     sensorMeta: {},
     lightDisplayNames: {},
-    flowerClusterWarnings: [],
     loading: false,
     lastPollAt: null,
     transport: 'degraded',
@@ -129,13 +127,13 @@ describe('Dashboard dense layout', () => {
 
     const zoneLinks = screen
       .getAllByRole('link')
-      .filter(link => link.getAttribute('href')?.startsWith('/zone/'))
+      .filter(link => link.classList.contains('dashboard-zone-row'))
     expect(zoneLinks).toHaveLength(3)
     expect(zoneLinks.map(l => l.getAttribute('href'))).toEqual(
       expect.arrayContaining([
-        '/zone/Flower%20Room/main',
-        '/zone/Veg%20Room/main',
-        '/zone/Lab/main',
+        '/flower/control',
+        '/vegetation/control',
+        '/laboratory',
       ])
     )
   })
@@ -155,7 +153,10 @@ describe('Dashboard dense layout', () => {
     renderPage()
     const labLink = screen
       .getAllByRole('link')
-      .find(link => link.getAttribute('href') === '/zone/Lab/main')
+      .find(
+        link =>
+          link.classList.contains('dashboard-zone-row') && link.getAttribute('href') === '/laboratory'
+      )
     expect(labLink).toBeDefined()
     expect(labLink).not.toHaveTextContent(
       /Mode:|No scheduled transition|TEMP IN BAND|AUTO|Setpoints/

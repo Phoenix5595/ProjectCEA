@@ -1,24 +1,5 @@
 /** Types for light device data. */
 
-export interface LightStatus {
-  location: string
-  cluster: string
-  device: string
-  intensity: number // 0-100% (current intensity, changes during ramp)
-  voltage: number // 0-10V
-  board_id: number
-  channel: number
-  target_intensity?: number | null // 0-100% (target intensity from schedule, max for the day)
-  scheduler_nominal_intensity?: number | null
-  /** Present on zone-status aggregate; optional on per-device `/status`. */
-  day_target_intensity?: number | null
-  schedule_sun_target_intensity?: number | null
-  board_info?: {
-    board_id: number
-    i2c_address: number
-    name?: string
-  }
-}
 
 /** Response from POST .../lights/.../target */
 export interface LightTargetSetResponse {

@@ -20,10 +20,6 @@ vi.mock('../../services/api', () => ({ apiClient: {
     location, cluster, devices: dashboardDeviceDetails(location, cluster),
   }),
   getLiveSensorData: async () => ({}),
-  getAllLiveSensorData: async () => [
-    { sensor: 'Flower Room_front_dry_bulb_f' },
-    { sensor: 'Flower Room_back_dry_bulb_b' },
-  ],
 } }))
 
 beforeEach(() => {

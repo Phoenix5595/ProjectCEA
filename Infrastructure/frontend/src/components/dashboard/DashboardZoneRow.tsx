@@ -1,7 +1,11 @@
 import { memo, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 
-import { getFlowerDualClimateLayers, getLocationDisplayName } from '../../config/zones'
+import {
+  getFlowerDualClimateLayers,
+  getLocationDisplayName,
+  roomPagePath,
+} from '../../config/zones'
 import type { components } from '../../generated/api'
 import type { Device } from '../../types/device'
 import { MODE_DISPLAY_NAMES, SUBMODE_DISPLAY_NAMES } from '../../types/modes'
@@ -342,7 +346,7 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
 
   return (
     <Link
-      to={`/zone/${encodeURIComponent(location)}/${encodeURIComponent(cluster)}`}
+      to={roomPagePath(location)}
       className={`dashboard-zone-row block w-full min-w-0 bg-surface-primary rounded-lg border border-border-subtle hover:border-border-emphasis transition-colors ${isLab ? 'p-1.5' : 'p-2'}`}
     >
       <div className="dashboard-zone-row__wide">

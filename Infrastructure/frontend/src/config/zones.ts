@@ -1,14 +1,4 @@
-/**
- * Zone helpers built on top of `clusterTopology.ts`.
- *
- * Phase 5e: this file used to inline the Flower-specific cluster list
- * (`FLOWER_DASHBOARD_CLUSTERS = ['front', 'back']`) and the per-room
- * device cluster list, which made the room → cluster knowledge live in
- * three places (here, `clusterTopology.ts`, and a half-dozen call
- * sites). Now everything threads through the topology registry; the
- * exports below are kept for back-compat so the rest of the SPA does
- * not need a coordinated rename.
- */
+/** Zone helpers built on top of `clusterTopology.ts`, the single room → cluster registry. */
 
 import type { Device } from '../types/device'
 
@@ -17,7 +7,6 @@ import {
   knownRooms,
   sensorSubclustersFor,
   sensorUrlClustersFor,
-  TOPOLOGY,
 } from './clusterTopology'
 
 export interface Zone {
@@ -37,15 +26,6 @@ export const ZONES: Zone[] = knownRooms()
   .filter(r => r !== 'Outside') // Outside has no device-plane UI today.
   .map(location => ({ location, cluster: deviceClusterFor(location) }))
 
-/**
- * @deprecated Prefer `sensorSubclustersFor('Flower Room')`. Kept as a
- * named export so `useSensorPolling`, `getFlowerDualClimateLayers`,
- * and old call sites compile until they're updated. The value is
- * always derived from `TOPOLOGY` so the policy stays single-sourced.
- */
-export const FLOWER_DASHBOARD_CLUSTERS: string[] = [
-  ...(TOPOLOGY['Flower Room']?.sensorSubclusters ?? []),
-]
 
 /** Vertical order on the main dashboard (matches ZONES order: Flower, Veg, Lab). */
 export const DASHBOARD_ROW_ZONES: Zone[] = [...ZONES]
@@ -125,7 +105,7 @@ export interface FlowerClimateLayer {
 
 /** Two UI layers (Front / Back); second uses another cluster when configured, else null (show placeholder, no fake data). */
 export function getFlowerDualClimateLayers(): FlowerClimateLayer[] {
-  const clusters = FLOWER_DASHBOARD_CLUSTERS
+  const clusters = sensorSubclustersFor('Flower Room')
   return [
     { label: 'Front', cluster: clusters[0] ?? 'front' },
     { label: 'Back', cluster: clusters[1] ?? null },
@@ -191,16 +171,15 @@ export function getClusterDisplayName(location: string, cluster: string): string
   return words.replace(/\b\w/g, c => c.toUpperCase())
 }
 
-export function getZoneKey(location: string, cluster: string): string {
-  return `${location}:${cluster}`
+const ROOM_PAGE_PATHS: Record<string, string> = {
+  Lab: '/laboratory',
+  'Veg Room': '/vegetation/control',
+  'Flower Room': '/flower/control',
 }
 
-export function parseZoneKey(key: string): { location: string; cluster: string } | null {
-  const parts = key.split(':')
-  if (parts.length !== 2) {
-    return null
-  }
-  return { location: parts[0], cluster: parts[1] }
+/** Page a dashboard room row opens; old /zone/{room}/main URLs redirect to the same pages. */
+export function roomPagePath(location: string): string {
+  return ROOM_PAGE_PATHS[location] ?? '/'
 }
 
 /** Control-plane cluster for device APIs (Flower actuators: always `main`). */

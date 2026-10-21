@@ -10,12 +10,6 @@ export interface Device {
   load_percent?: number
 }
 
-export interface DeviceState {
-  state: number
-  mode: string
-  channel: number | null
-  load_percent?: number
-}
 
 /**
  * A row from GET /api/devices/registry — the unified flat list of all

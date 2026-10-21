@@ -342,9 +342,9 @@ test('dashboard fits both supported desktop viewports without overflow', async (
   expect(shell!.ribbonPosition).toBe('static')
   await expect(page.getByRole('button', { name: /sidebar/i })).toHaveCount(0)
 
-  const flowerRow = page.locator('a[href="/zone/Flower%20Room/main"]')
-  const vegRow = page.locator('a[href="/zone/Veg%20Room/main"]')
-  const labRow = page.locator('a[href="/zone/Lab/main"]')
+  const flowerRow = page.locator('.dashboard-zone-row[href="/flower/control"]')
+  const vegRow = page.locator('.dashboard-zone-row[href="/vegetation/control"]')
+  const labRow = page.locator('.dashboard-zone-row[href="/laboratory"]')
   await expect(flowerRow).toContainText('Mode: Sleep')
   await expect(vegRow).toContainText('Mode: Veg')
   await expect(labRow).not.toContainText(

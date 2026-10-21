@@ -93,7 +93,7 @@ test.describe('guarded dashboard refactor parity', () => {
       'chromium-functional-1280x1440': { width: 1280, height: 1440 },
     }
     expect(page.viewportSize()).toEqual(viewports[testInfo.project.name])
-    for (const href of ['/zone/Flower%20Room/main', '/zone/Veg%20Room/main', '/zone/Lab/main']) {
+    for (const href of ['/flower/control', '/vegetation/control', '/laboratory']) {
       await expect(page.locator(`.dashboard-zone-row[href="${href}"]`)).toBeInViewport()
     }
     const rail = page.locator('aside').filter({ has: page.locator('nav[aria-label="Primary navigation"]') })
@@ -113,7 +113,7 @@ test.describe('guarded dashboard refactor parity', () => {
       expect(await name.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
     }
     const flower = page.locator('.dashboard-zone-row').filter({ hasText: 'Flower Room' })
-    const lab = page.locator('.dashboard-zone-row[href="/zone/Lab/main"]')
+    const lab = page.locator('.dashboard-zone-row[href="/laboratory"]')
     const labBox = await lab.boundingBox()
     const flowerBox = await flower.boundingBox()
     const vegBox = await veg.boundingBox()
