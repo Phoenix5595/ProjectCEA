@@ -179,11 +179,11 @@ async def get_live_readings(
         # Get all sensor values from Redis
         # Note: This requires access to Redis state keys
         # For now, return a message indicating this endpoint needs Redis client access
-        # The actual implementation would read from sensor:* keys
+        # The actual implementation would read from cea:sensor:{location}:{cluster}:{sensor_name} keys
 
         return {
             "message": "Live readings endpoint - requires Redis state key access",
-            "note": "This endpoint should read from sensor:* Redis keys",
+            "note": "This endpoint should read from cea:sensor:{location}:{cluster}:{sensor_name} Redis keys",
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting live readings: {str(e)}") from e

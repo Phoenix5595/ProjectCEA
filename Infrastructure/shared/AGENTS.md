@@ -18,10 +18,7 @@ All new Redis keys must use builders from [`redis_keys.py`](redis_keys.py). Do n
 | Concept | API |
 |---|---|
 | Telemetry stream | `SENSOR_RAW_STREAM` (`sensor:raw`), maxlen 100,000 |
-| Control decisions | `CONTROL_STREAM` (`stream:control`), maxlen 100,000 |
-| Current sensor values | `sensor_short()`, `sensor_full()` (dual-write migration) |
-| Schedule docs | `schedule_doc_all()`, `schedule_doc_location()`, `schedule_doc_cluster()`, ... |
-| Failsafe flag | `failsafe_active()` |
+| Current sensor values | `sensor_full()`, `sensor_full_ts()` (topology-qualified key and epoch-ms timestamp) |
 
 ## Relay Bijection
 

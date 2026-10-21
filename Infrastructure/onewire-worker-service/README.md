@@ -45,7 +45,7 @@ Production runs under `onewire-worker.service`.
 ```
 /sys/bus/w1/devices/28-*
     -> onewire-worker-service
-        -> Redis state keys (sensor:lab_temp, sensor:water_temperature, 10 s TTL)
+        -> Redis state keys (`cea:sensor:Lab:main:lab_temp`, `cea:sensor:Lab:main:water_temperature`, 10 s TTL)
         -> Backend /api/sensors/Lab/main/live
 ```
 
@@ -65,7 +65,7 @@ Read current values locally without touching production data:
 curl -s http://127.0.0.1:8004/readings
 
 # Redis keys
-redis-cli MGET sensor:lab_temp sensor:water_temperature
+redis-cli MGET cea:sensor:Lab:main:lab_temp cea:sensor:Lab:main:water_temperature
 
 # Backend live endpoint
 curl -s http://127.0.0.1:8000/api/sensors/Lab/main/live

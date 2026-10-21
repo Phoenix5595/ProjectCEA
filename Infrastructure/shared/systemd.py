@@ -21,20 +21,13 @@ import os
 import socket
 
 __all__ = [
-    "is_under_systemd",
     "notify_ready",
-    "notify_status",
     "notify_stopping",
     "notify_watchdog",
     "sd_notify",
 ]
 
 logger = logging.getLogger(__name__)
-
-
-def is_under_systemd() -> bool:
-    """Return True if running under systemd with ``NOTIFY_SOCKET`` available."""
-    return bool(os.environ.get("NOTIFY_SOCKET"))
 
 
 def sd_notify(state: str) -> bool:
@@ -85,8 +78,3 @@ def notify_stopping() -> bool:
 def notify_watchdog() -> bool:
     """Send ``WATCHDOG=1``. Call periodically when ``WatchdogSec=`` is set."""
     return sd_notify("WATCHDOG=1")
-
-
-def notify_status(status: str) -> bool:
-    """Publish a free-form status line visible via ``systemctl status``."""
-    return sd_notify(f"STATUS={status}")

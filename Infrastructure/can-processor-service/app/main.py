@@ -61,7 +61,7 @@ def signal_handler(sig, frame):
     running = False
 
 
-def format_message_display(msg, decoded, sensors, assignment):
+def format_message_display(msg, decoded, sensors, assignment, raw_data: str):
     """Format a CAN message for display (similar to old scanner).
 
     Args:
@@ -69,13 +69,13 @@ def format_message_display(msg, decoded, sensors, assignment):
         decoded: Decoded message data
         sensors: List of (sensor_name, value, unit) tuples
         assignment: cached registry assignment snapshot or None
+        raw_data: Raw hexadecimal CAN frame bytes
 
     Returns:
         Formatted string for display
     """
     msg_type = decoded.get("message_type", "Unknown")
     node_id = decoded.get("node_id", "?")
-    raw_data = " ".join(f"{b:02X}" for b in msg.data)
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
     # Build display string
@@ -157,7 +157,7 @@ def process_can_message(msg):
 
         # Display message if enabled
         if display_messages:
-            display_str = format_message_display(msg, decoded, sensors, assignment)
+            display_str = format_message_display(msg, decoded, sensors, assignment, raw_data)
             print(display_str)
             logger.info(display_str)
 

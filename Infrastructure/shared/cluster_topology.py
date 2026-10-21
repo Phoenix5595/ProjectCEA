@@ -236,14 +236,6 @@ def sensor_url_clusters_for(room: str) -> tuple[str, ...]:
     return (topo.device_cluster,)
 
 
-# ---- Back-compat alias ----------------------------------------------------
-# Old call sites import ``sensor_clusters_for``; keep the name working but
-# prefer the more precise ``sensor_url_clusters_for`` for new code.
-def sensor_clusters_for(room: str) -> tuple[str, ...]:
-    """Deprecated alias for :func:`sensor_url_clusters_for`."""
-    return sensor_url_clusters_for(room)
-
-
 def is_device_cluster(room: str, cluster: str) -> bool:
     """True if ``cluster`` is the *device* cluster of ``room``."""
     return _get(room).device_cluster == cluster
@@ -256,12 +248,6 @@ def is_sensor_subcluster(room: str, cluster: str) -> bool:
     rooms where ``cluster == "main"`` is a valid sensor URL slug.
     """
     return cluster in _get(room).sensor_subclusters
-
-
-# Old name kept for compat with route validators / tests.
-def is_sensor_cluster(room: str, cluster: str) -> bool:
-    """True if ``cluster`` is a valid sensor URL slug for ``room``."""
-    return cluster in sensor_url_clusters_for(room)
 
 
 def sensor_name_like_pattern(room: str, cluster: str) -> str | None:
@@ -370,10 +356,8 @@ __all__ = [
     "assert_sensor_cluster",
     "device_cluster_for",
     "is_device_cluster",
-    "is_sensor_cluster",
     "is_sensor_subcluster",
     "known_rooms",
-    "sensor_clusters_for",
     "sensor_name_like_pattern",
     "sensor_subclusters_for",
     "sensor_url_clusters_for",

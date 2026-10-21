@@ -165,11 +165,18 @@ class MetadataWorker:
 
     def _drain_observations(self, connection: psycopg2.extensions.connection) -> None:
         identity_changed = False
+        seen_node_ids: set[int] = set()
+        node_ids: list[int] = []
         for _ in range(DISCOVERY_DRAIN_LIMIT):
             try:
                 node_id = self._observations.get_nowait()
             except queue.Empty:
                 break
+            if node_id not in seen_node_ids:
+                seen_node_ids.add(node_id)
+                node_ids.append(node_id)
+
+        for node_id in node_ids:
             identity_changed = self._upsert_node(connection, node_id) or identity_changed
 
         if identity_changed and self._on_change is not None:

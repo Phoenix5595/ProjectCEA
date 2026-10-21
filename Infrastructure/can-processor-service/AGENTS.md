@@ -24,7 +24,7 @@ Use `front`, `back`, and `main` in Redis and Postgres. Do not revive legacy `clu
 
 | Destination | Key / Table | Purpose |
 |---|---|---|
-| Redis state | `sensor:{name}` (10 s TTL) | Live current values |
+| Redis state | `cea:sensor:{location}:{cluster}:{sensor_name}` and its `_ts` companion (no TTL) | Live current values |
 | Redis stream | `sensor:raw` | Recent history buffer for automation |
 | TimescaleDB | `measurement` | Historical time series |
 

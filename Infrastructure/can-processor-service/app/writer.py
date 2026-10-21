@@ -7,7 +7,8 @@ from datetime import datetime
 import json
 import os
 import threading
-from typing import Any, cast
+import time
+from typing import Any, Final, cast
 
 import psycopg2
 import psycopg2.extensions
@@ -30,6 +31,8 @@ from shared.redis_keys import (
 from shared.sensor_identity import SENSOR_IDENTITY_LOCK_NAMESPACE
 
 logger = get_logger(__name__)
+
+REDIS_RETRY_COOLDOWN_SEC: Final = 5.0
 
 # unit/data_type for auto-created metric channels, keyed by canonical base.
 CHANNEL_SPECS: dict[str, tuple[str, str]] = {
@@ -112,6 +115,8 @@ class DataWriter:
         self.db_enabled = False
         self.redis_enabled = False
 
+        self._redis_retry_at = 0.0
+        self._redis_outage_logged = False
         # CAN addresses resolve only through sensor_registry.device_id.
         self.device_cache: dict[int, int] = {}  # {hardware_address: device_id}
         self.sensor_cache: dict[tuple[int, str], int] = {}  # {(device_id, sensor_name): sensor_id}
@@ -367,6 +372,20 @@ class DataWriter:
             logger.error(f"Unexpected error checking DB connection: {e}")
             return False
 
+    def _mark_redis_unavailable(self) -> None:
+        self.redis_enabled = False
+        self._redis_retry_at = time.monotonic() + REDIS_RETRY_COOLDOWN_SEC
+        if not self._redis_outage_logged:
+            self._redis_outage_logged = True
+            logger.warning("Redis unavailable; retrying every 5s")
+
+    def _ensure_redis_connection(self) -> bool:
+        if self.redis_enabled:
+            return True
+        if time.monotonic() < self._redis_retry_at:
+            return False
+        return self.connect_redis()
+
     def connect_redis(self) -> bool:
         """Connect to Redis with connection pooling for better performance."""
         try:
@@ -382,33 +401,40 @@ class DataWriter:
                 max_connections=10,
                 name="can-redis-state",
             )
-            self.redis_enabled = True
-            return True
-        except Exception as e:
-            logger.warning(f"Failed to connect to Redis: {e}. Continuing without Redis.")
-            self.redis_enabled = False
+        except Exception:
+            self._mark_redis_unavailable()
             return False
+        self.redis_enabled = True
+        self._redis_retry_at = 0.0
+        if self._redis_outage_logged:
+            logger.info("Redis reconnected")
+            self._redis_outage_logged = False
+        return True
 
     def write_to_stream(
-        self, msg, decoded_data: dict[str, Any], assignment: SensorAssignment | None = None
+        self,
+        msg,
+        decoded_data: dict[str, Any],
+        raw_data: str,
+        assignment: SensorAssignment | None = None,
     ) -> bool:
         """Write CAN message to Redis Stream.
 
         Args:
             msg: CAN message object
             decoded_data: Decoded CAN frame data
+            raw_data: Raw CAN frame bytes as a hexadecimal string
             assignment: cached registry assignment snapshot for the frame's
                 node, or ``None`` when unassigned/unknown
 
         Returns:
             True if successful, False otherwise
         """
-        if not self.redis_enabled and not self.connect_redis():
+        if not self._ensure_redis_connection():
             return False
 
         try:
             timestamp_ms = int(datetime.now().timestamp() * 1000)
-            raw_data = " ".join(f"{b:02X}" for b in msg.data)
 
             # Create stream entry with type="can" marker
             stream_data = {
@@ -444,6 +470,9 @@ class DataWriter:
                     approximate=True,
                 )
             return True
+        except redis.exceptions.ConnectionError:
+            self._mark_redis_unavailable()
+            return False
         except Exception as e:
             # Don't log error for every message, just occasionally
             if not hasattr(self, "_stream_error_count"):
@@ -511,7 +540,7 @@ class DataWriter:
         Returns:
             True if successful, False otherwise
         """
-        if not self.redis_enabled and not self.connect_redis():
+        if not self._ensure_redis_connection():
             return False
 
         if not sensors:
@@ -519,11 +548,6 @@ class DataWriter:
 
         try:
             # Use the pre-created pooled state client (no longer creates new client per call)
-            if not self.redis_state_client:
-                logger.warning("Redis state client not initialized, attempting reconnection")
-                if not self.connect_redis():
-                    return False
-
             if not self.redis_state_client:
                 return False
 
@@ -550,9 +574,8 @@ class DataWriter:
             pipe.execute()
             return True
 
-        except redis.exceptions.ConnectionError as e:
-            logger.warning(f"Redis connection error: {e}")
-            self.redis_enabled = False
+        except redis.exceptions.ConnectionError:
+            self._mark_redis_unavailable()
             return False
         except Exception as e:
             logger.warning(f"Error writing to Redis state: {e}")
@@ -586,7 +609,7 @@ class DataWriter:
         result = {"stream": False, "db": False, "redis": False}
 
         # Write to Redis Stream first (every decodable frame enters the stream)
-        result["stream"] = self.write_to_stream(msg, decoded, assignment)
+        result["stream"] = self.write_to_stream(msg, decoded, raw_data, assignment)
 
         result["db"] = self.queue_db_write(decoded, raw_data, sensors, timestamp, assignment)
 

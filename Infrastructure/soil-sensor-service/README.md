@@ -66,7 +66,7 @@ Data path:
 RS485 Modbus RTU
     -> Soil Sensor Service
         -> TimescaleDB measurement hypertable
-        -> Redis state keys (sensor:*) and channels (sensor:update:soil)
+        -> Redis state keys (`cea:sensor:{location}:{cluster}:{sensor_name}` and `_ts`, 10 s TTL) and channel (`sensor:update:soil`)
 ```
 
 For each Modbus sample, the service batches its supported readings' current-value and timestamp keys and both update notifications in one existing-client transaction. The raw telemetry stream write and TimescaleDB writes remain separate.

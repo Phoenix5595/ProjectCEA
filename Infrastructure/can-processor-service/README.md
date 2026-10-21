@@ -8,7 +8,7 @@ Unified service that reads CAN frames from the `can0` socketcan interface, decod
 - Decodes frames using `app/decoder.py`.
 - Extracts and calculates sensor values in `app/processor.py` (RH/VPD from dry/wet bulb temperatures).
 - Writes to:
-  - Redis state keys (`sensor:*`) for live values
+  - Redis state keys (`cea:sensor:{location}:{cluster}:{sensor_name}` and its `_ts` companion, no TTL) for live values
   - Redis Stream `sensor:raw` for recent history
   - TimescaleDB `measurement` table for long-term history
 
