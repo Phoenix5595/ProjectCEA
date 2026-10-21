@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-import app.control.control_engine as control_engine_module
+import app.control.control_engine_history as control_engine_history_module
 from app.control.control_engine import ControlEngine
 from app.control.decision_event_policy import DecisionObservation
 from app.control.device_processor import DeviceProcessor
@@ -103,7 +103,7 @@ def _engine(
     outcomes: list[bool | Exception] | None = None,
 ) -> tuple[ControlEngine, _FakeRepository]:
     _Clock.now_value = T0
-    monkeypatch.setattr(control_engine_module, "datetime", _Clock)
+    monkeypatch.setattr(control_engine_history_module, "datetime", _Clock)
     repository = _FakeRepository(outcomes)
     engine = object.__new__(ControlEngine)
     engine._automation_log_context = {KEY: context or {}}

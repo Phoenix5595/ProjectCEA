@@ -6,28 +6,33 @@ Deterministic 1-second control loop for climate, lights, and hardware outputs.
 
 ```
 control/
-├── control_engine.py              # Main loop orchestration
-├── scheduler/                     # Time-based projections
-│   ├── __init__.py                # Scheduler and install_snapshot()
-│   ├── photoperiod.py             # Sun/moon resolution
-│   ├── light_intensity.py         # (device_id, mode_id) anchors
-│   ├── light_programs.py          # Supplemental / override programs
-│   └── schedules.py               # Non-light DAY/NIGHT rows
-├── device_processor.py            # Per-device control dispatch
-├── device_controller/             # Device-type controllers
+├── control_engine.py              # ControlEngine composition and initialization
+├── control_engine_observation.py   # Snapshot and photoperiod observation methods
+├── control_engine_tick.py          # Control-loop tick methods
+├── control_engine_history.py       # History logging and ramp restoration
+├── scheduler/                       # Time-based projections
+│   ├── __init__.py                  # Scheduler and install_snapshot()
+│   ├── photoperiod.py               # Sun/moon resolution
+│   ├── light_intensity.py           # (device_id, mode_id) anchors
+│   ├── light_programs.py            # Supplemental / override programs
+│   └── schedules.py                 # Non-light DAY/NIGHT rows
+├── device_processor.py              # Per-device control dispatch
+├── device_controller/               # Device-type controllers
 │   ├── binary_device.py
 │   ├── dimmable_light.py
 │   ├── rules.py
 │   └── vpd.py
-├── relay_manager.py               # MCP23017 command projection
-├── relay_board_state_manager.py   # Observed board state sampling
-├── pid_controller.py              # PID implementation
-├── pid_controller_manager.py      # PID lifecycle
-├── vpd_controller.py              # VPD calculation
-├── vpd_cascade_controller.py      # VPD-driven actuator selection
-├── sensor_reader.py               # Batched latest-measurement DB reads
-├── setpoint_manager.py            # Effective setpoint authority
-└── runtime_device_registry.py     # Immutable snapshot publisher
+├── relay_manager.py                # MCP23017 command projection
+├── relay_board_state_manager.py     # Observed board state sampling
+├── pid_controller.py                # PID implementation
+├── pid_controller_manager.py        # PID manager composition and initialization
+├── pid_controller_state.py          # PID lifecycle, settings, and cache state
+├── pid_control_processing.py        # PID and autotuning calculations
+├── vpd_controller.py                # VPD calculation
+├── vpd_cascade_controller.py        # VPD-driven actuator selection
+├── sensor_reader.py                 # Batched latest-measurement DB reads
+├── setpoint_manager.py              # Effective setpoint authority
+└── runtime_device_registry.py        # Immutable snapshot publisher
 ```
 
 ## One snapshot per tick

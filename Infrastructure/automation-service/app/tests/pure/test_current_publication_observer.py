@@ -229,7 +229,7 @@ def test_control_tick_offers_one_complete_snapshot_after_automation_state_loggin
         del kwargs
 
     monkeypatch.setattr(
-        "app.control.control_engine.log_light_effective_intensities_for_cluster", log_light
+        "app.control.control_engine_tick.log_light_effective_intensities_for_cluster", log_light
     )
 
     # When: the tick completes all existing processing and automation-state logging.
@@ -260,7 +260,7 @@ def test_control_tick_without_observer_preserves_processing_behavior(
         del kwargs
 
     monkeypatch.setattr(
-        "app.control.control_engine.log_light_effective_intensities_for_cluster", log_light
+        "app.control.control_engine_tick.log_light_effective_intensities_for_cluster", log_light
     )
 
     # When: the tick succeeds without an observer.
@@ -283,7 +283,7 @@ def test_control_tick_contains_raising_or_async_observers(
         events: list[str] = []
         engine, processor = _engine(observer, events)
         monkeypatch.setattr(
-            "app.control.control_engine.log_light_effective_intensities_for_cluster", log_light
+            "app.control.control_engine_tick.log_light_effective_intensities_for_cluster", log_light
         )
 
         # When: a successful tick reaches the observer boundary.
@@ -460,7 +460,7 @@ def test_control_tick_keeps_captured_profile_when_registry_changes_during_sensor
         del kwargs
 
     monkeypatch.setattr(
-        "app.control.control_engine.log_light_effective_intensities_for_cluster", log_light
+        "app.control.control_engine_tick.log_light_effective_intensities_for_cluster", log_light
     )
 
     # When: the first tick completes on its entry snapshot, then a second tick starts fresh.
@@ -499,7 +499,7 @@ def test_missing_period_does_not_republish_previous_tick_setpoints(
         del kwargs
 
     monkeypatch.setattr(
-        "app.control.control_engine.log_light_effective_intensities_for_cluster", log_light
+        "app.control.control_engine_tick.log_light_effective_intensities_for_cluster", log_light
     )
     _run_tick(engine, snapshot)
     persisted_effective = engine._effective_setpoints[("Veg Room", "Main")]
@@ -527,7 +527,7 @@ def test_failed_tick_clears_actual_facts_and_phase_before_next_publication(
         del kwargs
 
     monkeypatch.setattr(
-        "app.control.control_engine.log_light_effective_intensities_for_cluster", log_light
+        "app.control.control_engine_tick.log_light_effective_intensities_for_cluster", log_light
     )
     _run_tick(engine, snapshot)
     previous_effective = engine._effective_setpoints[("Veg Room", "Main")]
