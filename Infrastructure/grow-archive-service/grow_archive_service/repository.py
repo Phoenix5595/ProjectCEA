@@ -307,18 +307,33 @@ class ArchiveRepository:
     async def download_metadata(
         self, artifact_id: UUID, dataset_id: UUID, revision: int,
     ) -> ArchiveDownloadMetadata:
+        # Pinned-artifact validation plus the catalog's own/parent selection for
+        # dataset $2 (same rules as the own/parent laterals in _CATALOG_SQL).
         row = await self.pool.fetchrow(
-            "SELECT a.remote_path,a.revision,a.dataset_id,d.calendar_year,"
-            "conn.files_root_url,"
-            "COALESCE(target.published_revision,target.data_revision)=$3 AS is_current_revision,"
-            "(d.kind='veg_year' AND EXISTS ("
-            "SELECT 1 FROM public.archive_component c "
+            "SELECT a.remote_path,a.revision,a.dataset_id,d.kind,"
+            "EXISTS (SELECT 1 FROM public.archive_component c "
             "WHERE c.parent_artifact_id=a.artifact_id "
-            "AND c.child_dataset_id=$2 AND c.child_revision=$3)) AS is_annual_parent "
+            "AND c.child_dataset_id=$2 AND c.child_revision=$3) AS is_component_parent,"
+            "parent.calendar_year AS container_year,"
+            "own.remote_path AS own_remote_path,own_conn.files_root_url AS own_files_root_url "
             "FROM public.archive_artifact a "
             "JOIN public.archive_dataset d USING(dataset_id) "
             "LEFT JOIN public.archive_dataset target ON target.dataset_id=$2 "
-            "LEFT JOIN public.calendar_sync_connection conn ON conn.instance_id=a.remote_instance_id "
+            "LEFT JOIN LATERAL ("
+            "SELECT o.remote_path,o.remote_instance_id FROM public.archive_artifact o "
+            "WHERE o.dataset_id=target.dataset_id "
+            "AND o.revision=COALESCE(target.published_revision,target.data_revision) "
+            "AND o.state='verified' ORDER BY o.verified_at DESC,o.artifact_id LIMIT 1"
+            ") own ON TRUE "
+            "LEFT JOIN LATERAL ("
+            "SELECT pd.calendar_year FROM public.archive_component ac "
+            "JOIN public.archive_artifact pa ON pa.artifact_id=ac.parent_artifact_id AND pa.state='verified' "
+            "JOIN public.archive_dataset pd ON pd.dataset_id=pa.dataset_id AND pd.kind='veg_year' "
+            "WHERE ac.child_dataset_id=target.dataset_id "
+            "AND ac.child_revision=COALESCE(target.published_revision,target.data_revision) "
+            "ORDER BY pa.verified_at DESC,pa.artifact_id LIMIT 1"
+            ") parent ON TRUE "
+            "LEFT JOIN public.calendar_sync_connection own_conn ON own_conn.instance_id=own.remote_instance_id "
             "WHERE a.artifact_id=$1 AND a.state='verified'",
             artifact_id, dataset_id, revision,
         )
@@ -327,15 +342,14 @@ class ArchiveRepository:
         if row['dataset_id'] == dataset_id:
             if row['revision'] != revision:
                 raise ArchiveError('archive_integrity_failed')
-            label = ('Download verified ZIP'
-                     if row['is_current_revision']
-                     and _remote_file_url(row['files_root_url'], row['remote_path']) is not None
-                     else None)
+        elif row['kind'] != 'veg_year' or not row['is_component_parent']:
+            raise ArchiveError('archive_integrity_failed')
+        if row['container_year'] is not None:
+            label = f"Download {row['container_year']} ZIP (all four quarters)"
+        elif _remote_file_url(row['own_files_root_url'], row['own_remote_path']) is not None:
+            label = 'Download verified ZIP'
         else:
-            if not row['is_annual_parent']:
-                raise ArchiveError('archive_integrity_failed')
-            label = (f"Download {row['calendar_year']} ZIP (all four quarters)"
-                     if row['is_current_revision'] else None)
+            label = None
         name = str(row['remote_path']).rsplit('/', 1)[-1]
         if not re.fullmatch(r'[A-Za-z0-9._-]+\.zip', name):
             raise ArchiveError('archive_integrity_failed')

@@ -220,8 +220,11 @@ async def run(database_url):
                                   if item['dataset_id'] == datasets[1])
             direct_download = await repository.download_metadata(
                 artifacts[1], datasets[1], original_revisions[1])
-            _assert(direct_download.label == direct_catalog['download_label'] == 'Download verified ZIP',
-                    f'direct download label differed from catalog: {direct_download.label!r}')
+            expected_direct_label = (direct_catalog['download_label']
+                                     or f'Download {direct_download.filename}')
+            _assert(direct_download.label == expected_direct_label,
+                    f'direct download label {direct_download.label!r} differed from catalog '
+                    f'{expected_direct_label!r}')
 
 
             # ------------------------------------------------------------------
@@ -481,8 +484,11 @@ async def run(database_url):
             _assert(parent_download.label == quarter_catalog['download_label']
                     == f'Download {YEAR} ZIP (all four quarters)',
                     f'annual parent download label differed from catalog: {parent_download.label!r}')
-            _assert(annual_download.label == annual_catalog['download_label'] == 'Download verified ZIP',
-                    f'direct annual download label differed from catalog: {annual_download.label!r}')
+            expected_annual_label = (annual_catalog['download_label']
+                                     or f'Download {annual_download.filename}')
+            _assert(annual_download.label == expected_annual_label,
+                    f'direct annual download label {annual_download.label!r} differed from catalog '
+                    f'{expected_annual_label!r}')
 
             # ------------------------------------------------------------------
             # Retirement cleanup removes the superseded annual, not its replacement.

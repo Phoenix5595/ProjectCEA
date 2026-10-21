@@ -213,7 +213,7 @@ async def run(database_url: str) -> None:
             for instant, value in everything
             if BASE + timedelta(days=2) <= instant < BASE + timedelta(days=3)
         ]
-        soil_points = {point.bucket_start: point for point in points.get("temperature", [])}
+        soil_points = {point.bucket_start: point for point in points.get(SENSOR_ID, [])}
         second = soil_points.get(BASE + timedelta(days=2))
         _assert(
             second is not None
