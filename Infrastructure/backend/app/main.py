@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse
 # Third-party imports
 import uvicorn
 
-from app.routes import live, sensor_data, sensor_registry, sensors
+from app.routes import sensor_data, sensor_registry, sensors
 from app.websocket import websocket_manager
 
 # Local imports
@@ -277,7 +277,6 @@ app.add_middleware(APIKeyAuthMiddleware)
 # /{location}/{cluster} catch-all in sensors.router.
 app.include_router(sensor_registry.router)
 app.include_router(sensors.router)
-app.include_router(live.router)
 app.include_router(sensor_data.router)
 
 

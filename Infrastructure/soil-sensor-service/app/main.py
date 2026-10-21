@@ -134,12 +134,6 @@ app.include_router(status.router)
 app.include_router(sensors.router)
 
 
-@app.get("/")
-async def root():
-    """Root endpoint."""
-    return {"service": "Soil Sensor Service", "version": "1.0.0", "status": "running"}
-
-
 if __name__ == "__main__":
     import uvicorn
 

@@ -35,23 +35,3 @@ class WebSocketMessage(BaseModel):
     timestamp: datetime
     value: float
     unit: str
-
-
-class LiveSensorValue(BaseModel):
-    """Live sensor value in snapshot."""
-
-    value: float
-    unit: str
-    sensor: str
-    location: str | None = None
-    cluster: str | None = None
-    stale: bool = False
-    age_seconds: float | None = None
-
-
-class LiveSnapshotResponse(BaseModel):
-    """Live snapshot response with consistent timestamp."""
-
-    ts: int  # Unix timestamp in seconds
-    ts_iso: str  # ISO format timestamp
-    values: dict[str, LiveSensorValue]

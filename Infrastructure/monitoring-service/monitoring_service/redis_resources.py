@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 from collections.abc import AsyncIterator, Awaitable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol, final
@@ -12,6 +14,10 @@ from redis.exceptions import TimeoutError as RedisTimeoutError
 
 from monitoring_service.resources import RedisResourceSettings
 from monitoring_service.sensor_models import MonitoringUnavailableError
+
+
+_SENSOR_KEY_CACHE_TTL_SECONDS = 30.0
+_sensor_key_cache: dict[str, tuple[float, list[str]]] = {}
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,18 +88,33 @@ class RedisReadClient:
 
     async def sensor_values(self, pattern: str) -> tuple[tuple[str, str | None, str | None], ...]:
         """Read current sensor values and publication timestamps through SCAN and MGET only."""
-        try:
-            keys: list[str] = []
-            async for key in self._client.scan_iter(match=pattern, count=500):
-                if not key.endswith("_ts"):
-                    keys.append(key)
-        except (RedisConnectionError, RedisTimeoutError) as exc:
-            raise MonitoringUnavailableError("monitoring Redis read is unavailable") from exc
+        now = time.monotonic()
+        cached = _sensor_key_cache.get(pattern)
+        if cached is None or now >= cached[0]:
+            try:
+                keys: list[str] = []
+                async for key in self._client.scan_iter(match=pattern, count=500):
+                    if not key.endswith("_ts"):
+                        keys.append(key)
+            except (RedisConnectionError, RedisTimeoutError) as exc:
+                raise MonitoringUnavailableError("monitoring Redis read is unavailable") from exc
+            _sensor_key_cache[pattern] = (
+                time.monotonic() + _SENSOR_KEY_CACHE_TTL_SECONDS,
+                keys,
+            )
+        else:
+            keys = cached[1]
         if not keys:
             return ()
-        values = await self.mget(keys)
-        timestamps = await self.mget([f"{key}_ts" for key in keys])
-        return tuple(zip(keys, values, timestamps, strict=True))
+        mget_keys: list[str] = []
+        for key in keys:
+            mget_keys.extend((key, f"{key}_ts"))
+        values = await self.mget(mget_keys)
+        return tuple(
+            (key, values[index * 2], values[index * 2 + 1])
+            for index, key in enumerate(keys)
+            if values[index * 2] is not None
+        )
 
     def _readiness_client(self) -> redis.asyncio.Redis:
         """Return the underlying client only for the shared non-mutating readiness probe."""

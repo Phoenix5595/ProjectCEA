@@ -165,12 +165,6 @@ app.include_router(status.router)
 app.include_router(weather.router, prefix="/weather", tags=["weather"])
 
 
-@app.get("/")
-async def root():
-    """Root endpoint."""
-    return {"service": "Weather Service", "version": "1.0.0", "status": "running"}
-
-
 if __name__ == "__main__":
     import uvicorn
 

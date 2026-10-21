@@ -873,29 +873,56 @@ class SensorRegistryRepository:
         return SoilLiveResponse(generated_at=datetime.now(UTC), probes=probes)
 
     async def _probe_live(self, row: Any, sensor_names: list[str]) -> SoilProbeLive:
-        from app.redis_client import get_sensor_timestamp, get_sensor_value
+        from app.redis_client import get_redis_client
+        from shared.redis_keys import sensor_full, sensor_full_ts
 
         metrics: dict[str, SoilMetricValue | None] = dict.fromkeys(
             ("temperature", "water_content", "ec", "ph")
         )
         now = datetime.now(UTC)
-        for name in sensor_names:
-            metric = self._metric_for_channel(name)
-            if metric is None:
-                continue
-            value = await get_sensor_value(name)
-            if value is None:
-                continue
-            ts_ms = await get_sensor_timestamp(name)
-            observed_at = (
-                datetime.fromtimestamp(ts_ms / 1000.0, tz=UTC) if ts_ms is not None else now
-            )
-            metrics[metric] = SoilMetricValue(
-                value=value,
-                unit=SOIL_METRIC_UNITS[metric],
-                observed_at=observed_at,
-                age_seconds=(now - observed_at).total_seconds(),
-            )
+        channels = [
+            (name, metric)
+            for name in sensor_names
+            if (metric := self._metric_for_channel(name)) is not None
+        ]
+        if channels:
+            try:
+                client = await get_redis_client()
+                if client is not None:
+                    keys: list[str] = []
+                    for name, _ in channels:
+                        keys.append(sensor_full("Flower Room", "main", name))
+                        keys.append(sensor_full_ts("Flower Room", "main", name))
+                    values = await client.mget(keys)
+
+                    for (_, metric), raw_value, raw_timestamp in zip(
+                        channels, values[::2], values[1::2], strict=True
+                    ):
+                        if raw_value is None:
+                            continue
+                        try:
+                            value = float(raw_value)
+                        except (TypeError, ValueError):
+                            continue
+
+                        observed_at = now
+                        if raw_timestamp is not None:
+                            try:
+                                observed_at = datetime.fromtimestamp(
+                                    int(raw_timestamp) / 1000.0, tz=UTC
+                                )
+                            except (TypeError, ValueError, OverflowError):
+                                observed_at = now
+                        metrics[metric] = SoilMetricValue(
+                            value=value,
+                            unit=SOIL_METRIC_UNITS[metric],
+                            observed_at=observed_at,
+                            age_seconds=(now - observed_at).total_seconds(),
+                        )
+            except Exception as exc:
+                logger.warning("Failed to read live soil values from Redis: %s", exc)
+                metrics = dict.fromkeys(("temperature", "water_content", "ec", "ph"))
+
         return SoilProbeLive(
             registry_id=int(row["registry_id"]),
             hardware_address=int(row["hardware_address"]),
@@ -981,18 +1008,44 @@ class SensorRegistryRepository:
                 else []
             )
 
+            points_by_sensor = (
+                await self._bucketed_points(
+                    conn, sensor_rows, start, end, tier, bucket_seconds
+                )
+                if sensor_rows
+                else {}
+            )
+            sensors_by_device: dict[int, list[Any]] = {}
+            for sensor_row in sensor_rows:
+                sensors_by_device.setdefault(int(sensor_row["device_id"]), []).append(
+                    sensor_row
+                )
+
             series: list[SoilMetricHistory] = []
             for device_row in device_rows:
-                device_sensors = [
-                    r for r in sensor_rows if r["device_id"] == device_row["device_id"]
-                ]
+                device_id = device_row["device_id"]
+                device_sensors = (
+                    sensors_by_device.get(int(device_id), []) if device_id is not None else []
+                )
                 if not device_sensors:
                     continue
-                points_by_channel = await self._bucketed_points(
-                    conn, device_sensors, start, end, tier, bucket_seconds
-                )
                 for wire_key in ("temperature", "humidity", "ec", "ph"):
-                    points = points_by_channel.get(wire_key)
+                    channel_sensor_ids = [
+                        int(sensor_row["sensor_id"])
+                        for sensor_row in device_sensors
+                        if self._wire_key_for_channel(str(sensor_row["name"])) == wire_key
+                    ]
+                    points = [
+                        point
+                        for _, point in sorted(
+                            (
+                                (sensor_id, point)
+                                for sensor_id in channel_sensor_ids
+                                for point in points_by_sensor.get(sensor_id, [])
+                            ),
+                            key=lambda item: (item[1].bucket_start, item[0]),
+                        )
+                    ]
                     if not points:
                         continue
                     metric = SOIL_WIRE_TO_METRIC[wire_key]
@@ -1007,7 +1060,6 @@ class SensorRegistryRepository:
                             points=points,
                         )
                     )
-
         return SoilHistoryResponse(
             start=start,
             end=end,
@@ -1020,18 +1072,16 @@ class SensorRegistryRepository:
     async def _bucketed_points(
         self,
         conn: Any,
-        device_sensors: list[Any],
+        sensor_rows: list[Any],
         start: datetime,
         end: datetime,
         tier: Any,
         bucket_seconds: int,
-    ) -> dict[str, list[SoilHistoryPoint]]:
-        """Bucket the tier rows for every metric channel of one device.
-
-        Channels are identified per sensor row by the wire-key suffix of
-        ``sensor.name`` so channel identity is explicit per series.
-        """
-        sensor_ids = [int(r["sensor_id"]) for r in device_sensors]
+    ) -> dict[int, list[SoilHistoryPoint]]:
+        """Bucket tier rows for all assigned soil sensors in one query."""
+        sensor_ids = [int(r["sensor_id"]) for r in sensor_rows]
+        if not sensor_ids:
+            return {}
         if tier.table == "measurement":
             sql = """
                 SELECT
@@ -1074,20 +1124,14 @@ class SensorRegistryRepository:
                 error_code="AGGREGATE_TIER_UNAVAILABLE",
             ) from exc
 
-        sensor_to_channel: dict[int, str | None] = {
-            int(r["sensor_id"]): self._wire_key_for_channel(str(r["name"])) for r in device_sensors
-        }
-
-        points_by_channel: dict[str, list[SoilHistoryPoint]] = {}
+        points_by_sensor: dict[int, list[SoilHistoryPoint]] = {}
         for row in rows:
-            wire_key = sensor_to_channel.get(int(row["sensor_id"]))
-            if wire_key is None:
-                continue
+            sensor_id = int(row["sensor_id"])
             sample_count = int(row["sample_count"] or 0)
             if sample_count <= 0:
                 continue
             bucket_start = start + timedelta(seconds=int(row["bucket_index"]) * bucket_seconds)
-            points_by_channel.setdefault(wire_key, []).append(
+            points_by_sensor.setdefault(sensor_id, []).append(
                 SoilHistoryPoint(
                     bucket_start=bucket_start,
                     average=float(row["avg_value"]) if row["avg_value"] is not None else None,
@@ -1096,7 +1140,7 @@ class SensorRegistryRepository:
                     sample_count=sample_count,
                 )
             )
-        return points_by_channel
+        return points_by_sensor
 
     @staticmethod
     def _wire_key_for_channel(name: str) -> str | None:

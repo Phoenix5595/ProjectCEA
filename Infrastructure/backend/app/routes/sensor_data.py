@@ -50,71 +50,67 @@ async def post_sensor_data(body: dict[str, Any]) -> dict[str, float]:
     }
 
     try:
-        # 1) Read canonical sensor state for each dashboard key (and Lab aliases).
-        sensor_pairs: list[tuple[str, str]] = []
-        for k in keys:
-            if k in LAB_SENSOR_ALIASES:
-                sensor_pairs.append((k, sensor_full("Lab", "main", LAB_SENSOR_ALIASES[k])))
+        # Keep the read order aligned with the existing source precedence:
+        # canonical sensor values, effective setpoints, then light snapshots.
+        candidates: list[tuple[str, str, str]] = []
+        for key in keys:
+            if key in LAB_SENSOR_ALIASES:
+                candidates.append(
+                    (
+                        key,
+                        sensor_full("Lab", "main", LAB_SENSOR_ALIASES[key]),
+                        "sensor",
+                    )
+                )
                 continue
-            location, cluster, sensor_name = _parse_location_cluster(k)
+            location, cluster, sensor_name = _parse_location_cluster(key)
             if location is not None and cluster is not None and sensor_name is not None:
-                sensor_pairs.append((k, sensor_full(location, cluster, sensor_name)))
+                candidates.append(
+                    (key, sensor_full(location, cluster, sensor_name), "sensor")
+                )
 
-        values = await client.mget([redis_key for _, redis_key in sensor_pairs])
-        for (key, _), val in zip(sensor_pairs, values, strict=True):
-            if val is not None:
-                with contextlib.suppress(ValueError, TypeError):
-                    result[key] = float(val)
-
-        remaining = [k for k in keys if k not in result]
-
-        # 2) Setpoints: effective_setpoint:{location}:{cluster}:heating_setpoint etc.
-        for key in remaining:
+        for key in keys:
             if "setpoint" not in key:
                 continue
-            location, cluster, suffix = _parse_location_cluster(key)
+            location, cluster, _suffix = _parse_location_cluster(key)
             if not location or not cluster:
                 continue
             prefix = f"cea:effective_setpoint:{location}:{cluster}"
             if "heating_setpoint" in key or "dry_bulb_setpoint" in key:
-                raw = await client.get(f"{prefix}:heating_setpoint")
-                if raw is not None:
-                    with contextlib.suppress(ValueError, TypeError):
-                        result[key] = float(raw)
+                redis_key = f"{prefix}:heating_setpoint"
             elif "cooling_setpoint" in key:
-                raw = await client.get(f"{prefix}:cooling_setpoint")
-                if raw is not None:
-                    with contextlib.suppress(ValueError, TypeError):
-                        result[key] = float(raw)
+                redis_key = f"{prefix}:cooling_setpoint"
             elif "relative_humidity_setpoint" in key:
-                raw = await client.get(f"{prefix}:humidity")
-                if raw is not None:
-                    with contextlib.suppress(ValueError, TypeError):
-                        result[key] = float(raw)
+                redis_key = f"{prefix}:humidity"
             elif "co2_setpoint" in key:
-                raw = await client.get(f"{prefix}:co2")
-                if raw is not None:
-                    with contextlib.suppress(ValueError, TypeError):
-                        result[key] = float(raw)
+                redis_key = f"{prefix}:co2"
             elif "vpd_setpoint" in key:
-                raw = await client.get(f"{prefix}:vpd")
-                if raw is not None:
-                    with contextlib.suppress(ValueError, TypeError):
-                        result[key] = float(raw)
+                redis_key = f"{prefix}:vpd"
+            else:
+                continue
+            candidates.append((key, redis_key, "setpoint"))
 
-        remaining = [k for k in keys if k not in result]
-
-        # 3) Light intensity: light:{location}:{cluster}:{device} JSON with "intensity"
-        for key in remaining:
+        for key in keys:
             if not key.endswith("_intensity"):
                 continue
             location, cluster, rest = _parse_location_cluster(key)
             if not location or not cluster or rest is None or not rest.startswith("light_"):
                 continue
             device = rest.replace("_intensity", "")
-            redis_key = f"cea:light:{location}:{cluster}:{device}"
-            raw = await client.get(redis_key)
-            if raw is not None:
+            candidates.append((key, f"cea:light:{location}:{cluster}:{device}", "light"))
+
+        values = (
+            await client.mget([redis_key for _, redis_key, _ in candidates])
+            if candidates
+            else []
+        )
+        for (key, _, kind), raw in zip(candidates, values, strict=True):
+            if raw is None or (kind != "sensor" and key in result):
+                continue
+            if kind in {"sensor", "setpoint"}:
+                with contextlib.suppress(ValueError, TypeError):
+                    result[key] = float(raw)
+            else:
                 try:
                     data = json.loads(raw)
                     if isinstance(data.get("intensity"), (int, float)):

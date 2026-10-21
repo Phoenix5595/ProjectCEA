@@ -43,7 +43,7 @@ sudo systemctl restart cea-backend.service
 
 ```
 CAN / soil / weather / one-wire ingestion
-    -> Redis state keys (sensor:*, 10 s TTL)
+    -> Redis sensor state (CAN full keys have no TTL; soil and 1-Wire full keys expire after 10 s)
     -> Redis Stream (sensor:raw)
     -> TimescaleDB (measurement hypertable)
 Backend
@@ -57,7 +57,6 @@ Backend
 
 - `GET /api/sensors/{location}/{cluster}` — historical sensor data
 - `GET /api/sensors/{location}/{cluster}/live` — current Redis values
-- `GET /api/live/all` — all live sensor values
 - `WS /ws/{location}` — real-time sensor stream
 
 Cluster names are validated against `shared/cluster_topology.py`.

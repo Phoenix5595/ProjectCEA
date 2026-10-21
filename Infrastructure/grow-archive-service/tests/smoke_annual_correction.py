@@ -213,6 +213,15 @@ async def run(database_url):
                     'SELECT data_revision FROM archive_dataset WHERE dataset_id=$1', dataset)
                 for quarter, dataset in datasets.items()
             }
+            repository = ArchiveRepository(pool)
+            direct_catalog_page = await repository.list_entries('Veg Room', None, 50)
+            direct_catalog = next(item for item in direct_catalog_page.items
+                                  if item['dataset_id'] == datasets[1])
+            direct_download = await repository.download_metadata(
+                artifacts[1], datasets[1], original_revisions[1])
+            _assert(direct_download.label == direct_catalog['download_label'] == 'Download verified ZIP',
+                    f'direct download label differed from catalog: {direct_download.label!r}')
+
 
             # ------------------------------------------------------------------
             # One annual container from the four verified quarter artifacts.
@@ -321,9 +330,12 @@ async def run(database_url):
             after_expiry = await source_bags(pool)
             _assert(after_expiry['measurement'] != before_source['measurement'],
                     'Q2 expiry did not remove source bytes')
-            entry = await ArchiveRepository(pool).entry(datasets[2])
-            _assert(entry['local_tier'] == 'zip_cache',
-                    f'deleted Q2 source did not resolve through its cached ZIP: {entry["local_tier"]}')
+            catalog_page = await ArchiveRepository(pool).list_entries('Veg Room', None, 50)
+            catalog_item = next(item for item in catalog_page.items
+                                if item['dataset_id'] == datasets[2])
+            _assert(catalog_item['local_tier'] == 'zip_cache',
+                    f'deleted Q2 source did not resolve through its cached ZIP: {catalog_item["local_tier"]}')
+
 
             # A reassignment touching any removed Q2 interval must fail closed.
             try:
@@ -451,19 +463,25 @@ async def run(database_url):
             # ------------------------------------------------------------------
             # Truthful annual download label through real repository code.
             # ------------------------------------------------------------------
-            repository = ArchiveRepository(pool)
-            entry = await repository.entry(datasets[2])
-            _assert(entry['container'] is not None
-                    and entry['container']['dataset_id'] == annual_id,
+            catalog_items = (await repository.list_entries('Veg Room', None, 50)).items
+            quarter_catalog = next(item for item in catalog_items
+                                   if item['dataset_id'] == datasets[2])
+            annual_catalog = next(item for item in catalog_items
+                                  if item['dataset_id'] == annual_id)
+            _assert(quarter_catalog['container'] is not None
+                    and quarter_catalog['container']['dataset_id'] == annual_id,
                     'Q2 catalog entry did not report its annual container')
-            _assert(entry['download_label'] == f'Download {YEAR} ZIP (all four quarters)',
-                    f'annual download label was not truthful: {entry["download_label"]!r}')
-            download_name = await repository.download_name(
+            parent_download = await repository.download_metadata(
                 replacement_artifact, datasets[2], corrected_revision)
-            plain_download = await repository.download_name(
+            annual_download = await repository.download_metadata(
                 replacement_artifact, annual_id, annual_fence)
-            _assert(plain_download == download_name,
+            _assert(parent_download.filename == annual_download.filename,
                     'quarter download did not return the whole annual container identity')
+            _assert(parent_download.label == quarter_catalog['download_label']
+                    == f'Download {YEAR} ZIP (all four quarters)',
+                    f'annual parent download label differed from catalog: {parent_download.label!r}')
+            _assert(annual_download.label == annual_catalog['download_label'] == 'Download verified ZIP',
+                    f'direct annual download label differed from catalog: {annual_download.label!r}')
 
             # ------------------------------------------------------------------
             # Retirement cleanup removes the superseded annual, not its replacement.

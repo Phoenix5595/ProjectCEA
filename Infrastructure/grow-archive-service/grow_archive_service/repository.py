@@ -40,6 +40,12 @@ class ArchivePage:
     next_cursor: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class ArchiveDownloadMetadata:
+    filename: str
+    label: str
+
+
 def _json_object(value: object) -> dict[str, Any]:
     if isinstance(value, str):
         value = json.loads(value)
@@ -298,26 +304,42 @@ class ArchiveRepository:
         item['manifest'] = _json_object(item.get('manifest'))
         return item
 
-    async def download_name(self, artifact_id: UUID, dataset_id: UUID, revision: int) -> str:
+    async def download_metadata(
+        self, artifact_id: UUID, dataset_id: UUID, revision: int,
+    ) -> ArchiveDownloadMetadata:
         row = await self.pool.fetchrow(
-            "SELECT a.remote_path,a.revision,a.state,a.dataset_id,d.kind,d.calendar_year,d.quarter "
-            "FROM public.archive_artifact a JOIN public.archive_dataset d USING(dataset_id) "
-            "WHERE a.artifact_id=$1 AND a.state='verified'", artifact_id)
+            "SELECT a.remote_path,a.revision,a.dataset_id,d.calendar_year,"
+            "conn.files_root_url,"
+            "COALESCE(target.published_revision,target.data_revision)=$3 AS is_current_revision,"
+            "(d.kind='veg_year' AND EXISTS ("
+            "SELECT 1 FROM public.archive_component c "
+            "WHERE c.parent_artifact_id=a.artifact_id "
+            "AND c.child_dataset_id=$2 AND c.child_revision=$3)) AS is_annual_parent "
+            "FROM public.archive_artifact a "
+            "JOIN public.archive_dataset d USING(dataset_id) "
+            "LEFT JOIN public.archive_dataset target ON target.dataset_id=$2 "
+            "LEFT JOIN public.calendar_sync_connection conn ON conn.instance_id=a.remote_instance_id "
+            "WHERE a.artifact_id=$1 AND a.state='verified'",
+            artifact_id, dataset_id, revision,
+        )
         if row is None:
             raise ArchiveError('archive_integrity_failed')
         if row['dataset_id'] == dataset_id:
             if row['revision'] != revision:
                 raise ArchiveError('archive_integrity_failed')
+            label = ('Download verified ZIP'
+                     if row['is_current_revision']
+                     and _remote_file_url(row['files_root_url'], row['remote_path']) is not None
+                     else None)
         else:
-            component = await self.pool.fetchval(
-                'SELECT EXISTS(SELECT 1 FROM public.archive_component WHERE parent_artifact_id=$1 '
-                'AND child_dataset_id=$2 AND child_revision=$3)', artifact_id, dataset_id, revision)
-            if row['kind'] != 'veg_year' or not component:
+            if not row['is_annual_parent']:
                 raise ArchiveError('archive_integrity_failed')
+            label = (f"Download {row['calendar_year']} ZIP (all four quarters)"
+                     if row['is_current_revision'] else None)
         name = str(row['remote_path']).rsplit('/', 1)[-1]
         if not re.fullmatch(r'[A-Za-z0-9._-]+\.zip', name):
             raise ArchiveError('archive_integrity_failed')
-        return name
+        return ArchiveDownloadMetadata(name, label or f'Download {name}')
 
     async def _entry_row(self, dataset_id: UUID):
         row = await self.pool.fetchrow(_CATALOG_SQL.replace('WHERE d.room=$1', 'WHERE d.dataset_id=$1'),

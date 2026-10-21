@@ -1127,7 +1127,7 @@
       "core": false,
       "relation": "public.mode_transition_history",
       "source_files": [
-        "Infrastructure/database/add_mode_transition_history.sql:5-17"
+        "Infrastructure/database/migrations/0012_mode_transition_history.sql"
       ],
       "time_column": "time",
       "stable_ordering": [

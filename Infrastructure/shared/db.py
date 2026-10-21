@@ -26,6 +26,7 @@ more.
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Mapping
 import os
 from typing import Any
@@ -158,6 +159,56 @@ async def create_pool(
     raise last_exc
 
 
+class DatabasePoolOwner:
+    """Own the asyncpg connection pool shared by service database managers."""
+
+    def __init__(
+        self,
+        db_config: dict[str, Any] | None = None,
+        *,
+        application_name: str,
+        logger: logging.Logger,
+    ) -> None:
+        self.db_config = db_config if db_config is not None else db_config_from_env()
+        self.application_name = application_name
+        self.logger = logger
+        self._pool: asyncpg.Pool | None = None
+        self._db_connected = False
+
+    async def initialize(self) -> bool:
+        """Initialize the database connection."""
+        try:
+            await self._connect_db()
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to initialize database: {e}")
+            return False
+
+    async def _connect_db(self) -> None:
+        """Connect to TimescaleDB; retry/backoff handled by create_pool."""
+        self._pool = await create_pool(
+            self.db_config, application_name=self.application_name
+        )
+        self._db_connected = True
+
+    async def _get_pool(self) -> asyncpg.Pool:
+        """Get database connection pool."""
+        pool = self._pool
+        if not pool:
+            await self._connect_db()
+            pool = self._pool
+        if not pool:
+            raise RuntimeError("Failed to connect to database")
+        return pool
+
+    async def close(self) -> None:
+        """Close database connection pool."""
+        if self._pool:
+            await self._pool.close()
+            self._db_connected = False
+            self.logger.info("Database connection closed")
+
+
 __all__ = [
     "db_config_from_env",
     "create_pool",
@@ -167,4 +218,5 @@ __all__ = [
     "DEFAULT_MAX_CONNECT_RETRIES",
     "DEFAULT_BASE_RETRY_DELAY_SECONDS",
     "DEFAULT_MAX_RETRY_DELAY_SECONDS",
+    "DatabasePoolOwner",
 ]

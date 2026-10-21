@@ -1,8 +1,7 @@
 """DB-authoritative historical sensor route behavior tests (step 4, #3).
 
-In-process route calls with a fake repository — no ASGI server, no real
-database, no Redis stream construction. Also pins the pure aggregate-tier
-thresholds that stay unchanged.
+In-process route calls with a fake repository — no ASGI server, database, or
+Redis access. Also pins the pure aggregate-tier thresholds that stay unchanged.
 """
 
 from __future__ import annotations
@@ -37,16 +36,6 @@ class FakeRepository:
         return self._result
 
 
-class FakeSentinelStreamReader:
-    """Constructed => historical route touched the removed stream branch."""
-
-    constructed = 0
-
-    def __init__(self, *args, **kwargs) -> None:
-        FakeSentinelStreamReader.constructed += 1
-        raise AssertionError("historical route must not construct RedisStreamReader")
-
-
 def db_points(start: datetime, end: datetime) -> dict[str, list[DataPoint]]:
     return {
         "dry_bulb_b": [
@@ -57,25 +46,11 @@ def db_points(start: datetime, end: datetime) -> dict[str, list[DataPoint]]:
 
 
 class SensorHistoryAuthorityTests(unittest.IsolatedAsyncioTestCase):
-    def setUp(self) -> None:
-        FakeSentinelStreamReader.constructed = 0
-
     def _patches(self, repo: FakeRepository):
-        from contextlib import ExitStack
+        return patch.object(sensors_mod, "get_sensor_repository", return_value=repo)
 
-        stack = ExitStack()
-        stack.enter_context(patch.object(sensors_mod, "get_sensor_repository", return_value=repo))
-        stack.enter_context(
-            patch.object(sensors_mod, "RedisStreamReader", FakeSentinelStreamReader, create=True)
-        )
-        return stack
-
-    async def test_recent_window_edges_come_from_db_independently_of_partial_stream(
-        self,
-    ) -> None:
-        """A partial-stream fixture must be irrelevant: both edge points of
-        a recent (<=6h) window come from the single DB call, and the stream
-        reader sentinel is never constructed."""
+    async def test_recent_window_edges_come_from_db_in_one_call(self) -> None:
+        """Both edges of a recent window come from one DB call."""
         start = datetime(2026, 1, 1, 10, 0, 0)
         end = datetime(2026, 1, 1, 12, 0, 0)  # 2h window (recent)
         repo = FakeRepository(
@@ -97,11 +72,6 @@ class SensorHistoryAuthorityTests(unittest.IsolatedAsyncioTestCase):
                 time_range="1 Hour",
             )
 
-        self.assertEqual(
-            FakeSentinelStreamReader.constructed,
-            0,
-            "stream reader must never be constructed by the historical route",
-        )
         self.assertEqual(len(repo.calls), 1, "exactly one repository call")
         self.assertEqual(repo.calls[0][:2], ("Flower Room", "back"))
         self.assertEqual(repo.calls[0][2], start)
@@ -169,13 +139,8 @@ class SensorHistoryAuthorityTests(unittest.IsolatedAsyncioTestCase):
     async def test_invalid_topology_fails_before_any_io(self) -> None:
         repo = FakeRepository({"x": [DataPoint(timestamp=datetime(2026, 1, 1), value=1, unit="")]})
 
-        class FailingReader:
-            def __init__(self, *a, **k) -> None:
-                raise AssertionError("no reader")
-
         with (
             patch.object(sensors_mod, "get_sensor_repository", return_value=repo),
-            patch.object(sensors_mod, "RedisStreamReader", FailingReader, create=True),
             self.assertRaises(sensors_mod.ValidationAPIError) as denied,
         ):
             await sensors_mod.get_sensor_data(

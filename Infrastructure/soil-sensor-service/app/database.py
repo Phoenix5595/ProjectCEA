@@ -5,9 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any
 
-import asyncpg
-
-from shared.db import create_pool, db_config_from_env
+from shared.db import DatabasePoolOwner
 from shared.db_batch_writer import insert_measurements_async
 from shared.infra_logging import get_logger
 from shared.sensor_identity import SENSOR_IDENTITY_LOCK_NAMESPACE
@@ -18,7 +16,7 @@ logger = get_logger(__name__)
 ABSENCE = timedelta(minutes=10)
 
 
-class DatabaseManager:
+class DatabaseManager(DatabasePoolOwner):
     """Manages TimescaleDB database connections and operations for soil sensor service."""
 
     def __init__(self, db_config: dict[str, Any] | None = None):
@@ -28,44 +26,11 @@ class DatabaseManager:
             db_config: Database connection config dict with host, database, user, password, port.
                       If None, uses environment variables or defaults.
         """
-        self.db_config = db_config if db_config is not None else db_config_from_env()
-        self._pool: asyncpg.Pool | None = None
-        self._db_connected = False
-
-    async def initialize(self) -> bool:
-        """Initialize database connection.
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            await self._connect_db()
-            return True
-        except Exception as e:
-            logger.error(f"Failed to initialize database: {e}")
-            return False
-
-    async def _connect_db(self) -> None:
-        """Connect to TimescaleDB; retry/backoff handled by shared.db.create_pool."""
-        self._pool = await create_pool(self.db_config, application_name="soil_sensor_service")
-        self._db_connected = True
-
-    async def _get_pool(self) -> asyncpg.Pool:
-        """Get database connection pool."""
-        pool = self._pool
-        if not pool:
-            await self._connect_db()
-            pool = self._pool
-        if not pool:
-            raise RuntimeError("Failed to connect to database")
-        return pool
-
-    async def close(self) -> None:
-        """Close database connection pool."""
-        if self._pool:
-            await self._pool.close()
-            self._db_connected = False
-            logger.info("Database connection closed")
+        super().__init__(
+            db_config,
+            application_name="soil_sensor_service",
+            logger=logger,
+        )
 
     async def load_registry_sensors(self) -> list[dict[str, Any]]:
         """Load current RS-485 addresses; detached identities are not pollable."""

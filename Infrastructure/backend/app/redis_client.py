@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 
 import redis.asyncio as redis
 
@@ -15,6 +16,8 @@ logger = get_logger(__name__)
 _redis_pool: redis.ConnectionPool | None = None
 _redis_client: redis.Redis | None = None
 _SensorSnapshotRecord = tuple[str, str, str, float, int | None]
+_KEY_CACHE_TTL_SECONDS = 30.0
+_KEY_CACHE: tuple[float, list[str]] | None = None
 
 # One lazily created, loop-owned lock serializes client creation and
 # teardown. ``_redis_loop`` records the loop the lock was created on so
@@ -97,42 +100,52 @@ async def get_redis_client() -> redis.Redis | None:
 
 async def _read_sensor_snapshot() -> dict[str, _SensorSnapshotRecord]:
     """Read a bounded, qualified snapshot of current sensor values and timestamps."""
+    global _KEY_CACHE
+
     client = await get_redis_client()
     if not client:
         return {}
 
     try:
-        candidates: list[tuple[str, str, str, str]] = []
-        seen_keys: set[str] = set()
-        async for raw_key in client.scan_iter(match="cea:sensor:*:*:*", count=500):
-            key = str(raw_key)
-            if key.endswith(("_ts", "_last_good")) or key in seen_keys:
-                continue
-            if not key.startswith("cea:sensor:"):
-                continue
-            parts = key.removeprefix("cea:sensor:").split(":", maxsplit=2)
-            if len(parts) != 3:
-                continue
-            location, cluster, sensor_name = parts
-            if not location or not cluster or not sensor_name:
-                continue
+        cached = _KEY_CACHE
+        if cached is None or time.monotonic() - cached[0] >= _KEY_CACHE_TTL_SECONDS:
+            discovered: list[str] = []
+            seen_keys: set[str] = set()
+            async for raw_key in client.scan_iter(match="cea:sensor:*:*:*", count=500):
+                key = str(raw_key)
+                if key.endswith(("_ts", "_last_good")) or key in seen_keys:
+                    continue
+                if not key.startswith("cea:sensor:"):
+                    continue
+                parts = key.removeprefix("cea:sensor:").split(":", maxsplit=2)
+                if len(parts) != 3 or not all(parts):
+                    continue
 
-            seen_keys.add(key)
-            candidates.append((key, location, cluster, sensor_name))
-            if len(candidates) >= 5000:
-                break
+                seen_keys.add(key)
+                discovered.append(key)
+                if len(discovered) >= 5000:
+                    break
 
-        if not candidates:
+            _KEY_CACHE = (time.monotonic(), discovered)
+            key_names = discovered
+        else:
+            key_names = cached[1]
+
+        if not key_names:
             return {}
 
-        # One paired read: interleave each candidate's value key with its
-        # timestamp key into a single MGET (at most 2 * 5000 = 10000 keys).
-        # A strict cardinality check replaces the cross-call zip; a torn or
-        # truncated reply enters the existing warning/empty-snapshot path.
+        candidates: list[tuple[str, str, str, str]] = []
+        for key in key_names:
+            location, cluster, sensor_name = key.removeprefix("cea:sensor:").split(
+                ":", maxsplit=2
+            )
+            candidates.append((key, location, cluster, sensor_name))
+
+        # Read values on every request; only the discovered key names are cached.
         keys: list[str] = []
-        for key, ts_location, ts_cluster, ts_name in candidates:
+        for key, location, cluster, sensor_name in candidates:
             keys.append(key)
-            keys.append(sensor_full_ts(ts_location, ts_cluster, ts_name))
+            keys.append(sensor_full_ts(location, cluster, sensor_name))
         results = await client.mget(keys)
 
         expected = 2 * len(candidates)

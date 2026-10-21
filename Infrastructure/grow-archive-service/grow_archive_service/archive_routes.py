@@ -148,9 +148,9 @@ async def download_archive(
         path = Path(pin.local_path)
         if path.is_symlink() or not path.is_file():
             raise ArchiveError('archive_integrity_failed')
-        filename = await repository.download_name(pin.artifact_id, dataset_id, int(pin.revision))
-        entry = await repository.entry(dataset_id)
-        label = entry.get('download_label') or f'Download {filename}'
+        download = await repository.download_metadata(pin.artifact_id, dataset_id, int(pin.revision))
+        filename = download.filename
+        label = download.label
 
         async def stream() -> AsyncIterator[bytes]:
             try:
