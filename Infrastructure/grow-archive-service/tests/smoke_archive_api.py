@@ -16,7 +16,7 @@ import httpx
 from cryptography.fernet import Fernet
 from smoke_lifecycle import run, _assert
 from dav_fixture import loopback_dav
-from grow_archive_service.lifecycle import quarter_bounds
+from grow_archive_service.lifecycle_calendar import quarter_bounds
 from grow_archive_service.api_models import LocalTier
 from grow_archive_service.parquet_codec import verify_archive
 

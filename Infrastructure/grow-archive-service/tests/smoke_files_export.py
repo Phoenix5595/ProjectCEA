@@ -24,7 +24,7 @@ from grow_archive_service.capture import SourceCapture
 from grow_archive_service.execution import HeavyWorkExecutor
 from grow_archive_service.exporter import ExportService
 from grow_archive_service.graphs import ArchiveGraphReader
-from grow_archive_service.lifecycle import quarter_bounds
+from grow_archive_service.lifecycle_calendar import quarter_bounds
 from grow_archive_service.models import ArchiveError
 from grow_archive_service.parquet_codec import iter_archive_binary_rows, verify_archive
 from grow_archive_service.schema import load_source_catalog

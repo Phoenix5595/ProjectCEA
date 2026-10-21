@@ -17,7 +17,8 @@ from uuid import UUID, uuid4
 import asyncpg
 
 from .jobs import ArchiveJobQueue
-from .lifecycle import DISPATCH_POLL_SECONDS, LIFECYCLE_TICK_SECONDS, LifecycleService
+from .lifecycle import LifecycleService
+from .lifecycle_constants import DISPATCH_POLL_SECONDS, LIFECYCLE_TICK_SECONDS
 from .models import ArchiveError, JobClaim, JobKind
 from shared.infra_logging import get_logger
 

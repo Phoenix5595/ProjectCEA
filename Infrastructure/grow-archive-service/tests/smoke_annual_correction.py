@@ -37,7 +37,8 @@ from grow_archive_service.deletion import SourceDeletion
 from grow_archive_service.derived_refresh import DerivedHistoryMaintenance
 from grow_archive_service.execution import HeavyWorkExecutor
 from grow_archive_service.exporter import ExportService
-from grow_archive_service.lifecycle import LifecycleService, quarter_bounds
+from grow_archive_service.lifecycle import LifecycleService
+from grow_archive_service.lifecycle_calendar import quarter_bounds
 from grow_archive_service.models import ArchiveError
 from grow_archive_service.parquet_codec import iter_archive_binary_rows
 from grow_archive_service.repository import ArchiveRepository

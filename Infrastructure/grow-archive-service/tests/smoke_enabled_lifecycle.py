@@ -28,13 +28,15 @@ from grow_archive_service.deletion import SourceDeletion
 from grow_archive_service.execution import HeavyWorkExecutor
 from grow_archive_service.exporter import ExportService
 from grow_archive_service.freshness import PublicationFreshnessGuard
-from grow_archive_service.lifecycle import LifecycleService, quarter_bounds, retention_cutoffs
+from grow_archive_service.lifecycle import LifecycleService
+from grow_archive_service.lifecycle_calendar import quarter_bounds
 from grow_archive_service.models import ArchiveError
 from grow_archive_service.schema import load_source_catalog
 from grow_archive_service.webdav import WebDAVArtifactClient
 from shared.history_availability import require_local_history
 from shared.nextcloud_dav import discover_nextcloud
 from shared.redis_keys import monitoring_current_publication_key
+from shared.grow_lifecycle import retention_cutoffs
 
 
 async def _source_bags(pool):

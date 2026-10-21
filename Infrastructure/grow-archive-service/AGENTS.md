@@ -14,7 +14,12 @@
 | `loads.py` | Explicit ZIP-only Historical selection and load lifecycle |
 | `annual.py`, `annual_codec.py` | Annual containers around verified quarterly components |
 | `parquet_codec.py` | Typed Parquet archive members, metadata, and validation |
-| `lifecycle.py` | Grow/Veg export planning, expiry, and nongrow expiry scheduling |
+| `lifecycle.py` | `LifecycleService` construction, tick, and job entrypoints |
+| `lifecycle_types.py` | Lifecycle data contracts, identity-room resolution, and held-scope deduplication |
+| `lifecycle_calendar.py` | Toronto quarter/date helpers |
+| `lifecycle_constants.py` | Lifecycle timing, expiry, and planning constants |
+| `lifecycle_planning.py` | Grow, Veg-quarter, and annual archive planning |
+| `lifecycle_expiry.py` | Identity/stream binding, room locks, holds, and cursor/slice expiry |
 | `dispatcher.py`, `jobs.py` | Leased job dispatch, queue operations, and fencing |
 | `derived_refresh.py` | Refresh derived history after source deletion |
 | `policy_gate.py` | Block source retention policies; allow source compression only at a three-month interval or longer |
