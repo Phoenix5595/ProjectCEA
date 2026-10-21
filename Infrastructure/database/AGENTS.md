@@ -7,7 +7,7 @@ PostgreSQL + TimescaleDB for normalized metadata, time-series measurements, cont
 | File | Responsibility |
 |---|---|
 | `cea_schema.sql` | Core tables: `room`, `rack`, `device`, `sensor`, `measurement` hypertable, `climate_periods`; `measurement_with_metadata` view |
-| `migrate_latest_sensor_values_lateral.sql` | `latest_sensor_values` view, retained with no in-repo consumer |
+| `migrations/0012_mode_transition_history.sql` | Creates `mode_transition_history` and removes the unused `latest_sensor_values` view; down restores a view that existed before the upgrade |
 | `monitoring_read_models.sql` | Canonical base read models for the native monitoring feature: `monitoring_measurement_1min/5min`, `monitoring_effective_setpoints_1min/5min`, `monitoring_automation_state_1min/5min` aggregates, photoperiod coverage, and monitoring helpers |
 | `monitoring_history_overview.sql` | Canonical hour/day overview aggregates (`monitoring_measurement_1hour/1day`, `monitoring_light_intensity_1hour/1day`, `monitoring_requested_pid_1hour/1day`), coverage/watermark tables; includes `monitoring_relay_history_overview.sql` |
 | `timescaledb_config.sql` | Compression and retention policies |
@@ -35,7 +35,19 @@ Schema changes ship as `migrations/NNNN_name.sql` files applied by `Infrastructu
 
 - SQL migration `0011_db_hardening` drops the production-only duplicate indexes `idx_setpoints_location_cluster_mode_updated` and `idx_notes_lookup` and the table `setpoints_backup` (no export; its down recreates only the structure), then ANALYZEs every plain public table.
 
-Historical note (2026-10-18): retired Grafana-only SQL migrations, views and verification scripts were removed: `grafana_performance_migration.sql`, `grafana_optimized_views.sql`, `grow_history_guards.sql`, `migrate_get_sensor_routing_1min_through_6h.sql`, `verify_get_sensor_routing.sql`, `verify_performance.sql`, `timescaledb_continuous_aggregates.sql`, and `timescaledb_compression.sql`. `latest_sensor_values` remains defined but has no in-repo consumer.
+Historical note (2026-10-18): retired Grafana-only SQL migrations, views and verification scripts were removed: `grafana_performance_migration.sql`, `grafana_optimized_views.sql`, `grow_history_guards.sql`, `migrate_get_sensor_routing_1min_through_6h.sql`, `verify_get_sensor_routing.sql`, `verify_performance.sql`, `timescaledb_continuous_aggregates.sql`, and `timescaledb_compression.sql`. The unused `latest_sensor_values` view is removed by SQL migration `0012_mode_transition_history`.
+
+## Fresh install
+
+The historical migration chain cannot run on an empty database (`0007`/`0008` refuse empty sources; Alembic `001`/`005` need pre-existing tables). New hosts load the committed schema baseline instead:
+
+1. `Infrastructure/setup_timescaledb.sh` (creates `sj_cea`, `cea_user`, both password files).
+2. `Infrastructure/scripts/bootstrap_fresh_db.sh sj_cea` loads `baseline/baseline.sql` (sha256-checked against `baseline/baseline_manifest.json`); it refuses a database that already has tables in `public`.
+3. `python3 Infrastructure/scripts/db_migrate.py apply` runs only migrations newer than the baseline (the baseline carries `schema_migration` and `alembic_version`). `apply` on a database with no tables exits 2 and points here.
+
+The baseline holds production's schema, Timescale catalog, jobs and this farm's configuration (rooms, devices, sensors, modes, schedules, setpoints, PID, light programs, calendar events, service settings); all history tables and continuous-aggregate materializations are empty and calendar credentials are removed (`calendar_sync_connection` rows deleted, events detached from it, `caldav_sync_token` nulled). The overview coverage rows and backfill markers are kept because the overview checkpoint jobs pause themselves without them; the relay-overview progress row is reset to its initial state. `baseline/clear_history.sql` lists every cleared and kept table and fails on any unclassified table: history goes in the cleared list, farm setup in the kept list.
+
+Regenerate with `Infrastructure/scripts/generate_schema_baseline.sh <release_path>` (reads production only through `pg_dump`; all writes happen in a disposable `monitoring_test_baseline_*` database on the 15/test cluster) whenever a new migration cannot run on an empty database, and prove it with `CEA_TEST_PGPORT=5433 bash Infrastructure/database/tests/test-fresh-bootstrap.sh`. A fresh database has configuration but no history; restoring a `pg_dump` backup remains the disaster-recovery path when history is needed.
 
 ## Server configuration
 
@@ -46,13 +58,13 @@ Historical note (2026-10-18): retired Grafana-only SQL migrations, views and ver
 - Pre-August purge: all pre-2026-08-01 (Toronto) rows of the ten time-series streams were removed from production, keeping the latest/predecessor anchors; static/config/registry/Calendar tables untouched. The one-off script and its proof were removed afterwards.
 - Database rename: production is now `sj_cea` (was `cea_sensors`); deployed with the grow-lifecycle release, which also applied `grow_data_lifecycle.sql`, `grow_data_lifecycle_expiry_cursor.sql` and `grow_data_source_compression.sql`, installed `grow-archive-service`, and added the `/api/archives` Caddy route. The single-use deploy/rename helpers and runbook were removed after finalize.
 - Iskra/Grafana decommission: replication slot `iskra_recovery`, roles `cea_repl`, `grafana`, `probe_role` and `monitoring_role_probe_rsnd`, the Iskra `pg_hba.conf` rules (backup `pg_hba.conf.bak-20261019-iskra`) and the leftover test databases (`cea_sensors_test`, `fullinstall_*`, `syntaxcheck*`, `monitoring_test_probe2`, `monitoring_test_rsnd_probe`) were removed. Only `postgres` and `sj_cea` remain.
-- Retired Grafana-era objects dropped from production: legacy CAGGs `measurement_1min/5min/hourly/daily`, views `measurement_*_grafana`, functions `get_sensor_data_optimized`/`get_sensor_stats`. Fresh installs still recreate the legacy CAGGs via alembic `005_phase5a_reconcile` and `cea_schema.sql` until a new revision removes them.
+- Retired Grafana-era objects dropped from production: legacy CAGGs `measurement_1min/5min/hourly/daily`, views `measurement_*_grafana`, functions `get_sensor_data_optimized`/`get_sensor_stats`. Alembic `005_phase5a_reconcile` creates the legacy Grafana CAGGs on fresh installs; SQL migration `0005_drop_legacy_measurement_caggs` drops them.
 - Restoring a dump of this TimescaleDB database: create an empty database owned by `cea_user`, `CREATE EXTENSION timescaledb; SELECT timescaledb_pre_restore();`, then `sudo -u postgres pg_restore -d <db> <dump>` **single-job** (`-j 2` breaks TimescaleDB catalog foreign keys), then `SELECT timescaledb_post_restore();` (~22 min for a 737 MB dump). Errors about the retired `grafana` role are expected.
 - TimescaleDB 2.28.3 ordering proof (2026-10-19): a named `monitoring_order_key` failed with `could not find a > operator`; the earlier anonymous `ROW(...)` failure was not reproduced in the canonical multi-chunk test. The tested `last(value, "time")` fallback succeeded and matched the raw latest rows; keep the one-row-per-device-per-tick invariant explicit.
 
 ## Redis live vs Postgres time series
 
-- Redis holds live state (`sensor:{name}`, 10 s TTL) and streams (`sensor:raw`, `stream:control`, `cea:events:operational`). `sensor:raw` and `stream:control` cap at 100,000 entries; `cea:events:operational` caps at 50,000 entries or 24 hours.
+- Redis current sensor values use `cea:sensor:{location}:{cluster}:{sensor_type}`. CAN values/timestamps persist without a TTL; soil and 1-Wire values/timestamps expire after 10 s. The telemetry stream `sensor:raw` is capped at 100,000 entries, and `cea:events:operational` is capped at 50,000 entries or 24 hours. `stream:control` is retired and no longer published.
 - TimescaleDB holds historical `measurement` rows and continuous aggregates.
 
 ## Aggregate ladders

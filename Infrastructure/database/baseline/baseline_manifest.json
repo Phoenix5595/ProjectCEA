@@ -1,0 +1,9 @@
+{
+  "migration_head": "0012_mode_transition_history",
+  "alembic_heads": [
+    "011_merge_heads"
+  ],
+  "source_release_id": "20261020-210431-c6a73ec",
+  "generated_at": "2026-10-21T18:12:00Z",
+  "sha256": "a6c57200909cb7967043a427a0761887b36ee9e255ae88e61d628eeb19fe564f"
+}

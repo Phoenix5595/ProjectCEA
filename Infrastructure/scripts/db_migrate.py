@@ -199,6 +199,26 @@ def _ensure_ledger(database: Database) -> None:
     database.execute(LEDGER_SQL)
 
 
+def _refuse_empty_database(database: Database, migrations: Sequence[Migration]) -> None:
+    """Refuse replaying the full historical chain onto an empty database.
+
+    Releases that start at 0001 contain migrations (0007/0008, Alembic 001/005)
+    that need existing tables and rows; fresh installs load the baseline first.
+    """
+    if not any(migration.number == 1 for migration in migrations):
+        return
+    rows = database.query(
+        "SELECT to_regclass('public.schema_migration') IS NULL "
+        "AND NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public')"
+    )
+    if rows and rows[0] == "t":
+        raise MigrationError(
+            "empty database: load the schema baseline first "
+            "(Infrastructure/scripts/bootstrap_fresh_db.sh)",
+            2,
+        )
+
+
 def _read_ledger(database: Database) -> list[AppliedMigration]:
     rows = database.query(
         "SELECT version, sha256, downtime::text FROM public.schema_migration ORDER BY version"
@@ -446,6 +466,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         migrations = _load_migrations(release)
         database = _database_config()
+        if args.command == "apply":
+            _refuse_empty_database(database, migrations)
         _ensure_ledger(database)
         applied = _read_ledger(database)
         _validate_applied(migrations, applied)
