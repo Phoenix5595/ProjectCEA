@@ -7,8 +7,8 @@
  * action but cannot silently fetch archive data.
  */
 import type { FixedRange, MonitoringRange } from '../monitoring/state'
-import { resolveHistoricalSelection } from '../history-overview'
-import { MAX_RANGE_MS } from '../monitoring/components'
+import { resolveHistoricalSelection } from '../history-overview/historicalSelection'
+import { MAX_RANGE_MS } from '../monitoring/components/timeRangeToolbar.time'
 
 export interface ArchiveSelection {
   readonly dataset_id: string

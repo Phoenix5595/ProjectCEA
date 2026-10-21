@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping
+import time
 from types import SimpleNamespace
 from typing import cast
 
@@ -192,6 +194,62 @@ async def test_status_keeps_sensor_type_response_keys(monkeypatch: pytest.Monkey
         "Flower Room": {"main": {"temperature_sensor": None, "humidity_sensor": None}},
         "Veg Room": {"main": {"temperature_sensor": None}},
     }
+
+
+@pytest.mark.asyncio
+async def test_status_collects_host_stats_off_the_event_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.routes import status
+
+    repository, _ = _repository({})
+
+    class Config:
+        async def get_devices(self) -> dict[str, dict[str, list[str]]]:
+            return {}
+
+        def get_sensor_mapping(self) -> dict[str, dict[str, dict[str, str]]]:
+            return {}
+
+        def get_last_good_hold_period(self) -> int:
+            return 30
+
+    def slow_system_stats() -> dict[str, float]:
+        time.sleep(0.2)
+        return {"cpu_percent": 1.0}
+
+    monkeypatch.setattr(status, "get_performance_metrics", lambda: {})
+    monkeypatch.setattr(
+        status,
+        "get_performance_monitor",
+        lambda: SimpleNamespace(get_statistics=lambda: {}),
+    )
+    monkeypatch.setattr(status, "_get_system_stats", slow_system_stats)
+
+    ticks = 0
+
+    async def ticker() -> None:
+        nonlocal ticks
+        while True:
+            await asyncio.sleep(0.01)
+            ticks += 1
+
+    ticker_task = asyncio.create_task(ticker())
+    try:
+        result = await status.get_status(
+            database=SimpleNamespace(sensor_repo=repository),
+            relay_manager=SimpleNamespace(get_all_states=lambda: {}),
+            config=Config(),
+            pid_controller_manager=None,
+            publication_workers=None,
+            operational_event_dispatcher=None,
+            health=False,
+        )
+    finally:
+        ticker_task.cancel()
+
+    assert result["system"] == {"cpu_percent": 1.0}
+    assert ticks >= 5
 
 
 @pytest.mark.asyncio

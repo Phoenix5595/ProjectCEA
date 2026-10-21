@@ -6,7 +6,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { MODE_DISPLAY_NAMES, SUBMODE_DISPLAY_NAMES, type ModeProfileIdentity } from '../types/modes'
 
 import { AppRibbon } from './chrome/AppRibbon'
-import { parseUrlRange, MAX_RANGE_MS, withSerializedRange } from '@/features/monitoring/components'
+import { parseUrlRange, MAX_RANGE_MS, withSerializedRange } from '@/features/monitoring/components/timeRangeToolbar.time'
 
 export type Sector = 'laboratory' | 'vegetation' | 'flower' | 'devices'
 

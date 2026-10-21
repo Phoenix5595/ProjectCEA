@@ -4,11 +4,10 @@ import { Toaster } from 'sonner'
 
 import { ErrorBoundary } from './components/ErrorBoundary'
 import Layout from './components/Layout'
-import { ThemeSwitcher } from './components/ThemeSwitcher'
 import { ControlActionsProvider } from './contexts/ControlActionsContext'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { readArchiveNavigationState } from './features/grow-archives/selection'
-import { parseUrlRange, withSerializedRange } from './features/monitoring/components'
+import { parseUrlRange, withSerializedRange } from './features/monitoring/components/timeRangeToolbar.time'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const DeviceConfig = lazy(() => import('./pages/DeviceConfig'))
@@ -23,6 +22,7 @@ const LaboratoryOverview = lazy(() => import('./pages/LaboratoryOverview'))
 const VegetationOverview = lazy(() => import('./pages/VegetationOverview'))
 const FlowerOverview = lazy(() => import('./pages/FlowerOverview'))
 const CalendarSettings = lazy(() => import('./pages/CalendarSettings'))
+const ThemeSwitcher = import.meta.env.DEV ? lazy(() => import('./components/ThemeSwitcher')) : null
 
 
 /** Historical entry points start in a fixed overview, never a live reader. */
@@ -106,7 +106,11 @@ function App() {
             </Suspense>
           </ErrorBoundary>
         </BrowserRouter>
-        <ThemeSwitcher />
+        {ThemeSwitcher && (
+          <Suspense fallback={null}>
+            <ThemeSwitcher />
+          </Suspense>
+        )}
       </ControlActionsProvider>
     </ThemeProvider>
   )

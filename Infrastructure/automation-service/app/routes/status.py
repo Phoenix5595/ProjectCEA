@@ -311,7 +311,7 @@ async def get_status(
     control_metrics = get_performance_monitor().get_statistics()
 
     # Optional: host system stats (CPU, memory, disk, uptime, load, process count, Pi temp/throttle)
-    system = _get_system_stats()
+    system = await asyncio.to_thread(_get_system_stats)
 
     # Optional: service health (backend, weather, etc.) - skip if health=false for faster response
     service_health = await _check_service_health() if health else []
