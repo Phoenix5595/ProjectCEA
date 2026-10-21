@@ -14,6 +14,7 @@ def _background_tasks() -> BackgroundTasks:
     tasks._running = True
     tasks._task = SimpleNamespace(done=lambda: False)
     tasks._last_tick_completed_at = None
+    tasks._scheduled_interval = None
     tasks.control_engine = SimpleNamespace(config=SimpleNamespace(get_update_interval=lambda: 2))
     tasks.update_interval = 2
     return tasks
@@ -45,6 +46,18 @@ def test_control_loop_check_reports_stale_tick(monkeypatch: pytest.MonkeyPatch) 
         "ok": False,
         "detail": "last control tick 6.1s ago (limit 6s)",
     }
+
+
+def test_control_loop_check_uses_scheduled_interval_if_live_interval_shrinks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(background_tasks_module.time, "monotonic", lambda: 100.0)
+    tasks = _background_tasks()
+    tasks.control_engine.config.get_update_interval = lambda: 1
+    tasks._scheduled_interval = 5
+    tasks._last_tick_completed_at = 96.0
+
+    assert tasks.control_loop_check() == {"ok": True, "age_ms": 4000.0}
 
 
 def test_control_loop_check_reports_finished_task() -> None:

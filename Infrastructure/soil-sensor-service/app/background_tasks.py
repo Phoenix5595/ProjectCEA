@@ -52,9 +52,9 @@ class BackgroundTasks:
         self.registry_ids: dict[int, int] = {}  # modbus_id -> registry_id
         self.sensor_configs: dict[str, dict[str, Any]] = {}
         self.sensor_names: dict[str, dict[str, str]] = {}
-        self._pending_readings: ReplayBuffer[tuple[str, int, dict[str, float], datetime]] = (
-            ReplayBuffer(720, name="soil_measurements")
-        )
+        self._pending_readings: ReplayBuffer[
+            tuple[str, int, int | None, dict[str, float], datetime]
+        ] = ReplayBuffer(720, name="soil_measurements")
         self.rs485_port: str | None = None
         self.rs485_baudrate: int = 9600
 
@@ -264,23 +264,49 @@ class BackgroundTasks:
 
             await asyncio.sleep(interval)
 
-    async def _store_reading(
-        self, probe_name: str, modbus_id: int, readings: dict[str, float], timestamp: datetime
+    async def _store_replay_reading(
+        self,
+        probe_name: str,
+        modbus_id: int,
+        registry_id: int,
+        readings: dict[str, float],
+        timestamp: datetime,
     ) -> None:
-        entry = await self.database.observe_probe(modbus_id)
-        await self._apply_registry_entry(modbus_id, entry)
-        registry_id, _sensor_ids, sensor_names = await self.database.store_measurements(
-            int(entry["registry_id"]), modbus_id, probe_name, readings, timestamp
+        stored_registry_id, _sensor_ids, sensor_names = await self.database.store_measurements(
+            registry_id, modbus_id, probe_name, readings, timestamp
         )
-        self.registry_ids[modbus_id] = registry_id
+        self.registry_ids[modbus_id] = stored_registry_id
         self.sensor_names[probe_name] = sensor_names
+
+    def _queue_reading(
+        self,
+        probe_name: str,
+        modbus_id: int,
+        registry_id: int | None,
+        readings: dict[str, float],
+        timestamp: datetime,
+    ) -> None:
+        if registry_id is None:
+            logger.warning(
+                f"Dropping soil measurement for {probe_name}: no registry identity is known"
+            )
+            return
+        self._pending_readings.offer([(probe_name, modbus_id, registry_id, readings, timestamp)])
 
     async def _poll_all_sensors(self) -> None:
         """Poll every wired probe and replay failed database writes first."""
         for pending in self._pending_readings.peek(50):
-            probe_name, modbus_id, readings, timestamp = pending
+            probe_name, modbus_id, registry_id, readings, timestamp = pending
+            if registry_id is None:
+                logger.warning(
+                    f"Dropping soil measurement for {probe_name}: no registry identity is known"
+                )
+                self._pending_readings.consume(1)
+                continue
             try:
-                await self._store_reading(probe_name, modbus_id, readings, timestamp)
+                await self._store_replay_reading(
+                    probe_name, modbus_id, registry_id, readings, timestamp
+                )
             except Exception as e:
                 if is_transient_db_error(e):
                     logger.error(f"Error replaying soil measurements for {probe_name}: {e}")
@@ -320,25 +346,37 @@ class BackgroundTasks:
                     )
                 except Exception as e:
                     logger.error(f"Error publishing soil readings for {probe_name}: {e}")
+                registry_id = self.registry_ids.get(modbus_id)
+                try:
+                    entry = await self.database.observe_probe(modbus_id)
+                    registry_id = int(entry["registry_id"])
+                    await self._apply_registry_entry(modbus_id, entry)
+                    registry_id = self.registry_ids.get(modbus_id, registry_id)
 
-                pending = (probe_name, modbus_id, readings, timestamp)
-                if self._pending_readings:
-                    self._pending_readings.offer([pending])
-                else:
-                    try:
-                        await self._store_reading(*pending)
-                    except Exception as e:
-                        if is_transient_db_error(e):
-                            logger.warning(
-                                f"Database unavailable for soil measurements for "
-                                f"{probe_name}; buffering: {e}"
-                            )
-                            self._pending_readings.offer([pending])
-                        else:
-                            logger.error(
-                                f"Dropping soil measurement for {probe_name} after "
-                                f"permanent database error: {e}"
-                            )
+                    if self._pending_readings:
+                        self._queue_reading(probe_name, modbus_id, registry_id, readings, timestamp)
+                    else:
+                        (
+                            stored_registry_id,
+                            _sensor_ids,
+                            sensor_names,
+                        ) = await self.database.store_measurements(
+                            registry_id, modbus_id, probe_name, readings, timestamp
+                        )
+                        self.registry_ids[modbus_id] = stored_registry_id
+                        self.sensor_names[probe_name] = sensor_names
+                except Exception as e:
+                    if is_transient_db_error(e):
+                        logger.warning(
+                            f"Database unavailable for soil measurements for "
+                            f"{probe_name}; buffering if identity is known: {e}"
+                        )
+                        self._queue_reading(probe_name, modbus_id, registry_id, readings, timestamp)
+                    else:
+                        logger.error(
+                            f"Dropping soil measurement for {probe_name} after "
+                            f"permanent database error: {e}"
+                        )
 
                 logger.info(
                     f"Read {probe_name}: "

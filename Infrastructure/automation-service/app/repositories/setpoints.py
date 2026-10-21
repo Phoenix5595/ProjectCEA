@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 import time
 from typing import TYPE_CHECKING, Any
@@ -25,6 +26,7 @@ class SetpointRepository(BaseRepository):
         # Reduced from 10s to 5s for faster dashboard updates (trade-off: more DB writes)
         self._batch_interval = 5.0
         self._last_batch_flush = time.time()
+        self._flush_lock = asyncio.Lock()
 
     def set_redis_client(self, redis_client: Any) -> None:
         self._redis_client = redis_client
@@ -35,82 +37,83 @@ class SetpointRepository(BaseRepository):
         Returns:
             Number of records flushed (0 if no records to flush)
         """
-        if not self._batch_buffer:
-            return 0
+        async with self._flush_lock:
+            if not self._batch_buffer:
+                return 0
 
-        flushed_count = 0
-        insert_query = """
-                INSERT INTO effective_setpoints (
-                    "time", location, cluster, device_name, mode,
-                    effective_heating_setpoint, effective_cooling_setpoint, effective_humidity_setpoint,
-                    effective_co2_setpoint, effective_vpd_setpoint,
-                    nominal_heating_setpoint, nominal_cooling_setpoint, nominal_humidity_setpoint,
-                    nominal_co2_setpoint, nominal_vpd_setpoint,
-                    ramp_progress_heating, ramp_progress_cooling, ramp_progress_humidity,
-                    ramp_progress_co2, ramp_progress_vpd,
-                    effective_light_intensity, nominal_light_intensity, ramp_progress_light
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
-            """
-        while self._batch_buffer:
-            batch_data = self._batch_buffer.peek(2_000)
-            try:
-                async with self.pool.acquire() as conn:
-                    await conn.executemany(
-                        insert_query,
-                        [
-                            (
-                                record["time"],
-                                record["location"],
-                                record["cluster"],
-                                record["device_name"],
-                                record.get("mode"),
-                                record["effective_heating_setpoint"],
-                                record["effective_cooling_setpoint"],
-                                record["effective_humidity_setpoint"],
-                                record["effective_co2_setpoint"],
-                                record["effective_vpd_setpoint"],
-                                record["nominal_heating_setpoint"],
-                                record["nominal_cooling_setpoint"],
-                                record["nominal_humidity_setpoint"],
-                                record["nominal_co2_setpoint"],
-                                record["nominal_vpd_setpoint"],
-                                record["ramp_progress_heating"],
-                                record["ramp_progress_cooling"],
-                                record["ramp_progress_humidity"],
-                                record["ramp_progress_co2"],
-                                record["ramp_progress_vpd"],
-                                record["effective_light_intensity"],
-                                record["nominal_light_intensity"],
-                                record["ramp_progress_light"],
-                            )
-                            for record in batch_data
-                        ],
-                    )
-            except Exception as error:
-                batch_count = len(batch_data)
-                if is_transient_db_error(error):
-                    logger.warning(
-                        "Failed to flush batch buffer; retaining %d effective setpoint rows: %s",
+            flushed_count = 0
+            insert_query = """
+                    INSERT INTO effective_setpoints (
+                        "time", location, cluster, device_name, mode,
+                        effective_heating_setpoint, effective_cooling_setpoint, effective_humidity_setpoint,
+                        effective_co2_setpoint, effective_vpd_setpoint,
+                        nominal_heating_setpoint, nominal_cooling_setpoint, nominal_humidity_setpoint,
+                        nominal_co2_setpoint, nominal_vpd_setpoint,
+                        ramp_progress_heating, ramp_progress_cooling, ramp_progress_humidity,
+                        ramp_progress_co2, ramp_progress_vpd,
+                        effective_light_intensity, nominal_light_intensity, ramp_progress_light
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+                """
+            while self._batch_buffer:
+                batch_data = self._batch_buffer.peek(2_000)
+                try:
+                    async with self.pool.acquire() as conn:
+                        await conn.executemany(
+                            insert_query,
+                            [
+                                (
+                                    record["time"],
+                                    record["location"],
+                                    record["cluster"],
+                                    record["device_name"],
+                                    record.get("mode"),
+                                    record["effective_heating_setpoint"],
+                                    record["effective_cooling_setpoint"],
+                                    record["effective_humidity_setpoint"],
+                                    record["effective_co2_setpoint"],
+                                    record["effective_vpd_setpoint"],
+                                    record["nominal_heating_setpoint"],
+                                    record["nominal_cooling_setpoint"],
+                                    record["nominal_humidity_setpoint"],
+                                    record["nominal_co2_setpoint"],
+                                    record["nominal_vpd_setpoint"],
+                                    record["ramp_progress_heating"],
+                                    record["ramp_progress_cooling"],
+                                    record["ramp_progress_humidity"],
+                                    record["ramp_progress_co2"],
+                                    record["ramp_progress_vpd"],
+                                    record["effective_light_intensity"],
+                                    record["nominal_light_intensity"],
+                                    record["ramp_progress_light"],
+                                )
+                                for record in batch_data
+                            ],
+                        )
+                except Exception as error:
+                    batch_count = len(batch_data)
+                    if is_transient_db_error(error):
+                        logger.warning(
+                            "Failed to flush batch buffer; retaining %d effective setpoint rows: %s",
+                            batch_count,
+                            error,
+                        )
+                        break
+
+                    self._batch_buffer.consume(batch_count)
+                    logger.error(
+                        "Dropped %d effective setpoint rows after permanent database error: %s",
                         batch_count,
                         error,
+                        exc_info=True,
                     )
-                    break
+                    continue
 
-                self._batch_buffer.consume(batch_count)
-                logger.error(
-                    "Dropped %d effective setpoint rows after permanent database error: %s",
-                    batch_count,
-                    error,
-                    exc_info=True,
-                )
-                continue
+                self._batch_buffer.consume(len(batch_data))
+                flushed_count += len(batch_data)
+                logger.debug("Flushed %d batched effective setpoint records", len(batch_data))
 
-            self._batch_buffer.consume(len(batch_data))
-            flushed_count += len(batch_data)
-            logger.debug("Flushed %d batched effective setpoint records", len(batch_data))
-
-        self._last_batch_flush = time.time()
-        return flushed_count
+            self._last_batch_flush = time.time()
+            return flushed_count
 
     async def get_latest_effective_setpoints(
         self, location: str, cluster: str

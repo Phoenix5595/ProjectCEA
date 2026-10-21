@@ -187,6 +187,32 @@ async def test_failed_batch_remains_buffered_and_flushes_oldest_first_with_origi
 
 
 @pytest.mark.asyncio
+async def test_full_buffer_does_not_mark_unaccepted_state_logged_before_next_tick(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine, repository = _engine(
+        monkeypatch,
+        context={"pid_output": 0.4, "control_reason": "none"},
+        outcomes=[True, True],
+    )
+    engine._automation_state_pending = ReplayBuffer(1, name="automation_state")
+    older_record = {"time": T0, "device_name": "older"}
+    assert engine._automation_state_pending.offer([older_record]) == 1
+
+    await engine._log_automation_state(SNAPSHOT)
+
+    assert KEY not in engine._last_logged
+    assert len(engine._automation_state_pending) == 0
+    assert repository.batches[0] == [older_record]
+
+    await engine._log_automation_state(SNAPSHOT)
+
+    assert repository.batches[1][0]["pid_output"] == 0.4
+    assert KEY in engine._last_logged
+    assert len(engine._automation_state_pending) == 0
+
+
+@pytest.mark.asyncio
 async def test_permanent_error_drops_failed_batch_and_flushes_later_state_rows(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,

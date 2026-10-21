@@ -158,6 +158,7 @@ async def test_control_loop_uses_latest_interval_for_normal_and_error_sleep(monk
             self._last_control_error_time = 0.0
             self._consecutive_control_errors = 0
             self._last_tick_completed_at: float | None = None
+            self._scheduled_interval: int | None = None
 
         async def tick(self):
             self.config.interval = 4
@@ -194,3 +195,4 @@ async def test_control_loop_uses_latest_interval_for_normal_and_error_sleep(monk
     await loop._control_loop()
 
     assert sleeps == [4.0]
+    assert loop._scheduled_interval == (None if failure else 4)

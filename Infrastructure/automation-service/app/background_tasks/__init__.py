@@ -90,6 +90,7 @@ class BackgroundTasks(
         self._last_control_error_time: float = 0.0
         self._consecutive_control_errors: int = 0
         self._last_tick_completed_at: float | None = None
+        self._scheduled_interval: int | None = None
         self._scheduler_retry_task: asyncio.Task | None = None
         self._scheduler_ready = asyncio.Event()
         self._scheduler_loaded_once = False
@@ -156,7 +157,7 @@ class BackgroundTasks(
             return {"ok": False, "detail": "no completed control tick"}
 
         age = time.monotonic() - self._last_tick_completed_at
-        limit = 3 * self._current_control_interval()
+        limit = 3 * max(self._current_control_interval(), self._scheduled_interval or 0)
         if age > limit:
             return {"ok": False, "detail": f"last control tick {age:.1f}s ago (limit {limit}s)"}
         return {"ok": True, "age_ms": round(age * 1000, 1)}

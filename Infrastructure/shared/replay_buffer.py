@@ -12,9 +12,9 @@ Single-event-loop use only (no locking); thread-bound producers use
 
 from __future__ import annotations
 
-import logging
 from collections import deque
 from collections.abc import Sequence
+import logging
 from typing import Generic, TypeVar
 
 logger = logging.getLogger(__name__)

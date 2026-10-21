@@ -831,6 +831,7 @@ class ControlEngine:
         current_time = datetime.now(UTC)
         heartbeat_slot = math.floor(current_time.timestamp() / 30)
         records: list[dict[str, Any]] = []
+        record_keys: list[tuple[str, str, str]] = []
         last_logged_updates: dict[tuple[str, str, str], tuple[tuple[Any, ...], int]] = {}
 
         for location, clusters in snapshot.hierarchy.items():
@@ -890,11 +891,14 @@ class ControlEngine:
                             "pid_kd": context.get("pid_kd"),
                         }
                     )
+                    record_keys.append(key)
                     last_logged_updates[key] = logged_value
 
         if records:
-            self._automation_state_pending.offer(records)
-            self._last_logged.update(last_logged_updates)
+            accepted_count = self._automation_state_pending.offer(records)
+            for index in range(accepted_count):
+                key = record_keys[index]
+                self._last_logged[key] = last_logged_updates[key]
 
         while self._automation_state_pending:
             batch = self._automation_state_pending.peek(500)

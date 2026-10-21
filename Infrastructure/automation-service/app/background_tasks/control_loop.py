@@ -65,6 +65,7 @@ class ControlLoopMixin:
 
                 # Sleep until deadline, or skip if we already exceeded it (tick overrun handling)
                 interval = self._current_control_interval()
+                self._scheduled_interval = interval
                 deadline = tick_started + interval
                 remaining = deadline - time.monotonic()
                 if remaining > 0:

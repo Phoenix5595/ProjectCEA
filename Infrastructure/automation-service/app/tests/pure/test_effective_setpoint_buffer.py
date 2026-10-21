@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 import logging
 from typing import Any
@@ -20,6 +21,18 @@ class _FakeConnection:
             self.failures -= 1
             raise self.failure
         self.batches.append(records)
+
+
+class _SlowConnection(_FakeConnection):
+    def __init__(self) -> None:
+        super().__init__()
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def executemany(self, query: str, records: list[tuple[Any, ...]]) -> None:
+        self.started.set()
+        await self.release.wait()
+        await super().executemany(query, records)
 
 
 class _FakePool:
@@ -68,6 +81,34 @@ async def test_failed_flush_keeps_setpoints_and_success_replays_oldest_first_wit
     assert await repository.flush_batch_buffer() == 2
     assert len(repository._batch_buffer) == 0
     assert [record[0] for record in connection.batches[0]] == [first_time, second_time]
+
+
+@pytest.mark.asyncio
+async def test_concurrent_flushes_write_each_setpoint_once_in_order() -> None:
+    connection = _SlowConnection()
+    repository = SetpointRepository(pool=_FakePool(connection))
+    repository._batch_interval = 60
+    first_time = datetime(2026, 10, 20, 12, 0, tzinfo=UTC)
+    second_time = first_time + timedelta(seconds=5)
+    for timestamp in (first_time, second_time):
+        assert await repository.log_effective_setpoints(
+            location="Flower Room",
+            cluster="main",
+            mode="DAY",
+            timestamp=timestamp,
+        )
+
+    first_flush = asyncio.create_task(repository.flush_batch_buffer())
+    await connection.started.wait()
+    second_flush = asyncio.create_task(repository.flush_batch_buffer())
+    await asyncio.sleep(0)
+    connection.release.set()
+
+    assert await asyncio.gather(first_flush, second_flush) == [2, 0]
+    assert [record[0] for batch in connection.batches for record in batch] == [
+        first_time,
+        second_time,
+    ]
 
 
 @pytest.mark.asyncio

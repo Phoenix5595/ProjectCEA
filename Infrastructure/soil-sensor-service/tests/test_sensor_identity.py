@@ -95,6 +95,7 @@ class SoilIdentityPollingTests(IsolatedAsyncioTestCase):
 
         await self.tasks._poll_all_sensors()
         self.assertEqual(len(self.tasks._pending_readings), 1)
+        self.assertEqual(self.tasks._pending_readings.peek(1)[0][2], 8)
 
         await self.tasks._poll_all_sensors()
 
@@ -103,6 +104,20 @@ class SoilIdentityPollingTests(IsolatedAsyncioTestCase):
         ]
         self.assertEqual(stored_temperatures, [20.0, 20.0, 21.0])
         self.assertEqual(len(self.tasks._pending_readings), 0)
+
+    async def test_replay_uses_captured_registry_id_without_observing_again(self) -> None:
+        self.reader.read_all_parameters.return_value = None
+        self.database.observe_probe.return_value["registry_id"] = 99
+        timestamp = datetime(2026, 10, 20, 12, 0)
+        readings = {"temperature": 18.0}
+        self.tasks._pending_readings.offer([("soil_sensor_233", 233, 8, readings, timestamp)])
+
+        await self.tasks._poll_all_sensors()
+
+        self.database.observe_probe.assert_not_awaited()
+        self.database.store_measurements.assert_awaited_once_with(
+            8, 233, "soil_sensor_233", readings, timestamp
+        )
 
     async def test_permanent_database_errors_drop_rows_and_continue_replay(self) -> None:
         successful_store = self.database.store_measurements.return_value
@@ -119,8 +134,8 @@ class SoilIdentityPollingTests(IsolatedAsyncioTestCase):
         timestamp = datetime.now()
         self.tasks._pending_readings.offer(
             [
-                ("soil_sensor_233", 233, {"temperature": 18.0}, timestamp),
-                ("soil_sensor_233", 233, {"temperature": 17.0}, timestamp),
+                ("soil_sensor_233", 233, 8, {"temperature": 18.0}, timestamp),
+                ("soil_sensor_233", 233, 8, {"temperature": 17.0}, timestamp),
             ]
         )
         await self.tasks._poll_all_sensors()
