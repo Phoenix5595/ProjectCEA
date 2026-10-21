@@ -78,6 +78,7 @@ cp -a "$REPO_ROOT/pyproject.toml" "$ARCHIVE_ROOT/pyproject.toml"
 cp -a "$REPO_ROOT/Infrastructure/services.yaml" "$ARCHIVE_ROOT/Infrastructure/services.yaml"
 cp -a "$REPO_ROOT/Infrastructure/scripts/service_list.py" "$ARCHIVE_ROOT/Infrastructure/scripts/"
 cp -a "$REPO_ROOT/Infrastructure/scripts/sync_systemd_units.sh" "$ARCHIVE_ROOT/Infrastructure/scripts/"
+cp -a "$REPO_ROOT/Infrastructure/scripts/deploy_common.sh" "$ARCHIVE_ROOT/Infrastructure/scripts/"
 cp -a "$REPO_ROOT/Infrastructure/scripts/install-sudoers.sh" "$ARCHIVE_ROOT/Infrastructure/scripts/"
 cp -a "$REPO_ROOT/Infrastructure/systemd-overrides" "$ARCHIVE_ROOT/Infrastructure/"
 cp -a "$REPO_ROOT/Infrastructure/"*.service "$ARCHIVE_ROOT/Infrastructure/"
@@ -521,7 +522,7 @@ import sys
 
 source = Path(sys.argv[1]).read_text()
 start = source.index("run_package_command() {")
-end = source.index("\n}\n\nsystemd_load_state", start) + 3
+end = source.index("\n}\n", start) + 3
 Path(sys.argv[2]).write_text(source[start:end] + "\n")
 PY
 }

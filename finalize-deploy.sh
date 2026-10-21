@@ -15,21 +15,14 @@ STATE="${DEPLOY_STATE_JSON:-$DEPLOY_STATE_DIR/deploy_state.json}"
 JSON_LINE="$SOURCE/Infrastructure/scripts/deploy_json_line.py"
 EMIT="$SOURCE/Infrastructure/scripts/deploy_emit_event.py"
 STATE_HELPER="$SOURCE/Infrastructure/scripts/deploy_state.py"
+source "$(dirname "${BASH_SOURCE[0]}")/Infrastructure/scripts/deploy_common.sh"
 
 if [[ "${1:-}" != "--confirm" || $# -ne 1 ]]; then
   echo "Usage: $0 --confirm" >&2
   exit 1
 fi
 
-sudo mkdir -p "$(dirname "$DEPLOY_LOCK_FILE")" 2>/dev/null || true
-sudo touch "$DEPLOY_LOCK_FILE" 2>/dev/null || true
-sudo chown antoine:antoine "$DEPLOY_LOCK_FILE" 2>/dev/null || true
-sudo chmod 0644 "$DEPLOY_LOCK_FILE" 2>/dev/null || true
-exec 9>"$DEPLOY_LOCK_FILE"
-if ! flock -n 9; then
-  echo "[finalize] a deploy/rollback/finalize is already running; aborting" >&2
-  exit 1
-fi
+setup_deploy_lock "[finalize] a deploy/rollback/finalize is already running; aborting" || exit 1
 
 log_event() {
   export DLOG_EVENT="$1"
@@ -37,37 +30,21 @@ log_event() {
   export DLOG_SERVICE=""
   export DLOG_HTTP=""
   local line
-  line=$(python3 "$EMIT" | python3 "$JSON_LINE")
+  line=$(serialize_deploy_event)
   echo "$line" | sudo tee -a "$DEPLOY_LOG" >/dev/null
   echo "$line"
 }
 
-systemd_load_state() {
-  local unit="$1" state
-  if state="$(sudo systemctl show -p LoadState --value "$unit" 2>/dev/null)"; then
-    printf '%s\n' "$state"
-  else
-    printf 'unknown\n'
-  fi
+finalize_unit_action_event() {
+  local action="$1" unit="$2"
+  case "$action" in
+    skipped) log_event "service_skipped" "load_state_not_found:$unit" ;;
+    restart_failed) log_event "service_restart_failed" "$unit" ;;
+  esac
 }
 
 restart_services() {
-  local service_list="$1"
-  local rc=0 state unit
-  sudo systemctl daemon-reload || rc=1
-  while IFS= read -r unit; do
-    [[ -n "$unit" ]] || continue
-    state="$(systemd_load_state "$unit")"
-    if [[ "$state" == "not-found" ]]; then
-      log_event "service_skipped" "load_state_not_found:$unit" >/dev/null
-      continue
-    fi
-    if ! sudo systemctl restart "$unit"; then
-      log_event "service_restart_failed" "$unit" >/dev/null
-      rc=1
-    fi
-  done < <(python3 "$service_list" --list-deploy-managed-units)
-  return "$rc"
+  deploy_restart_services "$1" finalize_unit_action_event
 }
 
 run_health_checks() {
