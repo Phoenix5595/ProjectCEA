@@ -260,8 +260,8 @@ export function buildControlSeries(
     // One line per target: held steps everywhere, replaced by the exact
     // sampled ramp wherever a linear segment covers the slot. Drawing the
     // step and ramp as two series showed a held value running alongside every
-    // ramp. Recorded bucket extrema keep their envelope so a transient hidden
-    // by a coarse grid stays visible.
+    // ramp. Setpoint targets are lines only; recorded bucket extrema must not
+    // create sensor-style min–max shading.
     const linearY =
       cs.linear.length > 0 ? alignLinear(cs.linear, x, start, end, aggregated) : null
     if (cs.steps.length > 0) {
@@ -280,21 +280,6 @@ export function buildControlSeries(
           isAggregated: isAgg,
           presentation,
         }),
-        ...(isAgg && hasKnownExtrema(aligned)
-          ? {
-              envelope: buildEnvelopeSeries({
-                source,
-                metric: cs.metric,
-                kind: 'step',
-                family,
-                label: displayName,
-                aligned,
-                origin: cs.seriesOrigin,
-                quality: cs.seriesQuality,
-                isAggregated: isAgg,
-              }),
-            }
-          : {}),
       })
     } else if (linearY !== null) {
       candidates.push({
@@ -330,33 +315,12 @@ export function buildControlSeries(
           isAggregated: isAgg,
           presentation,
         }),
-        ...(isAgg && hasKnownExtrema(alignedPoints)
-          ? {
-              envelope: buildEnvelopeSeries({
-                source,
-                metric: cs.metric,
-                kind: 'point',
-                family,
-                label: displayName,
-                aligned: alignedPoints,
-                origin: cs.seriesOrigin,
-                quality: cs.seriesQuality,
-                isAggregated: isAgg,
-              }),
-            }
-          : {}),
       })
     }
     const surviving = candidates.filter(candidate =>
       candidate.series.y.some(value => value !== null && Number.isFinite(value))
     )
-    return {
-      series: surviving.flatMap(candidate => [
-        candidate.series,
-        ...(candidate.envelope?.series ?? []),
-      ]),
-      bands: surviving.flatMap(candidate => (candidate.envelope ? [candidate.envelope.band] : [])),
-    }
+    return { series: surviving.map(candidate => candidate.series), bands: [] }
   }
   const aligned = alignControlPoints(cs, x, start, end, aggregated)
   const series: ControlCandidate[] = [

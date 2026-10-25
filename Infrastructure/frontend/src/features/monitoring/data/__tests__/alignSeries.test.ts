@@ -1117,7 +1117,7 @@ describe('bucketed control extrema', () => {
     expect(fine.max).toEqual([23, 20, 20])
   })
 
-  it('renders a hidden aggregate peak through the full aligned series', () => {
+  it('draws bucketed setpoint history as one target line without min–max shading', () => {
     const at = (minute: number): Date => new Date(START.getTime() + minute * 60_000)
     const series: ClimateTimelineSeries = {
       name: 'Heating Setpoint',
@@ -1149,21 +1149,8 @@ describe('bucketed control extrema', () => {
     const perMetric = out.series.filter(
       candidate => candidate.source === 'climate' && candidate.metric === 'heating_setpoint'
     )
-    expect(perMetric.map(candidate => candidate.role)).toEqual(['step', 'min', 'max'])
-    // The mean/hold line cannot show the 11:35 transient: the recorded bucket
-    // extrema do, exactly where the grid hides it.
-    expect(perMetric.find(candidate => candidate.role === 'step')?.y).toEqual(
-      [22, 22, 22, 22, 22]
-    )
-    expect(perMetric.find(candidate => candidate.role === 'max')?.y).toEqual([23, 30, 23, 23, 23])
-    expect(perMetric.find(candidate => candidate.role === 'min')?.y).toEqual([21, 18, 21, 21, 21])
-    expect(out.bands).toEqual([
-      {
-        key: seriesKey('climate', 'heating_setpoint', 'band'),
-        minKey: seriesKey('climate', 'heating_setpoint', 'min'),
-        maxKey: seriesKey('climate', 'heating_setpoint', 'max'),
-      },
-    ])
+    expect(perMetric.map(candidate => candidate.y)).toEqual([[22, 22, 22, 22, 22]])
+    expect(out.bands).toEqual([])
   })
 
   it('emits one envelope per pid output and never for the duty or raw series', () => {
@@ -1234,67 +1221,19 @@ describe('bucketed control extrema', () => {
     expect(rawBuilt.series.find(series => series.role === 'pid_output')?.y).toEqual([50, 40, null])
   })
 
-  it('emits the control envelope only for genuinely bucketed series', () => {
+  it('keeps point-only bucketed setpoints unshaded without changing their values', () => {
     const bucketed = buildControlSeries(
       norm({
         metric: 'heating_setpoint',
         seriesAggregated: true,
-        steps: [{ t: 0, value: 22, minimum: 20, maximum: 25 }],
+        points: [{ t: 0, value: 22, minimum: 20, maximum: 25 }],
       }),
       X,
       WINDOW.start,
       WINDOW.end,
       false
     )
-    expect(bucketed.series.map(series => series.role)).toEqual(['step', 'min', 'max'])
-    // A step series holds its value forward, and the band holds its recorded
-    // bucket extrema with it.
-    expect(bucketed.series.find(series => series.role === 'min')?.y).toEqual([20, 20, 20])
-    expect(bucketed.series.find(series => series.role === 'max')?.y).toEqual([25, 25, 25])
-    expect(bucketed.bands).toHaveLength(1)
-
-    const raw = buildControlSeries(
-      norm({
-        metric: 'heating_setpoint',
-        steps: [{ t: 0, value: 22 }],
-      }),
-      X,
-      WINDOW.start,
-      WINDOW.end,
-      false
-    )
-    expect(raw.series.map(series => series.role)).toEqual(['step'])
-    expect(raw.bands).toEqual([])
-
-    // Aggregated provenance with no proven extrema anywhere adds no noise.
-    const noExtrema = buildControlSeries(
-      norm({
-        metric: 'heating_setpoint',
-        seriesAggregated: true,
-        steps: [{ t: 0, value: 22 }],
-      }),
-      X,
-      WINDOW.start,
-      WINDOW.end,
-      false
-    )
-    expect(noExtrema.series.map(series => series.role)).toEqual(['step'])
-    expect(noExtrema.bands).toEqual([])
-
-    // A client rebucketed raw series supplies its bounds from the raw values.
-    const reduced = buildControlSeries(
-      norm({
-        metric: 'heating_setpoint',
-        steps: [{ t: 0, value: 22 }],
-      }),
-      X,
-      WINDOW.start,
-      WINDOW.end,
-      true
-    )
-    expect(reduced.series.map(series => series.role)).toEqual(['step', 'min', 'max'])
-    // The hold keeps the single raw sample's own extremum everywhere.
-    expect(reduced.series.find(series => series.role === 'max')?.y).toEqual([22, 22, 22])
-    expect(reduced.series.find(series => series.role === 'min')?.y).toEqual([22, 22, 22])
+    expect(bucketed.series.map(series => series.y)).toEqual([[22, null, null]])
+    expect(bucketed.bands).toEqual([])
   })
 })
