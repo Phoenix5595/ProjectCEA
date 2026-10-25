@@ -243,8 +243,9 @@ export function ControlTimeline({
     localDraft: localMode && state.saved.baseConfigRevision ? draftPeriods : null,
     selectedLabel,
     activeLabel,
+    draftDirty: editorDirty,
   }), [state.saved.room.location, state.saved.room.cluster, windowStartMs, windowEndMs, nowMs,
-    operationalProjection, state.saved.baseConfigRevision, state.saved.periods, savedEnvelope, envelope, localMode, draftPeriods, selectedLabel, activeLabel])
+    operationalProjection, state.saved.baseConfigRevision, state.saved.periods, savedEnvelope, envelope, localMode, draftPeriods, selectedLabel, activeLabel, editorDirty])
 
   // Selected draft bands remain hypothetical; live phase is separately named.
   const bands = useMemo(
@@ -485,7 +486,7 @@ export function ControlTimeline({
             data-testid="control-timeline-clock-label"
             className="text-10 text-text-subtle"
           >
-            Chart times UTC · Schedule times America/Toronto
+            Times America/Toronto
           </span>
         </div>
         <div className="flex items-center gap-1">

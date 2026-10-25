@@ -12,6 +12,13 @@ import { TimelineEditor } from '../components/TimelineEditor'
 import type { TimelineSavedBaseline } from '../state/timelineDraft'
 import { useTimelineDraft } from '../state/useTimelineDraft'
 
+/** Toronto local day containing the fixture clock: 2026-01-01 07:00 EST. */
+const DAY_WINDOW = {
+  start: '2026-01-01T05:00:00.000Z',
+  end: '2026-01-02T05:00:00.000Z',
+  timezone: 'America/Toronto',
+}
+
 const baseline = (): TimelineSavedBaseline => ({
   room: { location: 'Flower Room', cluster: 'main' },
   baseConfigRevision: '0000007',
@@ -37,23 +44,15 @@ const baseline = (): TimelineSavedBaseline => ({
     rampUpMinutes: 20,
     rampDownMinutes: 20,
   },
-  window: {
-    start: '2026-01-01T00:00:00.000Z',
-    end: '2026-01-02T00:00:00.000Z',
-    timezone: 'America/Toronto',
-  },
+  window: { ...DAY_WINDOW },
 })
 
 const preview = (revision: number) =>
   RichTrajectoryEnvelope.parse({
     contract_version: 1,
     room: 'Flower Room',
-    generated_at: '2026-01-01T00:00:00.000Z',
-    window: {
-      start: '2026-01-01T00:00:00.000Z',
-      end: '2026-01-02T00:00:00.000Z',
-      timezone: 'America/Toronto',
-    },
+    generated_at: '2026-01-01T05:00:00.000Z',
+    window: { ...DAY_WINDOW },
     revision_scope: 'draft',
     base_config_revision: '0000007',
     draft_revision: String(revision),
@@ -61,8 +60,8 @@ const preview = (revision: number) =>
       {
         shape: 'step',
         value: 22,
-        start: '2026-01-01T00:00:00.000Z',
-        end: '2026-01-02T00:00:00.000Z',
+        start: DAY_WINDOW.start,
+        end: DAY_WINDOW.end,
         metric: 'heating_setpoint',
         unit: 'celsius',
         trajectory_kind: 'scheduled',
@@ -120,8 +119,8 @@ const skippedWarning = {
   code: 'calendar.transition_skipped',
   detail: 'Calendar destination flower/bulk was skipped',
   reason: 'unknown_mode',
-  start: '2026-01-01T06:00:00.000Z',
-  end: '2026-01-01T12:00:00.000Z',
+  start: '2026-01-01T11:00:00.000Z',
+  end: '2026-01-01T17:00:00.000Z',
 }
 
 function port(): TimelinePublicationPort {
@@ -143,7 +142,7 @@ function port(): TimelinePublicationPort {
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
-  vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'))
+  vi.setSystemTime(new Date('2026-01-01T12:00:00.000Z'))
 })
 afterEach(() => vi.useRealTimers())
 

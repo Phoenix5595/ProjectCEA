@@ -82,7 +82,11 @@ Required tokens are listed in `src/features/monitoring/designTokens.ts` (`REQUIR
 
 ### Climate timeline compact and expanded states
 
-- The compact Control timeline is read-only. It shows saved scheduled and runtime-effective trajectories, a UTC-window label with the selected display timezone, and explicit source configuration revision/freshness metadata. It has one Expand control; pointer drag and keyboard adjustment do nothing in this state.
+- The compact Control timeline is read-only. It shows saved scheduled and runtime-effective trajectories, an `America/Toronto` time label, and explicit source configuration revision/freshness metadata. It has one Expand control; pointer drag and keyboard adjustment do nothing in this state.
+- Chart time is the Toronto wall clock, without a UTC suffix: axis ticks and tooltip timestamps use `America/Toronto`, and the daily window is the Toronto local calendar day (Toronto midnight to the next Toronto midnight, 1380/1440/1500 minutes across DST dates). Instants stay absolute; only their displayed wall clock changes.
+- The Draft row and curve render only when the editor holds unsaved changes and at least one plotted draft value differs from Saved at the same x, compared at the tooltip's displayed precision (temperature 0.1 °C, VPD 0.01 kPa, CO₂ 1 ppm). Photoperiod-only or label-only edits therefore add no Draft line.
+- The Running forecast renders only where it differs from Saved at the same displayed precision when the inspected profile is the active profile; with an inactive profile selected, Saved and the forecast both remain visible unchanged.
+- Photoperiod and climate periods are independent (R5): sun/moon bands come only from recorded or projected photoperiod, never from climate period boundaries, and editing a climate period never moves a sun/moon boundary.
 - Expanded Control keeps the compact plot, adds scheduled-only editing handles, Review, Apply, and Discard controls, and leaves the primary climate-period table immediately below as the complete keyboard and fine-tuning fallback. Effective trajectories are never draggable or editable.
 - Scheduled and effective trajectories use both line style and a text label. Saved and draft values use both line style and a visible Saved/Draft state label; color alone never communicates either distinction.
 - Climate panels are unit-aligned: temperature (`°C`), VPD (`kPa`), and CO2 (`ppm`) never share an unlabeled scale. Metric/unit labels remain visible in compact and expanded states.

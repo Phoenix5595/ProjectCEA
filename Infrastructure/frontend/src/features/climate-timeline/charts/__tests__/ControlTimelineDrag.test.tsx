@@ -5,10 +5,11 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { RichTrajectoryEnvelope } from '../../api/contracts'
 import type { TimelinePublicationPort } from '../../api/timelinePublicationPort'
 import { ControlTimeline } from '../../components/ControlTimeline'
-import { scheduleClockMinutes } from '../scheduleClock'
 import type { TimelineSavedBaseline } from '../../state/timelineDraft'
 import { useTimelineDraft } from '../../state/useTimelineDraft'
 import { authorityCurrent, authorityEnvelope, authorityFuture, authorityNow, authorityPeriod } from '../../__tests__/timelineAuthorityFixtures'
+import { displayWindowFor } from '../envelopeSeries'
+import { scheduleClockMinutes } from '../scheduleClock'
 
 const { MockUPlot, instances } = vi.hoisted(() => {
   const instances: MockUPlot[] = []
@@ -21,7 +22,7 @@ const { MockUPlot, instances } = vi.hoisted(() => {
     over = document.createElement('div')
     cursor = { left: -1, top: -1, idx: null }
     scales: Record<string, { min: number; max: number }> = {
-      x: { min: 0, max: 1441 },
+      x: { min: 0, max: 1440 },
       temp: { min: 10, max: 35 },
       vpd: { min: 0, max: 5 },
       co2: { min: 400, max: 2000 },
@@ -181,11 +182,12 @@ function valueY(value: number): number {
   return 400 - ((value - 10) / 25) * 400
 }
 
-/** Canvas x of the instant whose Toronto schedule clock reads `scheduleMinute` in the current UTC daily window. */
+/** Canvas x of the instant whose Toronto schedule clock reads `scheduleMinute` in the current Toronto daily window. */
 function timeX(scheduleMinute: number): number {
-  const windowStart = Math.floor(Date.now() / 86_400_000) * 86_400_000
-  const windowMinute = (scheduleMinute - scheduleClockMinutes(windowStart) + 1440) % 1440
-  return (windowMinute / 1440) * 800
+  const window = displayWindowFor('daily', Date.now())
+  const spanMinutes = (window.end - window.start) / 60_000
+  const windowMinute = (scheduleMinute - scheduleClockMinutes(window.start) + 1440) % 1440
+  return (windowMinute / spanMinutes) * 800
 }
 
 let animationFrames: Array<(timestamp: number) => void> = []

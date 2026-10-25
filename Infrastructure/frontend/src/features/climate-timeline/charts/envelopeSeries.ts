@@ -1,6 +1,8 @@
 import { isMinuteInPeriod } from '../../../utils/climatePeriodTimeline'
 import { timeToMinutes } from '../../../utils/timeMath'
+import { torontoDayWindow } from '../../../utils/torontoWallTime'
 import type { RichTrajectoryEnvelope } from '../api/contracts'
+
 import { scheduleClockMinutes, scheduleOccurrences } from './scheduleClock'
 
 export type TrajectoryKind = 'scheduled' | 'effective'
@@ -62,10 +64,10 @@ export function envelopeSampleTimes(
 const TWELVE_HOURS_MS = 12 * 3_600_000
 
 /**
- * The x-domain the timeline always renders: exactly one 24-hour period,
+ * The x-domain the timeline always renders: exactly one local period,
  * decoupled from the envelope's own (possibly much longer) window.
- * `daily` is the current UTC calendar day; `rolling` is the 24h span centred
- * on now.
+ * `daily` is the current Toronto calendar day (1380/1440/1500 minutes across
+ * DST dates); `rolling` is the 24h span centred on now.
  */
 export function displayWindowFor(
   windowMode: 'daily' | 'rolling',
@@ -74,9 +76,7 @@ export function displayWindowFor(
   if (windowMode === 'rolling') {
     return { start: nowMs - TWELVE_HOURS_MS, end: nowMs + TWELVE_HOURS_MS }
   }
-  const now = new Date(nowMs)
-  const dayOrigin = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
-  return { start: dayOrigin, end: dayOrigin + DAY_MS }
+  return torontoDayWindow(nowMs)
 }
 
 function metricOrder(metric: string): number {
@@ -193,8 +193,6 @@ export interface TimelinePhotoperiodInterval {
   readonly end: number
   readonly phase: 'SUN' | 'MOON'
 }
-
-const DAY_MS = 86_400_000
 
 /**
  * Split the window into sun/moon bands from the stored Toronto wall clocks.

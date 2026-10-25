@@ -13,8 +13,11 @@
  *
  * The historical-range helpers build on that core:
  * `subtractTorontoCalendarMonths` (whole-month subtraction with day clamp and
- * deterministic DST) and `torontoMidnightUtc` (Toronto midnight of a calendar
- * date).
+ * deterministic DST), `torontoMidnightUtc` (Toronto midnight of a calendar
+ * date) and `torontoDayWindow` (the Toronto local calendar day containing an
+ * instant). The display formatters (`formatTorontoClock`,
+ * `formatTorontoClockSeconds`) render chart axis ticks and tooltip timestamps
+ * in the same wall clock.
  */
 import { formatInTimeZone, toZonedTime } from 'date-fns-tz'
 
@@ -212,4 +215,52 @@ export function torontoMidnightUtc(dateStr: string): Date | null {
     min: 0,
   })
   return resolved.kind === 'valid' ? resolved.utc : null
+}
+
+/**
+ * Toronto local calendar day containing a UTC instant: Toronto midnight of
+ * that local date through Toronto midnight of the next local date. The span is
+ * 23, 24 or 25 hours on DST change dates — never a fixed millisecond count.
+ */
+export function torontoDayWindow(instantMs: number): { start: number; end: number } {
+  const start = torontoMidnightUtc(torontoDateString(instantMs))
+  if (start === null) throw new Error('Toronto local midnight did not resolve')
+  const end = torontoMidnightUtc(nextTorontoDateString(start.getTime()))
+  if (end === null) throw new Error('Toronto local midnight did not resolve')
+  return { start: start.getTime(), end: end.getTime() }
+}
+
+/** `YYYY-MM-DD` of the Toronto local date after the one containing the instant. */
+function nextTorontoDateString(instantMs: number): string {
+  const c = torontoWallComponents(instantMs)
+  const next = new Date(Date.UTC(c.y, c.mo, c.d + 1))
+  const month = String(next.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(next.getUTCDate()).padStart(2, '0')
+  return `${next.getUTCFullYear()}-${month}-${day}`
+}
+
+const CLOCK_FORMAT = new Intl.DateTimeFormat('en-CA', {
+  timeZone: TORONTO_TZ,
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+})
+
+const CLOCK_SECONDS_FORMAT = new Intl.DateTimeFormat('en-CA', {
+  timeZone: TORONTO_TZ,
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  fractionalSecondDigits: 3,
+  hourCycle: 'h23',
+})
+
+/** `HH:MM` Toronto wall clock of a UTC instant. */
+export function formatTorontoClock(instantMs: number): string {
+  return CLOCK_FORMAT.format(new Date(instantMs))
+}
+
+/** `HH:MM:SS.mmm` Toronto wall clock of a UTC instant. */
+export function formatTorontoClockSeconds(instantMs: number): string {
+  return CLOCK_SECONDS_FORMAT.format(new Date(instantMs))
 }

@@ -1,5 +1,7 @@
 import type uPlot from 'uplot'
 
+import { formatTorontoClockSeconds } from '../../../utils/torontoWallTime'
+
 import { CURRENT_MARKER_DIAMETER_PX, UNIT_LABELS, type TimelineScale, type TimelineSeriesMeta } from './timelineOptions'
 import type { TimelineSampleQualities } from './timelineSources'
 
@@ -19,15 +21,16 @@ export function formatTooltipValue(scale: TimelineScale, value: number): string 
   return `${value.toFixed(1)} ${UNIT_LABELS.temp}`
 }
 
-/** Render one sample's observation timestamp from its window-minute x value. */
+/**
+ * Render one sample's observation timestamp from its window-minute x value, in
+ * Toronto wall-clock time (`HH:MM:SS.mmm`). Instants are absolute; the wall
+ * clock is the operator's local one, never UTC.
+ */
 export function formatTooltipTimestamp(
   windowStartMs: number,
   minute: number
 ): string {
-  const instant = new Date(windowStartMs + minute * 60_000)
-  const hours = String(instant.getUTCHours()).padStart(2, '0')
-  const minutesText = String(instant.getUTCMinutes()).padStart(2, '0')
-  return `${hours}:${minutesText}:${String(instant.getUTCSeconds()).padStart(2, '0')}.${String(instant.getUTCMilliseconds()).padStart(3, '0')} UTC`
+  return formatTorontoClockSeconds(windowStartMs + minute * 60_000)
 }
 
 /** One provenance line fragment: role and quality, never color alone. */

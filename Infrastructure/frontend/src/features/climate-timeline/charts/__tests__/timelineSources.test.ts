@@ -6,7 +6,7 @@ import { buildTimelineOptions } from '../timelineOptions'
 function options(): TimelineSourcesOptions {
   return { location: 'Flower Room', cluster: 'main', window: authorityWindow, now: authorityNow,
     current: authorityCurrent(), future: [authorityFuture()], saved: authorityEnvelope(), draft: null,
-    localDraft: [authorityPeriod], selectedLabel: 'Drying', activeLabel: 'Flower / Bulk' }
+    localDraft: [authorityPeriod], selectedLabel: 'Drying', activeLabel: 'Flower / Bulk', draftDirty: true }
 }
 function sample(chart: TimelineSources, role: string, time: number): number | null | undefined {
   const series = chart.meta.findIndex(entry => entry.role === role && entry.metric === 'heating_setpoint') + 1
@@ -80,5 +80,57 @@ describe('timeline source authority', () => {
     const chart = buildTimelineSources({ ...options(), draft, localDraft: null })
     expect(sample(chart, 'selected-draft', authorityNow)).toBe(19)
     expect(chart.qualities.get('selected-draft:heating_setpoint:scheduled')?.[chart.sampleTimes.indexOf(authorityNow)]).toBe('estimated')
+  })
+})
+
+function forecastValues(chart: TimelineSources): readonly (number | null | undefined)[] {
+  const index = chart.meta.findIndex(entry => entry.role === 'active-future' && entry.metric === 'heating_setpoint')
+  if (index < 0) return []
+  const series = chart.data[index + 1]
+  return series == null ? [] : [...series]
+}
+
+describe('draft and forecast visibility', () => {
+  it('omits the draft source for a clean editor even when a reviewed envelope exists', () => {
+    const chart = buildTimelineSources({
+      ...options(),
+      draft: authorityEnvelope(19, 1), localDraft: null, draftDirty: false,
+    })
+    expect(chart.meta.some(entry => entry.role === 'selected-draft')).toBe(false)
+  })
+
+  it('renders the draft when the editor is dirty and one plotted setpoint differs', () => {
+    const chart = buildTimelineSources({
+      ...options(),
+      draft: authorityEnvelope(19, 1), localDraft: null, draftDirty: true,
+    })
+    expect(sample(chart, 'selected-draft', authorityNow)).toBe(19)
+  })
+
+  it('omits a draft whose plotted values match Saved at the tooltip precision', () => {
+    // Heating displays one decimal: 18.04 is Saved's 18.0 on screen.
+    const chart = buildTimelineSources({
+      ...options(),
+      draft: authorityEnvelope(18.04, 1), localDraft: null, draftDirty: true,
+    })
+    expect(chart.meta.some(entry => entry.role === 'selected-draft')).toBe(false)
+  })
+
+  it('hides an active profile forecast that equals Saved at the tooltip precision', () => {
+    const chart = buildTimelineSources({
+      ...options(), saved: authorityEnvelope(24), localDraft: null,
+      selectedLabel: 'Drying', activeLabel: 'Drying',
+    })
+    expect(forecastValues(chart).every(value => value === null)).toBe(true)
+  })
+
+  it('keeps a differing active forecast and never filters an inactive profile', () => {
+    const differing = buildTimelineSources({
+      ...options(), saved: authorityEnvelope(18), localDraft: null,
+      selectedLabel: 'Drying', activeLabel: 'Drying',
+    })
+    expect(sample(differing, 'active-future', authorityNow)).toBe(24)
+    const inactive = buildTimelineSources({ ...options(), saved: authorityEnvelope(24), localDraft: null })
+    expect(sample(inactive, 'active-future', authorityNow)).toBe(24)
   })
 })

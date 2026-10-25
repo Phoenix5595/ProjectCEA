@@ -1,5 +1,7 @@
 import uPlot from 'uplot'
 
+import { formatTorontoClock } from '../../../utils/torontoWallTime'
+
 import type { EnvelopeSeriesKey } from './envelopeSeries'
 import { readTimelineToken, type TimelineTokenName } from './tokens'
 
@@ -139,8 +141,11 @@ export function buildTimelineOptions(
   hooks: TimelineHooks,
   plugins: uPlot.Plugin[]
 ): uPlot.Options {
+  // x values are minutes since the window start; the Toronto day is 1380,
+  // 1440 or 1500 minutes long, so the scale follows the window itself.
+  const xMaxMinutes = Math.max(1, (windowMs.end - windowMs.start) / 60_000)
   const scales: uPlot.Scales = {
-    x: { time: false, range: () => [0, 1441] },
+    x: { time: false, range: () => [0, xMaxMinutes] },
     temp: { auto: true, range: softRange(SOFT_BOUNDS.temp.min, SOFT_BOUNDS.temp.max) },
     vpd: { auto: true, range: softRange(SOFT_BOUNDS.vpd.min, SOFT_BOUNDS.vpd.max) },
     co2: { auto: true, range: softRange(SOFT_BOUNDS.co2.min, SOFT_BOUNDS.co2.max) },
@@ -156,12 +161,7 @@ export function buildTimelineOptions(
       ticks: { stroke: gridStroke },
       size: 30,
       values: (_self, splits) =>
-        splits.map(minutes => {
-          const instant = new Date(windowMs.start + minutes * 60_000)
-          const hours = String(instant.getUTCHours()).padStart(2, '0')
-          const minutesText = String(instant.getUTCMinutes()).padStart(2, '0')
-          return `${hours}:${minutesText}`
-        }),
+        splits.map(minutes => formatTorontoClock(windowMs.start + minutes * 60_000)),
     },
     {
       scale: 'temp',

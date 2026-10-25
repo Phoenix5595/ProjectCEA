@@ -1,10 +1,12 @@
 import type uPlot from 'uplot'
 import { describe, expect, it } from 'vitest'
 
+import { formatTorontoClock } from '../../../../utils/torontoWallTime'
 import type { EnvelopeSeriesKey } from '../envelopeSeries'
 import { timelineSeriesMeta, type TimelineSeriesKey } from '../timelineOptions'
 import type { TimelineSampleQuality } from '../timelineSources'
 import {
+  formatTooltipTimestamp,
   formatTooltipValue,
   unitTooltipPlugin,
   type TimelineTooltipState,
@@ -79,7 +81,7 @@ describe('unitTooltipPlugin', () => {
     expect(tooltip.textContent?.match(/22\.0 °C/g)).toHaveLength(2)
     expect(tooltip.textContent).toContain('active-current · exact')
     expect(tooltip.textContent).toContain('selected-draft · exact')
-    expect(tooltip.textContent).toContain('12:00:15.000 UTC')
+    expect(tooltip.textContent).toContain('07:00:15.000')
     setCursor(400, 200, 1)
     expect(tooltip.textContent).not.toContain('active-current')
     expect(tooltip.textContent).toContain('selected-draft · estimated')
@@ -100,7 +102,7 @@ describe('unitTooltipPlugin', () => {
     const { tooltip, setCursor } = harness(() => snapshot)
     setCursor(99.99, 200, 0)
     expect(tooltip.textContent).toContain('22.0 °C')
-    expect(tooltip.textContent).toContain('active-current · exact · 12:00:15.000 UTC')
+    expect(tooltip.textContent).toContain('active-current · exact · 07:00:15.000')
     expect(tooltip.textContent).not.toContain('active-future')
     expect(tooltip.textContent).toContain('18.0 °C')
     setCursor(104, 200, 1)
@@ -155,5 +157,27 @@ describe('unitTooltipPlugin', () => {
 
     setCursor(-10, -10, null)
     expect(tooltip.style.display).toBe('none')
+  })
+})
+
+describe('Toronto clock display', () => {
+  it('renders ticks and timestamps in Toronto wall time across EDT and EST', () => {
+    // 2026-07-01 is EDT (UTC-4); 2026-01-15 is EST (UTC-5).
+    expect(formatTorontoClock(Date.parse('2026-07-01T15:00:00.000Z'))).toBe('11:00')
+    expect(formatTorontoClock(Date.parse('2026-01-15T16:00:00.000Z'))).toBe('11:00')
+    expect(formatTooltipTimestamp(Date.parse('2026-07-01T15:00:00.000Z'), 0)).toBe('11:00:00.000')
+    expect(formatTooltipTimestamp(Date.parse('2026-01-15T16:00:00.000Z'), 0)).toBe('11:00:00.000')
+  })
+
+  it('shows the cursor timestamp in Toronto time with no UTC suffix', () => {
+    const { tooltip, setCursor } = harness(() => ({
+      data: [[0], [23.5]],
+      meta: timelineSeriesMeta(['heating_setpoint:scheduled'], 'selected-saved', 'Saved Flower · '),
+      windowStartMs: Date.parse('2026-07-01T15:00:00.000Z'),
+    }))
+    setCursor(400, 200, 0)
+
+    expect(tooltip.textContent).toContain('11:00:00.000')
+    expect(tooltip.textContent).not.toContain('UTC')
   })
 })

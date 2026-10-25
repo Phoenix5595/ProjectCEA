@@ -335,11 +335,11 @@ describe('photoperiodIntervals', () => {
 })
 
 describe('displayWindowFor', () => {
-  it('daily is always the current UTC calendar day, exactly 24 hours', () => {
+  it('daily is the current Toronto calendar day, 24 hours outside DST dates', () => {
     const nowMs = Date.parse('2026-09-18T17:22:31.123Z')
     const window = displayWindowFor('daily', nowMs)
-    expect(window.start).toBe(Date.parse('2026-09-18T00:00:00.000Z'))
-    expect(window.end).toBe(Date.parse('2026-09-19T00:00:00.000Z'))
+    expect(window.start).toBe(Date.parse('2026-09-18T04:00:00.000Z'))
+    expect(window.end).toBe(Date.parse('2026-09-19T04:00:00.000Z'))
     expect(window.end - window.start).toBe(86_400_000)
   })
 
@@ -350,8 +350,21 @@ describe('displayWindowFor', () => {
     expect(window.end).toBe(nowMs + 12 * 3_600_000)
   })
 
-  it('daily wraps onto the next day after midnight', () => {
-    const window = displayWindowFor('daily', Date.parse('2026-09-19T03:00:00.000Z'))
-    expect(window.start).toBe(Date.parse('2026-09-19T00:00:00.000Z'))
+  it('daily follows the Toronto local midnight, not the UTC one', () => {
+    const beforeLocalMidnight = displayWindowFor('daily', Date.parse('2026-09-19T03:00:00.000Z'))
+    expect(beforeLocalMidnight.start).toBe(Date.parse('2026-09-18T04:00:00.000Z'))
+    const afterLocalMidnight = displayWindowFor('daily', Date.parse('2026-09-19T04:00:00.000Z'))
+    expect(afterLocalMidnight.start).toBe(Date.parse('2026-09-19T04:00:00.000Z'))
+  })
+
+  it('daily spans 23 and 25 hours across Toronto DST dates', () => {
+    const spring = displayWindowFor('daily', Date.parse('2026-03-08T16:00:00.000Z'))
+    expect(spring.start).toBe(Date.parse('2026-03-08T05:00:00.000Z'))
+    expect(spring.end).toBe(Date.parse('2026-03-09T04:00:00.000Z'))
+    expect(spring.end - spring.start).toBe(23 * 3_600_000)
+    const fall = displayWindowFor('daily', Date.parse('2026-11-01T16:00:00.000Z'))
+    expect(fall.start).toBe(Date.parse('2026-11-01T04:00:00.000Z'))
+    expect(fall.end).toBe(Date.parse('2026-11-02T05:00:00.000Z'))
+    expect(fall.end - fall.start).toBe(25 * 3_600_000)
   })
 })

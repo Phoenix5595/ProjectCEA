@@ -131,8 +131,10 @@ describe('TimelineUPlot mount', () => {
     const plot = instances[0]
     expect(plot.data).toBe(data)
     expect(plot.opts.scales?.x).toMatchObject({ time: false })
-    const xRange = (plot.opts.scales?.x as { range?: () => [number, number] }).range?.() ?? []
-    expect(xRange).toEqual([0, 1441])
+    // uPlot types the x range as a callback without our zero-arg window form.
+    const xScale = plot.opts.scales?.x as { range?: () => [number, number] } | undefined
+    const xRange = xScale?.range?.() ?? []
+    expect(xRange).toEqual([0, 1440])
     const scaleKeys = Object.keys(plot.opts.scales ?? {})
     expect(scaleKeys).toEqual(expect.arrayContaining(['temp', 'vpd', 'co2']))
     expect(plot.opts.series).toHaveLength(3)

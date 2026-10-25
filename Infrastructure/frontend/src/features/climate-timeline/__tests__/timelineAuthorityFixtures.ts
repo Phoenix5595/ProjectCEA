@@ -3,7 +3,8 @@ import { RichTrajectoryEnvelope } from '../api/contracts'
 import type { ClimatePeriod } from '../../../types/climatePeriod'
 
 export const authorityNow = Date.parse('2026-01-01T12:00:12.345Z')
-export const authorityWindow = { start: Date.parse('2026-01-01T00:00:00.000Z'), end: Date.parse('2026-01-02T00:00:00.000Z') }
+/** Toronto local day containing authorityNow: 2026-01-01 07:00 EST. */
+export const authorityWindow = { start: Date.parse('2026-01-01T05:00:00.000Z'), end: Date.parse('2026-01-02T05:00:00.000Z') }
 export const authorityVersion = { contract_version: 1 as const, config_version: 37, revision: '0000009' }
 export const authorityPeriod: ClimatePeriod = { period_name: 'All day', start_time: '00:00', end_time: '00:00', ramp_minutes: 0,
   heating_setpoint: 19, cooling_setpoint: null, vpd_setpoint: null, co2_setpoint: null, details: '' }

@@ -61,6 +61,7 @@ import type {
 } from '../types/modes'
 import { extractErrorMessage } from '../utils/errors'
 import { logger } from '../utils/logger'
+import { torontoDayWindow } from '../utils/torontoWallTime'
 
 export type ZoneConfigSection = 'control' | 'automation'
 
@@ -139,9 +140,12 @@ function profileLabel(profile: ModeProfileIdentity | null): string {
 }
 
 function dailyWindow(): TimelineWindow {
-  const now = new Date()
-  const start = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
-  return { start: new Date(start).toISOString(), end: new Date(start + 86_400_000).toISOString(), timezone: 'UTC' }
+  const { start, end } = torontoDayWindow(Date.now())
+  return {
+    start: new Date(start).toISOString(),
+    end: new Date(end).toISOString(),
+    timezone: 'America/Toronto',
+  }
 }
 
 function profileFromRead(read: ActiveModeResponse | ModeActivationResponse): ModeProfileIdentity | null {

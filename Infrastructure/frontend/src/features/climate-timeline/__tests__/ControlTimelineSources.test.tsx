@@ -154,7 +154,9 @@ describe('compact and expanded chart authority', () => {
   })
 
   it('keeps the selected recurring values beyond the old envelope when switching to a different rolling window', () => {
-    const now = authorityNow + 90 * 60_000
+    // Late enough that the previous envelope's end still falls inside the new
+    // 24h rolling window.
+    const now = authorityNow + 6 * 3_600_000
     vi.setSystemTime(now)
     const hook = renderHook(() => useTimelineDraft({ saved: saved(), publicationPort: port() }))
     const view = render(<ControlTimeline mode="compact" controller={hook.result.current} operationalProjection={operational} />)
