@@ -21,6 +21,7 @@ import type { ChartFamily } from '../charts/options/family'
 import type { SeriesSpec } from '../config'
 import type { MonitoringRange } from '../state'
 import type { DeviceRegistryEntry } from '../../../types/device'
+import type { LiveTailBuffer } from './liveTail'
 
 
 /** Everything the alignment function needs to build the shared grid. */
@@ -29,7 +30,12 @@ export interface AlignInput {
   controlHistory: ControlMonitoringResponse | null
   projectionHistory: ControlMonitoringResponse | null
   photoperiod: PhotoperiodTimelinePoint[]
+  /** Latest live values; used only when no `liveTail` buffer is supplied. */
   live: LiveSensorValue[]
+  /** Raw live tail appended at its own timestamps (preferred over `live`). */
+  liveTail?: LiveTailBuffer
+  /** Recorded sensor bucket interval in seconds; null/1 means raw. */
+  sensorIntervalSeconds?: number | null
   range: MonitoringRange
   now: Date
   /** Maximum number of x slots; defaults to 5,000. */
@@ -114,6 +120,17 @@ export interface AlignedSeries {
   presentation?: SeriesPresentation
   /** Exact light segments used for rendering and cursor evaluation. */
   lightTrajectory?: readonly LightTrajectorySegment[]
+  /**
+   * Sensor-only bucket detail, one entry per x slot (R4). Each array is null
+   * where the slot carries no bucket, where the bucket holds a single sample,
+   * and on raw live-tail slots. Charts render the min–max band and the bucket
+   * tooltip from these; setpoint/light/device/PID series never carry them.
+   */
+  minimum?: (number | null)[]
+  maximum?: (number | null)[]
+  sampleCount?: (number | null)[]
+  /** Sensor-only marker: true where the slot is a raw live-tail point. */
+  liveTail?: boolean[]
 }
 
 /** A min/max envelope pair referencing two emitted series keys. */
@@ -136,8 +153,12 @@ export interface AlignedData {
   series: AlignedSeries[]
   bands: AlignedBand[]
   photoperiod: PhotoperiodInterval[]
-  /** Index into `x` where the "now" divider falls. */
+  /** Index into `x` of the last recorded/tail slot at or before `nowMs`. */
   nowIndex: number
+  /** Wall-clock instant of this alignment; live follow uses it directly. */
+  nowMs: number
+  /** Recorded sensor bucket interval in seconds; null/1 means raw. */
+  sensorIntervalSeconds: number | null
   /** True when the grid was rebucketed to stay within maxPoints. */
   aggregated: boolean
   /** Panel-level default soft bounds applied when no series explicitly declares one. */

@@ -8,7 +8,7 @@ import { RelayTimelineResponse } from '../contracts'
 import { RelayPidTimeline } from '../RelayPidTimeline'
 import type { RelayTimelineChartHandle, RelayTimelineChartProps } from '../RelayTimelineChart'
 
-const mocks = vi.hoisted(() => ({ relayTimeline: vi.fn() }))
+const mocks = vi.hoisted(() => ({ relayTimeline: vi.fn(), controlRange: vi.fn() }))
 const overviewMocks = vi.hoisted(() => ({
   props: [] as Array<{
     room: string
@@ -46,6 +46,7 @@ vi.mock('../../history-overview', () => ({
 vi.mock('../../monitoring/api', () => ({
   MonitoringApi: class {
     relayTimeline = mocks.relayTimeline
+    controlRange = mocks.controlRange
   },
   monitoringRequestContextFromSearchParams: () => undefined,
 }))
@@ -264,6 +265,7 @@ describe('RelayPidTimeline integration', () => {
     mocks.relayTimeline.mockImplementation(async (_location: string, start: string, end: string) =>
       timelinePage(start, end)
     )
+    mocks.controlRange.mockResolvedValue({ photoperiod: [] })
   })
 
   it('renders only matching assigned non-light lanes and preserves the backend physical relay label', async () => {

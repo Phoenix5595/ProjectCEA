@@ -7,8 +7,8 @@
  * action but cannot silently fetch archive data.
  */
 import type { FixedRange, MonitoringRange } from '../monitoring/state'
-import { resolveHistoricalSelection } from '../history-overview/historicalSelection'
-import { MAX_RANGE_MS } from '../monitoring/components/timeRangeToolbar.time'
+import { drillDownRange } from '../history-overview/buckets'
+import { MAX_RANGE_MS, MIN_RANGE_MS } from '../monitoring/components/timeRangeToolbar.time'
 
 export interface ArchiveSelection {
   readonly dataset_id: string
@@ -180,10 +180,52 @@ export function clipArchiveRange(
 }
 
 /**
- * Apply the existing two-stage Historical drill-down policy within an archive.
+ * Archive drill-down keeps its archived two-stage policy locally: a selection
+ * made on an overview longer than seven days snaps to exactly seven days, and
+ * a short selection from the detailed reader names the Monitoring surface.
+ * The room pages themselves zoom in place under R3; this policy exists only
+ * because an archive is pinned to its dataset and a handoff keeps the pin.
  * Both the incoming selection and the returned range are clipped to the
  * archive's real half-open bounds, so a short archive is never padded.
  */
+function archiveDrillDown(
+  displayed: MonitoringRange,
+  start: Date,
+  end: Date
+): ArchiveSelectionResolution {
+  const selectionStartMs = start.getTime()
+  const selectionEndMs = Math.max(end.getTime(), selectionStartMs + MIN_RANGE_MS)
+  const selectionMs = selectionEndMs - selectionStartMs
+  if (
+    displayed.kind === 'fixed' &&
+    displayed.end.getTime() - displayed.start.getTime() > MAX_RANGE_MS
+  ) {
+    if (selectionMs < MAX_RANGE_MS) {
+      const center = Math.floor((selectionStartMs + selectionEndMs) / 2)
+      const half = MAX_RANGE_MS / 2
+      const snapped = drillDownRange(
+        { start: displayed.start, end: displayed.end },
+        { start: new Date(center - half), end: new Date(center + half) },
+        'historical'
+      )
+      return { surface: 'history', start: snapped.start, end: snapped.end }
+    }
+    return {
+      surface: 'history',
+      start: new Date(selectionStartMs),
+      end: new Date(selectionEndMs),
+    }
+  }
+  if (selectionMs < MAX_RANGE_MS) {
+    return {
+      surface: 'monitoring',
+      start: new Date(selectionStartMs),
+      end: new Date(selectionEndMs),
+    }
+  }
+  return { surface: 'history', start: new Date(selectionStartMs), end: new Date(selectionEndMs) }
+}
+
 export function resolveArchiveHistoricalSelection(
   displayed: MonitoringRange,
   start: Date,
@@ -192,7 +234,7 @@ export function resolveArchiveHistoricalSelection(
 ): ArchiveSelectionResolution | null {
   const boundedInput = clipArchiveRange(start, end, bounds)
   if (boundedInput === null) return null
-  const resolved = resolveHistoricalSelection(displayed, boundedInput.start, boundedInput.end)
+  const resolved = archiveDrillDown(displayed, boundedInput.start, boundedInput.end)
   const boundedOutput = clipArchiveRange(resolved.start, resolved.end, bounds)
   if (boundedOutput === null) return null
   return { surface: resolved.surface, start: boundedOutput.start, end: boundedOutput.end }

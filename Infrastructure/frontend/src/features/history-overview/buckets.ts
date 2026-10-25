@@ -14,7 +14,7 @@
  */
 
 export const MIN_REQUESTED_POINTS = 10
-export const MAX_REQUESTED_POINTS = 1000
+export const MAX_REQUESTED_POINTS = 4000
 
 /** Whole-hour display widths, finest first; 12 hours is the hard cap. */
 export const HISTORY_BUCKET_WIDTHS_SECONDS = [
@@ -105,16 +105,16 @@ function requireOrderedRange(start: Date, end: Date): OrderedRange {
 /**
  * Validate a point budget against the overview bounds and return it.
  *
- * Mirrors `validate_history_budget`: an integer in [10, 1000], else 400.
+ * Mirrors `validate_history_budget`: an integer in [10, 4000], else 400.
  */
 export function validateHistoryBudget(maxPoints: number): number {
   if (!Number.isInteger(maxPoints)) {
     throw new HistoryOverviewRangeError(
-      'requested_max_points must be an integer between 10 and 1000'
+      'requested_max_points must be an integer between 10 and 4000'
     )
   }
   if (maxPoints < MIN_REQUESTED_POINTS || maxPoints > MAX_REQUESTED_POINTS) {
-    throw new HistoryOverviewRangeError('requested_max_points must be between 10 and 1000')
+    throw new HistoryOverviewRangeError('requested_max_points must be between 10 and 4000')
   }
   return maxPoints
 }

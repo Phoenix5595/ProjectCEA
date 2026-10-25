@@ -8,16 +8,19 @@
  * historical uPlot fed by the soil history API.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 
 import { UPlotChart, createMonitoringChartFeed } from '../features/monitoring/charts'
 import type { MonitoringChartFeed, UPlotChartHandle } from '../features/monitoring/charts'
+import { MonitoringApi, monitoringRequestContextFromSearchParams } from '../features/monitoring/api'
 import {
   ChartDataTable,
   MonitoringFreshness,
   TimeRangeToolbar,
 } from '../features/monitoring/components'
+import { alignPhotoperiod } from '../features/monitoring/data'
+import type { PhotoperiodInterval } from '../features/monitoring/data'
 import {
   soilApi,
   type SensorRegistryRecord,
@@ -149,6 +152,12 @@ function BedSchematic({
 
 export default function FlowerSoil() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const requestContext = useMemo(
+    () => monitoringRequestContextFromSearchParams(new URLSearchParams(searchParams.toString())),
+    [searchParams]
+  )
+  const monitoringApi = useMemo(() => new MonitoringApi(requestContext), [requestContext])
   const [registry, setRegistry] = useState<ReadonlyArray<SensorRegistryRecord> | null>(null)
   const [live, setLive] = useState<SoilLiveResponse | null>(null)
   const [history, setHistory] = useState<SoilHistoryResponse | null>(null)
@@ -156,6 +165,8 @@ export default function FlowerSoil() {
   const [historyPaused, setHistoryPaused] = useState(false)
   const pausedAtRef = useRef<Date | null>(null)
   const [errorAt, setErrorAt] = useState<Date | null>(null)
+  const [maxPoints, setMaxPoints] = useState<number | null>(null)
+  const [photoperiod, setPhotoperiod] = useState<PhotoperiodInterval[]>([])
   const seenUnassignedRef = useRef<Set<number>>(new Set())
   const chartRef = useRef<UPlotChartHandle | null>(null)
   const feedRef = useRef<MonitoringChartFeed>(
@@ -216,6 +227,8 @@ export default function FlowerSoil() {
   useEffect(() => {
     let cancelled = false
     let inFlight = false
+    if (maxPoints === null) return
+    const budget = maxPoints
     async function loadHistory() {
       if (cancelled || inFlight) return
       inFlight = true
@@ -225,7 +238,7 @@ export default function FlowerSoil() {
         const response = await soilApi.soilHistory({
           start,
           end,
-          maxPoints: 1000,
+          maxPoints: budget,
         })
         if (!cancelled) setHistory(response)
       } catch (error) {
@@ -252,11 +265,39 @@ export default function FlowerSoil() {
       cancelled = true
       window.clearInterval(intervalId)
     }
-  }, [range, historyPaused])
+  }, [range, historyPaused, maxPoints])
+
+  useEffect(() => {
+    if (range.kind === 'live' && historyPaused) return
+    if (maxPoints === null) return
+    const controller = new AbortController()
+    const end = range.kind === 'fixed' ? range.end : new Date()
+    const start = range.kind === 'fixed' ? range.start : new Date(end.getTime() - range.duration)
+    void monitoringApi
+      .controlRange(
+        'Flower Room',
+        start.toISOString(),
+        end.toISOString(),
+        maxPoints,
+        'photoperiod',
+        { signal: controller.signal }
+      )
+      .then(response => {
+        if (controller.signal.aborted) return
+        setPhotoperiod(
+          alignPhotoperiod(response.photoperiod, start.getTime(), end.getTime())
+        )
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return
+        logger.error('Soil photoperiod fetch failed', error)
+      })
+    return () => controller.abort()
+  }, [range, historyPaused, maxPoints, monitoringApi])
 
   const aligned = useMemo(
-    () => (history === null ? emptyAlignedData() : adaptSoilHistory(history)),
-    [history]
+    () => (history === null ? emptyAlignedData() : adaptSoilHistory(history, photoperiod)),
+    [history, photoperiod]
   )
 
   const feed = feedRef.current
@@ -267,7 +308,7 @@ export default function FlowerSoil() {
   const beds = groupByBed(live?.probes ?? [])
 
   return (
-    <div className="mon-page">
+    <div className="mon-page flex min-h-screen flex-col gap-1">
       <TimeRangeToolbar
         range={range}
         isLive={isLive}
@@ -318,15 +359,15 @@ export default function FlowerSoil() {
         </button>
       )}
 
-      <div className="mon-layout mon-layout--beds">
+      <div className="mon-layout mon-layout--beds min-h-0 flex-1">
         <aside className="mon-side mon-side--beds">
           <BedSchematic label="Back Bed" probes={beds.backBed} live={live} errorAt={errorAt} />
           <BedSchematic label="Front Bed" probes={beds.frontBed} live={live} errorAt={errorAt} />
         </aside>
-        <div className="mon-main">
-          <section className="mon-card flex min-h-0 flex-col">
+        <div className="mon-main flex min-h-0 flex-col">
+          <section className="mon-card flex min-h-0 flex-1 flex-col">
             <h2 className="mon-card__title text-lg">Soil history</h2>
-            <div className="h-[min(50vh,540px)] min-h-0 w-full">
+            <div className="min-h-[420px] w-full flex-1">
               <UPlotChart
                 ref={chartRef}
                 feed={feed}
@@ -335,6 +376,8 @@ export default function FlowerSoil() {
                   setHistoryPaused(false)
                   setRange({ kind: 'fixed', start: zoomed.start, end: zoomed.end })
                 }}
+                onRequestBudgetChange={setMaxPoints}
+                bucketIntervalSeconds={history?.bucket_seconds ?? null}
                 title="Soil history"
               />
             </div>

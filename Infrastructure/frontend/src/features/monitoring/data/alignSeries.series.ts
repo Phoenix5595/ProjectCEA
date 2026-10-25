@@ -20,10 +20,12 @@ import type {
   PhotoperiodInterval,
 } from './alignSeries.types'
 
-interface SensorBuckets {
+export interface SensorBuckets {
   mean: (number | null)[]
   min: (number | null)[]
   max: (number | null)[]
+  /** Samples represented by each slot; null where the slot has no bucket. */
+  count: (number | null)[]
 }
 
 /** A scalar value array aligned to the shared grid plus the known extrema of
@@ -82,6 +84,7 @@ export function alignSensor(
   const mean: (number | null)[] = new Array(x.length).fill(null)
   const min: (number | null)[] = new Array(x.length).fill(null)
   const max: (number | null)[] = new Array(x.length).fill(null)
+  const count: (number | null)[] = new Array(x.length).fill(null)
   if (!aggregated) {
     const byT = new Map(s.points.map(p => [p.timestamp.getTime(), p]))
     for (let i = 0; i < x.length; i++) {
@@ -90,9 +93,10 @@ export function alignSensor(
         mean[i] = p.average
         min[i] = p.minimum
         max[i] = p.maximum
+        count[i] = p.sample_count
       }
     }
-    return { mean, min, max }
+    return { mean, min, max, count }
   }
   const buckets = new Array(x.length)
     .fill(null)
@@ -112,9 +116,10 @@ export function alignSensor(
       mean[i] = b.sum / b.count
       min[i] = b.min
       max[i] = b.max
+      count[i] = b.count
     }
   }
-  return { mean, min, max }
+  return { mean, min, max, count }
 }
 
 /**

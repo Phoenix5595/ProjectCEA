@@ -1,25 +1,38 @@
 /**
  * Flower Room monitoring page (native monitoring).
  *
- * The page owns its time range: URL parameters are parsed with the fixed-range
- * cap opt-out (`maxRangeMs: null`) before any data surface mounts, so a long
- * fixed range renders the bounded all-history overview and never reaches the
- * detailed `MonitoringStore`. A live window or a fixed range of at most seven
- * days mounts the canonical detailed dashboard: the Averages / Front / Back /
- * Statistics tables and two uPlot chart regions (climate and device), each
- * with an accessible "View data as table" alternative. A scoped error boundary
- * and a status panel surface per-source health without clearing last-good
- * sibling data.
+ * Monitoring and Historical are separate pages that share this component
+ * (R2): the pathname decides the surface and the page is keyed by it, so a
+ * route change always remounts readers and stores with the right mode.
  *
- * On the Historical route the toolbar replaces the live presets with fixed
- * history presets plus the Calendar current-run action, and chart
- * zoom/click/drag follows the origin-aware two-stage rule: a sub-seven-day
- * selection on the overview snaps to an exactly-seven-day window, while the
- * detailed reader hands sub-seven-day selections to the regular Monitoring
- * page with the exact range.
+ * Monitoring (`/flower/monitoring`, live presets 1 h–7 d) owns the operational
+ * surface: recorded + projected effective setpoints, a live tail, and the
+ * future duration/9 area in live mode. It never renders the bounded
+ * all-history overview. A fixed range longer than seven days requested here
+ * navigates to Historical with that exact range (R3) instead of loading a
+ * long window from the detailed endpoints. The page owns its time range: URL
+ * parameters are parsed before any data surface mounts, and a drag-zoom always
+ * stays on this page — a selection ending at/after now becomes a live range
+ * with duration max(5 min, now − start), any other selection becomes a fixed
+ * range. A live window or a fixed range of at most seven days mounts the
+ * canonical detailed dashboard: the Averages / Front / Back / Statistics
+ * tables and two uPlot chart regions (climate and device), each with an
+ * accessible "View data as table" alternative. A scoped error boundary and a
+ * status panel surface per-source health without clearing last-good sibling
+ * data.
+ *
+ * Historical (`/flower/historical`) is analysis-only: fixed ranges only, no
+ * projection and no future area, recorded setpoints only. A range of at most
+ * seven days uses the same detailed dashboard with the historical store mode;
+ * longer ranges use the bounded all-history overview. Zooming either reader
+ * applies the exact selection as the new fixed range, floored to five minutes
+ * by extending its end, and never leaves Historical. Reset Zoom restores the
+ * range held before the latest zoom from a page-held stack. The toolbar
+ * replaces the live presets with fixed history presets plus the Calendar
+ * current-run action.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { ArchiveLog } from '../features/grow-archives/ArchiveLog'
 import { ArchiveView } from '../features/grow-archives/ArchiveView'
@@ -32,7 +45,7 @@ import {
 } from '../features/grow-archives/selection'
 import type { ArchiveSelection } from '../features/grow-archives/selection'
 import '../features/monitoring/styles/monitoring.css'
-import { HistoryOverviewView, resolveHistoricalSelection } from '../features/history-overview'
+import { HistoryOverviewView } from '../features/history-overview'
 import { monitoringRequestContextFromSearchParams } from '../features/monitoring/api'
 import type { MonitoringRequestContext } from '../features/monitoring/api'
 import {
@@ -43,8 +56,9 @@ import {
 import { createMonitoringPanelChartFeed } from '../features/monitoring/charts/MonitoringChartFeed'
 import {
   ChartDataTable,
+  HISTORICAL_DEFAULT_DURATION_MS,
   MAX_RANGE_MS,
-  MIN_HISTORY_MS,
+  MIN_RANGE_MS,
   MonitoringErrorBoundary,
   MonitoringFreshness,
   RoomAveragesTable,
@@ -79,6 +93,11 @@ const FLOWER_SERIES_SPECS = flowerManifest.panels.flatMap(panel =>
 const CHART_HEIGHT = { height: 320 }
 const CLIMATE_CHART_HEIGHT = { height: 780 }
 const FLOWER_TIMESERIES_PANELS = timeseriesPanels(flowerManifest)
+/** Distinct value families of the first panel drive its placeholder axis count. */
+const PRIMARY_Y_AXIS_COUNT = Math.max(
+  1,
+  new Set(FLOWER_TIMESERIES_PANELS[0]?.series.map(series => series.unit) ?? []).size
+)
 
 interface FlowerChartFeeds {
   readonly climate: MonitoringPanelChartFeed
@@ -88,26 +107,33 @@ interface FlowerChartFeeds {
 interface MonitoringPageRangeProps {
   readonly range: MonitoringRange
   readonly onRangeChange: (next: MonitoringRange) => void
-  /** Chart zoom/drag selections: origin-aware on Historical, plain fixed apply otherwise. */
+  /** Chart zoom/drag selections, resolved per surface (R3). */
   readonly onChartSelection: (start: Date, end: Date) => void
   readonly requestContext: MonitoringRequestContext | undefined
   /** Historical-route toolbar bundle; undefined on the regular Monitoring route. */
   readonly historical: HistoricalToolbarControl | undefined
+  /** Store mode: Monitoring follows live data and projections, Historical does not. */
+  readonly mode: 'monitoring' | 'historical'
+  /** Historical range-owner reset; undefined on Monitoring, which resets chart scales. */
+  readonly onResetZoom?: () => void
+  readonly resetZoomDisabled?: boolean
 }
 
 interface MonitoringOverviewRangeProps {
   readonly range: FixedRange
   readonly onRangeChange: (next: MonitoringRange) => void
-  /** Chart click/drag selections: origin-aware on Historical, plain fixed apply otherwise. */
+  /** Overview zoom/click selections: apply the selection in place (R3). */
   readonly onChartSelection: (start: Date, end: Date) => void
   readonly requestContext: MonitoringRequestContext | undefined
-  /** Historical-route toolbar bundle; undefined on the regular Monitoring route. */
+  /** Historical-route toolbar bundle; always defined on the overview surface. */
   readonly historical: HistoricalToolbarControl | undefined
+  readonly onResetZoom: () => void
+  readonly resetZoomDisabled: boolean
 }
 
 /**
- * A fixed range beyond the detailed seven-day limit renders the bounded
- * all-history overview; live windows and short fixed ranges stay detailed.
+ * The all-history overview is a Historical reader only (R2). Monitoring never
+ * renders it: a longer range is routed to Historical instead.
  */
 function isOverviewRange(range: MonitoringRange): range is FixedRange {
   return (
@@ -115,8 +141,14 @@ function isOverviewRange(range: MonitoringRange): range is FixedRange {
   )
 }
 
-/** Parse the page URL before any reader mounts; 'none' falls back to live. */
-function resolvePageRange(searchParams: URLSearchParams): MonitoringRange {
+/** Last-31-days fallback for a Historical entry with no usable fixed range. */
+function defaultHistoricalRange(): FixedRange {
+  const end = new Date()
+  return { kind: 'fixed', start: new Date(end.getTime() - HISTORICAL_DEFAULT_DURATION_MS), end }
+}
+
+/** Parse the Monitoring URL before any reader mounts; 'none' falls back to live. */
+function resolveMonitoringPageRange(searchParams: URLSearchParams): MonitoringRange {
   const parsed = parseUrlRange(searchParams, null)
   return parsed.kind === 'live'
     ? { kind: 'live', duration: parsed.duration }
@@ -125,15 +157,33 @@ function resolvePageRange(searchParams: URLSearchParams): MonitoringRange {
       : { kind: 'live', duration: FLOWER_DEFAULT_DURATION_MS }
 }
 
+/** Historical is fixed-only: every non-fixed URL resolves to the survey default. */
+function resolveHistoricalPageRange(searchParams: URLSearchParams): FixedRange {
+  const parsed = parseUrlRange(searchParams, null)
+  return parsed.kind === 'fixed'
+    ? { kind: 'fixed', start: parsed.start, end: parsed.end }
+    : defaultHistoricalRange()
+}
+
 function FlowerMonitoringDetailed({
   range,
   onRangeChange,
   onChartSelection,
   requestContext,
   historical,
+  mode,
+  onResetZoom,
+  resetZoomDisabled,
 }: MonitoringPageRangeProps) {
-  const { snapshot, store } = useMonitoringStore(ROOM, requestContext)
-  const { reportBudget } = useMonitoringRangeBudget(store)
+  const { snapshot, store } = useMonitoringStore(
+    ROOM,
+    requestContext,
+    mode,
+    FLOWER_DEFAULT_DURATION_MS
+  )
+  const { reportBudget, placeholderRef } = useMonitoringRangeBudget(store, {
+    yAxisCount: PRIMARY_Y_AXIS_COUNT,
+  })
   const climateRef = useRef<UPlotChartHandle>(null)
   const deviceRef = useRef<UPlotChartHandle>(null)
   const chartFeedsRef = useRef<FlowerChartFeeds | null>(null)
@@ -153,9 +203,9 @@ function FlowerMonitoringDetailed({
   }
   const chartFeeds = chartFeedsRef.current
 
-  // Mirror the outer-owned range into the store. This branch only mounts for
-  // a live window or a fixed range of at most seven days, so the mirrored
-  // range can never overload the detailed endpoints.
+  // Mirror the outer-owned range into the store. Monitoring only mounts for a
+  // live window or a fixed range of at most seven days; Historical always
+  // mounts a fixed range in its historical store mode.
   useEffect(() => {
     if (range.kind === 'fixed') store.setFixedRange(range.start, range.end)
     else store.setLiveRange(range.duration)
@@ -199,23 +249,32 @@ function FlowerMonitoringDetailed({
         onFixedRange={(start, end) => onRangeChange({ kind: 'fixed', start, end })}
         onPause={() => store.pause()}
         onResume={() => store.resume()}
-        onResetZoom={() => {
-          climateRef.current?.resetZoom()
-          deviceRef.current?.resetZoom()
-        }}
+        onResetZoom={
+          onResetZoom ??
+          (() => {
+            climateRef.current?.resetZoom()
+            deviceRef.current?.resetZoom()
+          })
+        }
+        resetZoomDisabled={resetZoomDisabled}
         defaultDuration={FLOWER_DEFAULT_DURATION_MS}
+        liveDuration={store.lastLiveDurationMs()}
         historical={historical}
-        monitoring={{
-          errors: snapshot.errors,
-          tailLoading: snapshot.tailLoading,
-          reconciling: snapshot.reconciling,
-          anchorQuality: snapshot.data.anchorQuality,
-          projectionRevision: snapshot.data.projectionRevision,
-          runtimeSnapshotVersion: snapshot.data.runtimeSnapshotVersion,
-          lastGoodRangeAt: snapshot.lastGoodRangeAt,
-          rangeErrorAt: snapshot.rangeErrorAt,
-          onRetry: () => store.retry(),
-        }}
+        monitoring={
+          mode === 'monitoring'
+            ? {
+                errors: snapshot.errors,
+                tailLoading: snapshot.tailLoading,
+                reconciling: snapshot.reconciling,
+                anchorQuality: snapshot.data.anchorQuality,
+                projectionRevision: snapshot.data.projectionRevision,
+                runtimeSnapshotVersion: snapshot.data.runtimeSnapshotVersion,
+                lastGoodRangeAt: snapshot.lastGoodRangeAt,
+                rangeErrorAt: snapshot.rangeErrorAt,
+                onRetry: () => store.retry(),
+              }
+            : undefined
+        }
       />
 
       {loading && (
@@ -284,7 +343,11 @@ function FlowerMonitoringDetailed({
               errorAt={snapshot.rangeErrorAt}
             />
             {snapshot.data.series.length === 0 ? (
-              <div style={CLIMATE_CHART_HEIGHT} />
+              <div style={CLIMATE_CHART_HEIGHT}>
+                <div className="mon-chart">
+                  <div ref={placeholderRef} className="mon-chart__frame" />
+                </div>
+              </div>
             ) : (
               <div style={CLIMATE_CHART_HEIGHT}>
                 <UPlotChart
@@ -292,6 +355,7 @@ function FlowerMonitoringDetailed({
                   feed={chartFeeds.climate}
                   onZoom={zoomToRange}
                   onRequestBudgetChange={budget => reportBudget('climate', budget)}
+                  bucketIntervalSeconds={snapshot.data.sensorIntervalSeconds}
                   title="Flower climate conditions"
                   description="Temperature, relative humidity and VPD over the selected time range. Toggle series with the sensor boxes, change the range with the toolbar, and open the table below for the underlying data."
                 />
@@ -307,7 +371,11 @@ function FlowerMonitoringDetailed({
               errorAt={snapshot.rangeErrorAt}
             />
             {snapshot.data.series.length === 0 ? (
-              <div style={CHART_HEIGHT} />
+              <div style={CHART_HEIGHT}>
+                <div className="mon-chart">
+                  <div className="mon-chart__frame" />
+                </div>
+              </div>
             ) : (
               <div style={CHART_HEIGHT}>
                 <UPlotChart
@@ -315,6 +383,7 @@ function FlowerMonitoringDetailed({
                   feed={chartFeeds.device}
                   onZoom={zoomToRange}
                   onRequestBudgetChange={budget => reportBudget('device', budget)}
+                  bucketIntervalSeconds={snapshot.data.sensorIntervalSeconds}
                   title="Flower atmosphere & equipment"
                   description="CO2 and pressure over the selected time range. Toggle series with the sensor boxes, change the range with the toolbar, and open the table below for the underlying data."
                 />
@@ -348,6 +417,8 @@ function FlowerMonitoringOverview({
   onRangeChange,
   onChartSelection,
   historical,
+  onResetZoom,
+  resetZoomDisabled,
 }: MonitoringOverviewRangeProps) {
   return (
     <div className="mon-page">
@@ -360,6 +431,8 @@ function FlowerMonitoringOverview({
         onFixedRange={(start, end) => onRangeChange({ kind: 'fixed', start, end })}
         onPause={() => undefined}
         onResume={() => undefined}
+        onResetZoom={onResetZoom}
+        resetZoomDisabled={resetZoomDisabled}
         defaultDuration={FLOWER_DEFAULT_DURATION_MS}
         historical={historical}
       />
@@ -368,7 +441,7 @@ function FlowerMonitoringOverview({
         range={range}
         requestContext={requestContext}
         manifest={flowerManifest}
-        historicalDrillDown={historical !== undefined}
+        historicalDrillDown={true}
         onDetail={onChartSelection}
         climateHeight={CLIMATE_CHART_HEIGHT.height}
         deviceHeight={CHART_HEIGHT.height}
@@ -378,7 +451,7 @@ function FlowerMonitoringOverview({
 }
 
 function FlowerMonitoringRangeOwner() {
-  const [searchParams, setSearchParams] = useSearchParams()
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const location = useLocation()
   const { pathname } = location
@@ -399,10 +472,16 @@ function FlowerMonitoringRangeOwner() {
     requestContext
   )
   // Parse the URL before mounting any native reader. Archive ranges are owned
-  // by ArchiveView instead and never enter this reader branch.
-  const [range, setRange] = useState<MonitoringRange>(() => resolvePageRange(searchParams))
+  // by ArchiveView instead and never enter this reader branch. Monitoring
+  // resolves live/short-fixed ranges; Historical always resolves a fixed one.
+  const [range, setRange] = useState<MonitoringRange>(() =>
+    historicalRoute ? resolveHistoricalPageRange(searchParams) : resolveMonitoringPageRange(searchParams)
+  )
   const rangeRef = useRef(range)
   rangeRef.current = range
+  // Ranges to restore on Historical Reset Zoom; presets and absolute inputs
+  // clear the stack, chart zooms push the range they replaced.
+  const [zoomStack, setZoomStack] = useState<readonly FixedRange[]>([])
   const archiveInitialRange = useMemo(() => {
     if (historicalRoute) return undefined
     const parsed = parseUrlRange(searchParams, null)
@@ -411,52 +490,76 @@ function FlowerMonitoringRangeOwner() {
       : undefined
   }, [historicalRoute, searchParams])
 
-  const routeToMonitoring = useCallback(
-    (start: Date, end: Date): void => {
-      const query = `?${withSerializedRange(searchParams, { kind: 'fixed', start, end }).toString()}`
-      navigate({ pathname: MONITORING_PATH, search: query })
+  const routeToHistorical = useCallback(
+    (next: FixedRange): void => {
+      const query = withSerializedRange(searchParams, next)
+      navigate({ pathname: HISTORICAL_PATH, search: `?${query.toString()}` })
     },
     [navigate, searchParams]
   )
 
-  const setRangeWithBoundaryUrl = useCallback(
+  const applyRange = useCallback(
     (next: MonitoringRange): void => {
-      if (isOverviewRange(next) || isOverviewRange(rangeRef.current)) {
-        const merged = withSerializedRange(searchParams, next)
-        if (merged.toString() !== searchParams.toString()) setSearchParams(merged)
+      if (historicalRoute) {
+        // Historical is fixed-only; the toolbar never offers live presets, so
+        // a live callback can only come from a stale live URL and is ignored.
+        if (next.kind !== 'fixed') return
+        setZoomStack([])
+        setRange(next)
+        return
+      }
+      // R3: the only cross-page navigation is a Monitoring request longer
+      // than seven days, which opens Historical with the exact range.
+      if (next.kind === 'fixed' && next.end.getTime() - next.start.getTime() > MAX_RANGE_MS) {
+        routeToHistorical(next)
+        return
       }
       setRange(next)
     },
-    [setSearchParams, searchParams]
-  )
-
-  const applyRange = useCallback(
-    (next: MonitoringRange): void => {
-      if (
-        historicalRoute &&
-        next.kind === 'fixed' &&
-        next.end.getTime() - next.start.getTime() < MIN_HISTORY_MS
-      ) {
-        routeToMonitoring(next.start, next.end)
-        return
-      }
-      setRangeWithBoundaryUrl(next)
-    },
-    [historicalRoute, routeToMonitoring, setRangeWithBoundaryUrl]
+    [historicalRoute, routeToHistorical]
   )
 
   const applyChartSelection = useCallback(
     (start: Date, end: Date): void => {
-      if (!historicalRoute) {
-        setRangeWithBoundaryUrl({ kind: 'fixed', start, end })
+      if (historicalRoute) {
+        const previous = rangeRef.current
+        // Exact in-place zoom, floored to five minutes by extending the end.
+        const startMs = start.getTime()
+        const endMs = Math.max(end.getTime(), startMs + MIN_RANGE_MS)
+        const next: FixedRange = {
+          kind: 'fixed',
+          start: new Date(startMs),
+          end: new Date(endMs),
+        }
+        if (previous.kind === 'fixed') setZoomStack(stack => [...stack, previous])
+        setRange(next)
         return
       }
-      const outcome = resolveHistoricalSelection(rangeRef.current, start, end)
-      if (outcome.surface === 'monitoring') routeToMonitoring(outcome.start, outcome.end)
-      else setRangeWithBoundaryUrl({ kind: 'fixed', start: outcome.start, end: outcome.end })
+      // Monitoring: a selection ending at/after now keeps following live with
+      // the selected past duration; every other selection is a fixed range
+      // (including a projection-only window entirely after now).
+      const nowMs = Date.now()
+      const startMs = start.getTime()
+      const endMs = end.getTime()
+      if (startMs < nowMs && endMs >= nowMs) {
+        const duration = Math.min(
+          MAX_RANGE_MS,
+          Math.max(MIN_RANGE_MS, nowMs - startMs)
+        )
+        setRange({ kind: 'live', duration })
+        return
+      }
+      setRange({ kind: 'fixed', start, end })
     },
-    [historicalRoute, routeToMonitoring, setRangeWithBoundaryUrl]
+    [historicalRoute]
   )
+
+  const resetZoom = useCallback((): void => {
+    if (zoomStack.length === 0) return
+    const next = zoomStack[zoomStack.length - 1]
+    setZoomStack(zoomStack.slice(0, -1))
+    setRange(next)
+  }, [zoomStack])
 
   const applyCurrentRun = useCallback((): void => {
     if (currentRun.start === undefined) return
@@ -526,7 +629,6 @@ function FlowerMonitoringRangeOwner() {
   const historicalToolbar: HistoricalToolbarControl | undefined =
     historicalRoute && navigationState === null && archiveMode === 'range'
       ? {
-          onMonitoringRoute: routeToMonitoring,
           currentRun: { ready: currentRun.ready, title: currentRun.title, onSelect: applyCurrentRun },
           view: archiveMode,
           onViewChange: setArchiveMode,
@@ -568,14 +670,44 @@ function FlowerMonitoringRangeOwner() {
     )
   }
 
-  if (isOverviewRange(range)) {
+  // R3: a Monitoring fixed request longer than seven days opens Historical
+  // with the exact range instead of rendering a long window on this page.
+  if (
+    !historicalRoute &&
+    navigationState === null &&
+    range.kind === 'fixed' &&
+    range.end.getTime() - range.start.getTime() > MAX_RANGE_MS
+  ) {
+    return <Navigate to={{ pathname: HISTORICAL_PATH, search: location.search }} replace />
+  }
+
+  if (historicalRoute) {
+    // Historical is fixed-only. Archive exits replace this instance through a
+    // keyed remount, so a non-fixed range here is an unreachable state.
+    if (range.kind !== 'fixed') return null
+    if (isOverviewRange(range)) {
+      return (
+        <FlowerMonitoringOverview
+          range={range}
+          requestContext={requestContext}
+          onRangeChange={applyRange}
+          onChartSelection={applyChartSelection}
+          historical={historicalToolbar}
+          onResetZoom={resetZoom}
+          resetZoomDisabled={zoomStack.length === 0}
+        />
+      )
+    }
     return (
-      <FlowerMonitoringOverview
+      <FlowerMonitoringDetailed
         range={range}
-        requestContext={requestContext}
         onRangeChange={applyRange}
         onChartSelection={applyChartSelection}
+        requestContext={requestContext}
         historical={historicalToolbar}
+        mode="historical"
+        onResetZoom={resetZoom}
+        resetZoomDisabled={zoomStack.length === 0}
       />
     )
   }
@@ -586,14 +718,18 @@ function FlowerMonitoringRangeOwner() {
       onChartSelection={applyChartSelection}
       requestContext={requestContext}
       historical={historicalToolbar}
+      mode="monitoring"
     />
   )
 }
 
 export default function FlowerMonitoring() {
+  const { pathname } = useLocation()
   return (
     <MonitoringErrorBoundary>
-      <FlowerMonitoringRangeOwner />
+      <FlowerMonitoringRangeOwner
+        key={pathname === HISTORICAL_PATH ? 'historical' : 'monitoring'}
+      />
     </MonitoringErrorBoundary>
   )
 }

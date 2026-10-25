@@ -711,7 +711,7 @@ describe('alignSeries', () => {
     const liveNow = at(15)
     const liveTail = applyLiveTail(
       liveBase,
-      [{ sensor: 'unused_sensor', timestamp: liveNow, value: 1 }],
+      { live: [{ sensor: 'unused_sensor', timestamp: liveNow, value: 1 }] },
       liveNow
     )
     const liveLight = liveTail.series.find(series => series.key === seriesKey('light', 'light_f_1', 'linear'))

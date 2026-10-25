@@ -1,15 +1,19 @@
 /**
- * Per-panel alignment cache. Historical inputs build one static grid; the live
- * adapter only touches the current tail slot and never re-sorts history.
+ * Per-panel alignment cache. Inputs build one static grid; the live adapter
+ * appends the raw tail points without ever re-keying the base on `now`, so a
+ * live tick costs one merge of the (≤ one point per bucket) tail instead of a
+ * full-grid rebuild or a replay of every historical snapshot.
  */
-import type { ControlMonitoringResponse, LiveSensorValue } from '../api'
+import type { ControlMonitoringResponse } from '../api'
 import type { TimeseriesPanelSpec } from '../config'
 
 import { alignSeriesBase, applyLiveTail } from './alignSeries'
+import type { BaseAlignment } from './alignSeries'
 import { controlFamily, familyForUnit } from './alignSeries.builder'
 import { metricFromName } from './alignSeries.control'
 import { windowBounds } from './alignSeries.grid'
 import type { AlignInput, AlignedData } from './alignSeries.types'
+import type { LiveTailBuffer } from './liveTail'
 
 export interface PanelAlignmentInput extends AlignInput {
   readonly panel: TimeseriesPanelSpec
@@ -20,6 +24,8 @@ export interface PanelAlignmentCounts {
   readonly liveTailUpdates: number
 }
 
+type BaseAlignInput = Omit<AlignInput, 'live' | 'liveTail'>
+
 interface BaseKey {
   readonly series: AlignInput['series']
   readonly controlHistory: AlignInput['controlHistory']
@@ -27,19 +33,16 @@ interface BaseKey {
   readonly lightRegistry: AlignInput['lightRegistry']
   readonly photoperiod: AlignInput['photoperiod']
   readonly range: AlignInput['range']
-  readonly now: number
   readonly maxPoints: AlignInput['maxPoints']
+  readonly sensorIntervalSeconds: AlignInput['sensorIntervalSeconds']
   readonly panel: TimeseriesPanelSpec
 }
 
 interface TailKey {
   readonly live: AlignInput['live']
+  readonly liveTail: LiveTailBuffer | undefined
+  readonly revision: number
   readonly second: number
-}
-
-interface LiveSnapshot {
-  readonly timestamp: number
-  readonly values: LiveSensorValue[]
 }
 
 export interface PanelAlignment {
@@ -49,11 +52,9 @@ export interface PanelAlignment {
 
 class CachedPanelAlignment implements PanelAlignment {
   private baseKey: BaseKey | null = null
-  private base: ReturnType<typeof alignSeriesBase> | null = null
-  private retainedSensorNames = new Set<string>()
+  private base: BaseAlignment | null = null
   private tailKey: TailKey | null = null
   private tailResult: AlignedData | null = null
-  private liveSnapshots: LiveSnapshot[] = []
   private baseAlignments = 0
   private liveTailUpdates = 0
 
@@ -64,34 +65,32 @@ class CachedPanelAlignment implements PanelAlignment {
   align(input: PanelAlignmentInput): AlignedData {
     const key = baseKeyFor(input)
     if (!sameBaseKey(this.baseKey, key)) {
-      if (!sameLiveSnapshotContext(this.baseKey, key)) this.liveSnapshots = []
-      const filtered = filterPanelInput(input)
-      const previousSensorNames = this.retainedSensorNames
-      this.retainedSensorNames = new Set(filtered.series.map(series => series.sensor))
-      if ([...previousSensorNames].some(sensor => !this.retainedSensorNames.has(sensor))) {
-        this.liveSnapshots = this.liveSnapshots
-          .map(snapshot => ({
-            ...snapshot,
-            values: snapshot.values.filter(value => this.retainedSensorNames.has(value.sensor)),
-          }))
-          .filter(snapshot => snapshot.values.length > 0)
-      }
-      this.base = alignSeriesBase(filtered)
+      this.base = alignSeriesBase(filterPanelInput(input))
       this.baseKey = key
       this.tailKey = null
+      this.tailResult = null
       this.baseAlignments++
     }
 
-    const tailKey = { live: input.live, second: Math.floor(input.now.getTime() / 1000) }
-    if (this.tailResult !== null && sameTailKey(this.tailKey, tailKey)) return this.tailResult
-
     const base = this.base
-    if (base === null) return alignSeriesBase(filterPanelInput(input)).data
-    this.liveSnapshots = recordLiveSnapshot(this.liveSnapshots, input, this.retainedSensorNames)
-    this.tailResult = replayLiveSnapshots(base, this.liveSnapshots)
+    if (base === null) return applyLiveTail(alignSeriesBase(filterPanelInput(input)), input, input.now)
+
+    const tailKey = {
+      live: input.live,
+      liveTail: input.liveTail,
+      revision: input.liveTail?.revision ?? -1,
+      second: Math.floor(input.now.getTime() / 1000),
+    }
+    if (this.tailResult !== null && sameTailKey(this.tailKey, tailKey)) {
+      return { ...this.tailResult, nowMs: input.now.getTime() }
+    }
+    const result = applyLiveTail(base, input, input.now)
+    const tailPresent =
+      (input.liveTail?.size ?? 0) > 0 || input.live.length > 0
+    if (tailPresent && result.x !== base.data.x) this.liveTailUpdates++
     this.tailKey = tailKey
-    if (input.live.length > 0) this.liveTailUpdates++
-    return this.tailResult
+    this.tailResult = result
+    return result
   }
 }
 
@@ -107,8 +106,8 @@ function baseKeyFor(input: PanelAlignmentInput): BaseKey {
     photoperiod: input.photoperiod,
     lightRegistry: input.lightRegistry,
     range: input.range,
-    now: input.now.getTime(),
     maxPoints: input.maxPoints,
+    sensorIntervalSeconds: input.sensorIntervalSeconds,
     panel: input.panel,
   }
 }
@@ -121,69 +120,24 @@ function sameBaseKey(previous: BaseKey | null, next: BaseKey): boolean {
     previous.projectionHistory === next.projectionHistory &&
     previous.photoperiod === next.photoperiod &&
     previous.range === next.range &&
-    previous.now === next.now &&
     previous.maxPoints === next.maxPoints &&
+    previous.sensorIntervalSeconds === next.sensorIntervalSeconds &&
     previous.lightRegistry === next.lightRegistry &&
     previous.panel === next.panel
   )
 }
 
 function sameTailKey(previous: TailKey | null, next: TailKey): boolean {
-  return previous !== null && previous.live === next.live && previous.second === next.second
-}
-
-function sameLiveSnapshotContext(previous: BaseKey | null, next: BaseKey): boolean {
   return (
     previous !== null &&
-    previous.series === next.series &&
-    previous.range === next.range &&
-    previous.panel === next.panel
+    previous.live === next.live &&
+    previous.liveTail === next.liveTail &&
+    previous.revision === next.revision &&
+    previous.second === next.second
   )
 }
 
-function recordLiveSnapshot(
-  snapshots: LiveSnapshot[],
-  input: PanelAlignmentInput,
-  retainedSensorNames: ReadonlySet<string>
-): LiveSnapshot[] {
-  const now = input.now.getTime()
-  const values = input.live.filter(value =>
-    retainedSensorNames.has(value.sensor) &&
-    input.series.some(
-      series =>
-        series.sensor === value.sensor &&
-        accepts(input.panel, 'sensor', familyForUnit(series.unit_family))
-    )
-  )
-  if (input.range.kind === 'fixed') return values.length === 0 ? [] : [{ timestamp: now, values }]
-  const start = now - input.range.duration
-  const retained = snapshots.filter(
-    snapshot => snapshot.timestamp >= start && snapshot.timestamp <= now
-  )
-  if (values.length === 0) return retained
-  const snapshot = { timestamp: now, values }
-  const existing = retained.findIndex(candidate => candidate.timestamp === now)
-  if (existing >= 0)
-    return [...retained.slice(0, existing), snapshot, ...retained.slice(existing + 1)]
-  return [...retained, snapshot].sort((left, right) => left.timestamp - right.timestamp)
-}
-
-function replayLiveSnapshots(
-  base: ReturnType<typeof alignSeriesBase>,
-  snapshots: LiveSnapshot[]
-): AlignedData {
-  return snapshots.reduce(
-    (data, snapshot) =>
-      applyLiveTail(
-        { data, rangeKind: base.rangeKind },
-        snapshot.values,
-        new Date(snapshot.timestamp)
-      ),
-    base.data
-  )
-}
-
-function filterPanelInput(input: PanelAlignmentInput): Omit<AlignInput, 'live'> {
+function filterPanelInput(input: PanelAlignmentInput): BaseAlignInput {
   const { panel } = input
   const bounds = windowBounds(input.range, input.now)
   const climatePanel = panel.id === 'flower-climate' || panel.id === 'veg-climate'
@@ -208,6 +162,7 @@ function filterPanelInput(input: PanelAlignmentInput): Omit<AlignInput, 'live'> 
     range: input.range,
     now: input.now,
     maxPoints: input.maxPoints,
+    sensorIntervalSeconds: input.sensorIntervalSeconds,
     seriesSpecs: panel.series,
     scaleDefaults: panel.defaults,
     lightRegistry: input.lightRegistry,

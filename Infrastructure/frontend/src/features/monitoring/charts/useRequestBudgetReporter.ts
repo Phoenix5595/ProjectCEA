@@ -10,7 +10,7 @@ export function useRequestBudgetReporter(
   const reportedRequestBudgetRef = useRef<number | null>(null)
 
   return useCallback((panelWidth: number): void => {
-    const maxPoints = requestBudget([panelWidth])
+    const maxPoints = requestBudget(panelWidth)
     if (reportedRequestBudgetRef.current === maxPoints) return
     reportedRequestBudgetRef.current = maxPoints
     onRequestBudgetChangeRef.current?.(maxPoints)

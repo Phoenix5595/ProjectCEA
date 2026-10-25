@@ -5,6 +5,7 @@ import { flowerManifest } from '../../config'
 import { isSeriesHidden, toggleSeries } from '../seriesVisibility'
 import type { TimeseriesPanelSpec } from '../../config'
 import type { AlignedData } from '../../data'
+import { LiveTailBuffer } from '../../data/liveTail'
 import { seriesKey } from '../../data/alignSeries.types'
 import { createPanelAlignment } from '../../data/panelAlignment'
 import type { MonitoringRange, StoreState } from '../../state'
@@ -32,6 +33,8 @@ function makeData(value: number): AlignedData {
     bands: [],
     photoperiod: [],
     nowIndex: 2,
+    nowMs: 3000,
+    sensorIntervalSeconds: null,
     aggregated: false,
   }
 }
@@ -65,6 +68,8 @@ function stateFor(
       ],
       statistics: [],
       live: [],
+      liveTail: new LiveTailBuffer(),
+      sensorIntervalSeconds: null,
       controlHistory: null,
       projectionHistory: null,
       photoperiod: [],

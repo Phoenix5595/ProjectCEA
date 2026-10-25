@@ -16,9 +16,9 @@ export type {
 export { AbsoluteRangeForm } from './TimeRangeToolbar.inputs'
 export type { AbsoluteRangeFormProps, FallFoldState } from './TimeRangeToolbar.inputs'
 export {
+  HISTORICAL_DEFAULT_DURATION_MS,
   HISTORICAL_PRESETS,
   MAX_RANGE_MS,
-  MIN_HISTORY_MS,
   MIN_RANGE_MS,
   PRESETS,
   historicalPresetRange,

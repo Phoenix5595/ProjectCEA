@@ -15,6 +15,7 @@ import {
   alignPid,
   alignStepsWithBounds,
   type ScalarAlignment,
+  type SensorBuckets,
 } from './alignSeries.series'
 import type {
   AlignedBand,
@@ -108,15 +109,14 @@ export function presentationFromSpec(spec: SeriesSpec | undefined): SeriesPresen
 export function buildSensorSeries(
   metric: string,
   family: ChartFamily,
-  mean: (number | null)[],
-  min: (number | null)[],
-  max: (number | null)[],
+  buckets: SensorBuckets,
   isAggregated: boolean,
   node?: string,
   unit?: string,
   unitFamily?: UnitFamily,
   presentation?: SeriesPresentation
 ): AlignedSeries[] {
+  const { mean, min, max, count } = buckets
   const base = { kind: 'sensor' as const, metric, family, isAggregated, node, unit, unitFamily }
   const label = presentation?.label ?? (metric === 'vpd' ? 'VPD' : metric)
   return [
@@ -129,6 +129,15 @@ export function buildSensorSeries(
       origin: 'recorded',
       quality: 'exact',
       presentation,
+      // R4: bucket detail only where the bucket holds more than one sample;
+      // raw slots stay null so no band or bucket tooltip is fabricated.
+      minimum: count.map((samples, index) =>
+        samples !== null && samples > 1 ? (min[index] ?? null) : null
+      ),
+      maximum: count.map((samples, index) =>
+        samples !== null && samples > 1 ? (max[index] ?? null) : null
+      ),
+      sampleCount: count.map(samples => (samples !== null && samples > 1 ? samples : null)),
     }),
     mkSeries({
       ...base,
@@ -542,6 +551,10 @@ interface MkSeriesInput {
   unit?: string
   unitFamily?: UnitFamily
   presentation?: SeriesPresentation
+  minimum?: (number | null)[]
+  maximum?: (number | null)[]
+  sampleCount?: (number | null)[]
+  liveTail?: boolean[]
 }
 
 function mkSeries(input: MkSeriesInput): AlignedSeries {
@@ -560,6 +573,10 @@ function mkSeries(input: MkSeriesInput): AlignedSeries {
     unit,
     unitFamily,
     presentation,
+    minimum,
+    maximum,
+    sampleCount,
+    liveTail,
   } = input
   const source = key.slice(0, key.indexOf(':')) as SeriesSource
   const s: AlignedSeries = {
@@ -579,5 +596,9 @@ function mkSeries(input: MkSeriesInput): AlignedSeries {
   if (unit !== undefined) s.unit = unit
   if (unitFamily !== undefined) s.unitFamily = unitFamily
   if (presentation !== undefined) s.presentation = presentation
+  if (minimum !== undefined) s.minimum = minimum
+  if (maximum !== undefined) s.maximum = maximum
+  if (sampleCount !== undefined) s.sampleCount = sampleCount
+  if (liveTail !== undefined) s.liveTail = liveTail
   return s
 }

@@ -24,6 +24,8 @@ function makeTemperatureData(): AlignedData {
     bands: [],
     photoperiod: [],
     nowIndex: 0,
+    nowMs: 0,
+    sensorIntervalSeconds: null,
     aggregated: false,
   }
 }

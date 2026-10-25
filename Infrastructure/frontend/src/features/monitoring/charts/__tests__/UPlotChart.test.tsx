@@ -128,12 +128,27 @@ function makeData(x: number[], yRows: number[][]): AlignedData {
     bands: [],
     photoperiod: [],
     nowIndex: x.length - 1,
+    nowMs: x[x.length - 1] ?? 0,
+    sensorIntervalSeconds: null,
     aggregated: false,
   }
 }
 
 function toUPlot(data: AlignedData): uPlot.AlignedData {
-  return [data.x, ...data.series.map(s => s.y)]
+  const legacyEnvelope = new Set(
+    data.series
+      .filter(series => series.role === 'min')
+      .map(series => `${series.source}\u0000${series.metric}`)
+  )
+  const companions: (number | null)[][] = []
+  for (const series of data.series) {
+    if (series.source !== 'sensor') continue
+    if (series.role === 'min' || series.role === 'max') continue
+    if (legacyEnvelope.has(`${series.source}\u0000${series.metric}`)) continue
+    const empty = new Array<number | null>(data.x.length).fill(null)
+    companions.push(series.minimum ?? empty, series.maximum ?? [...empty])
+  }
+  return [data.x, ...data.series.map(s => s.y), ...companions]
 }
 
 const TEST_RANGE = { kind: 'live', duration: 3_600_000 } as const
@@ -326,7 +341,7 @@ describe('UPlotChart lifecycle', () => {
       toUPlot(makeData([1000, 2000, 3000], [[20, 21, 22]])),
       false
     )
-    expect(plot.setScale).toHaveBeenCalledWith('x', { min: 1000, max: 3000 })
+    expect(plot.setScale).toHaveBeenCalledWith('x', { min: 1250, max: 2750 })
 
     act(() =>
       feed.publish(
@@ -648,7 +663,9 @@ describe('UPlotChart lifecycle', () => {
 
     plot.userDragZoom({ min: 2500, max: 3500 })
     expect(onZoom).toHaveBeenCalledOnce()
-    expect(onZoom).toHaveBeenCalledWith({ start: new Date(2500), end: new Date(3005) })
+    // R3: the chart passes the exact selection; the page decides whether it
+    // is a live or fixed range, so the end is never clamped to the last point.
+    expect(onZoom).toHaveBeenCalledWith({ start: new Date(2500), end: new Date(3500) })
 
     plot.setScale.mockClear()
     act(() => feed.publish(makeData([1006, 2006, 3006], [[20, 21, 28]]), TEST_RANGE))
@@ -656,6 +673,33 @@ describe('UPlotChart lifecycle', () => {
     expect(plot.setScale).not.toHaveBeenCalled()
 
     unmount()
+  })
+
+  it('follows wall-clock now for the live window when the last point lags', () => {
+    const data = makeData([1000, 2000, 3000], [[20, 21, 22]])
+    const feed = createMonitoringChartFeed({ ...data, nowMs: 3000 }, TEST_RANGE)
+    render(
+      <ThemeProvider>
+        <UPlotChart feed={feed} />
+      </ThemeProvider>
+    )
+    const plot = instances[0]
+    plot.setScale.mockClear()
+
+    act(() =>
+      feed.publish(
+        { ...makeData([1000, 2000, 3000], [[20, 21, 23]]), nowMs: 6000 },
+        TEST_RANGE
+      )
+    )
+    act(() => plot.flushScaleEvents())
+
+    // R4: the live window is [now - duration, now + duration/9]; the future
+    // strip is reserved from wall-clock now, not from the last raw sample.
+    expect(plot.setScale).toHaveBeenLastCalledWith('x', {
+      min: 6000 - 3_600_000,
+      max: 6000 + 400_000,
+    })
   })
 
   it('restores live-follow through a public reset before the next deferred live tick', () => {

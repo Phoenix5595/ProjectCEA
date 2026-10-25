@@ -14,7 +14,7 @@ class RecordingMonitoringStore extends MonitoringStore {
 }
 
 describe('useMonitoringRangeBudget', () => {
-  it('reports only changes to the widest chart budget without rerendering', () => {
+  it('reports the minimum chart budget without rerendering', () => {
     // Given: a mounted coordinator with an in-memory recording store
     const store = new RecordingMonitoringStore('flower', new MonitoringApi())
     let reportBudget: ((key: 'climate' | 'device', budget: number) => void) | null = null
@@ -35,8 +35,36 @@ describe('useMonitoringRangeBudget', () => {
       reportBudget?.('device', 500)
     })
 
-    // Then: only aggregate maxima reach the store and reports do not rerender React
-    expect(store.reportedBudgets).toEqual([800, 1_200, 600])
+    // Then: the page budget is the minimum over mounted charts and reports do
+    // not rerender React
+    expect(store.reportedBudgets).toEqual([800, 600, 500])
     expect(renders).toBe(1)
+  })
+
+  it('seeds the first budget from the placeholder frame until a chart reports', () => {
+    // Given: the first panel's frame placeholder, two 48 px y axes and padding
+    const store = new RecordingMonitoringStore('flower', new MonitoringApi())
+    let placeholderRef: ((node: HTMLElement | null) => void) | null = null
+    function Coordinator(): null {
+      placeholderRef = useMonitoringRangeBudget(store, { yAxisCount: 2 }).placeholderRef
+      return null
+    }
+    render(<Coordinator />)
+    const frame = document.createElement('div')
+    Object.defineProperty(frame, 'clientWidth', { value: 1_200 })
+
+    // When: the placeholder is attached before any chart exists
+    act(() => {
+      placeholderRef?.(frame)
+    })
+
+    // Then: the underestimated plot width releases the first range load
+    expect(store.reportedBudgets).toEqual([1_088])
+
+    // And an exact chart report takes over; the placeholder no longer flushes.
+    act(() => {
+      placeholderRef?.(null)
+    })
+    expect(store.reportedBudgets).toEqual([1_088])
   })
 })

@@ -10,8 +10,8 @@ import uPlot from 'uplot'
 
 import type { PhotoperiodInterval } from '../../data'
 
-const SUN_BACKGROUND = 'rgba(251, 191, 36, 0.12)'
-const MOON_BACKGROUND = 'rgba(129, 140, 248, 0.12)'
+const SUN_BACKGROUND = 'rgba(251, 191, 36, 0.06)'
+const MOON_BACKGROUND = 'rgba(129, 140, 248, 0.06)'
 
 /** Build a uPlot plugin that draws photoperiod intervals behind the series. */
 export function photoperiodPlugin(

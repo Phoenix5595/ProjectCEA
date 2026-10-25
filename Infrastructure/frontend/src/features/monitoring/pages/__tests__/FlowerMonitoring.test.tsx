@@ -6,13 +6,14 @@
  * toolbar, chart regions, and canonical tables render without an iframe.
  */
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { forwardRef } from 'react'
+import { forwardRef, useReducer } from 'react'
 import { createMemoryRouter, MemoryRouter, RouterProvider } from 'react-router-dom'
 import type uPlot from 'uplot'
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 
 import { ThemeProvider } from '../../../../contexts/ThemeContext'
 import FlowerMonitoring from '../../../../pages/FlowerMonitoring'
+import type { MonitoringRange } from '../../state'
 import { torontoDateString, torontoMidnightUtc } from '../../../../utils/torontoWallTime'
 
 const {
@@ -24,8 +25,10 @@ const {
   overviewSelection,
   overviewWideSelection,
   zoomReporters,
+  notify,
 } = vi.hoisted(() => {
   const t = new Date('2026-08-02T12:00:00.000Z')
+  const notify: { current: (() => void) | null } = { current: null }
   const budgetReporters: Array<(budget: number) => void> = []
   const zoomReporters: Array<(range: { start: Date; end: Date }) => void> = []
   const pageRenderCount = { current: 0 }
@@ -45,16 +48,26 @@ const {
   }
   const store = {
     getSnapshot: () => snapshot,
-    setLiveRange: vi.fn(),
-    setFixedRange: vi.fn(),
+    setLiveRange: vi.fn((duration: number) => {
+      snapshot.range = { kind: 'live', duration }
+      snapshot.isLive = true
+      notify.current?.()
+    }),
+    setFixedRange: vi.fn((start: Date, end: Date) => {
+      snapshot.range = { kind: 'fixed', start, end }
+      snapshot.isLive = false
+      notify.current?.()
+    }),
     setRangeBudget: vi.fn(),
     pause: vi.fn(),
     resume: vi.fn(),
+    retry: vi.fn(),
+    lastLiveDurationMs: () => 3 * 3600_000,
     sensorRange: vi.fn(),
     controlRange: vi.fn(),
   }
   const snapshot = {
-    range: { kind: 'live', duration: 3 * 3600_000 },
+    range: { kind: 'live', duration: 3 * 3600_000 } as MonitoringRange,
     fulfilledRange: {
       range: { kind: 'live', duration: 3 * 3600_000 },
       start: new Date('2026-08-02T09:00:00.000Z'),
@@ -121,6 +134,7 @@ const {
     overviewSelection,
     overviewWideSelection,
     zoomReporters,
+    notify,
   }
 })
 
@@ -162,6 +176,8 @@ vi.mock('../../../history-overview', async importOriginal => {
 vi.mock('../useMonitoringStore', () => ({
   FLOWER_DEFAULT_DURATION_MS: 3 * 3600_000,
   useMonitoringStore: () => {
+    const [, force] = useReducer((count: number) => count + 1, 0)
+    notify.current = force
     pageRenderCount.current += 1
     return { snapshot, store }
   },
@@ -232,6 +248,8 @@ beforeEach(() => {
   zoomReporters.length = 0
   overviewViewProps.length = 0
   pageRenderCount.current = 0
+  snapshot.range = { kind: 'live', duration: 3 * 3600_000 }
+  snapshot.isLive = true
   snapshot.data.series = structuredClone(INITIAL_SENSOR_SERIES)
   MockResizeObserver.instances.length = 0
   store.setLiveRange.mockClear()
@@ -304,28 +322,30 @@ describe('FlowerMonitoring page', () => {
     expect(within(backTable).getByText('25.1°C')).toBeTruthy()
   })
 
-  it('reports the widest current chart budget from both chart keys', () => {
+  it('reports the narrowest current chart budget from both chart keys', () => {
     renderPage()
 
-    expect(budgetReporters).toHaveLength(2)
+    expect(budgetReporters.length).toBeGreaterThanOrEqual(2)
+    const [climate, device] = budgetReporters.slice(-2)
     act(() => {
-      budgetReporters[0](800)
-      budgetReporters[1](1_200)
-    })
-
-    expect(store.setRangeBudget).toHaveBeenLastCalledWith(1_200)
-  })
-
-  it('recomputes the widest budget after the previously widest chart shrinks', () => {
-    renderPage()
-
-    act(() => {
-      budgetReporters[0](1_200)
-      budgetReporters[1](800)
-      budgetReporters[0](600)
+      climate(800)
+      device(1_200)
     })
 
     expect(store.setRangeBudget).toHaveBeenLastCalledWith(800)
+  })
+
+  it('recomputes the narrowest budget after a chart narrows further', () => {
+    renderPage()
+
+    const [climate, device] = budgetReporters.slice(-2)
+    act(() => {
+      climate(1_200)
+      device(800)
+      climate(600)
+    })
+
+    expect(store.setRangeBudget).toHaveBeenLastCalledWith(600)
   })
 
   it('does not issue range requests when charts report budgets', () => {
@@ -362,59 +382,125 @@ describe('FlowerMonitoring page', () => {
       .filter(height => height === '780px' || height === '320px')
     expect(chartSlots).toEqual(['780px', '320px'])
   })
-  it('routes an initial long fixed URL to overview before mounting the detailed store', () => {
-    renderPage('/?start=2026-07-01T00:00:00.000Z&end=2026-08-01T00:00:00.000Z')
+  it('renders the budget placeholder frame on the first chart panel', () => {
+    snapshot.data.series = []
+    const { container } = renderPage()
 
-    expect(screen.getByTestId('history-overview-view')).toBeInTheDocument()
-    expect(screen.getByText('FIXED')).toBeInTheDocument()
-    expect(pageRenderCount.current).toBe(0)
-    expect(store.setLiveRange).not.toHaveBeenCalled()
-    expect(store.setFixedRange).not.toHaveBeenCalled()
-    expect(screen.queryByRole('heading', { name: 'Flower climate conditions' })).toBeNull()
-    const view = overviewViewProps[0]
-    expect(view?.room).toBe('Flower Room')
-    expect(view?.range.start.toISOString()).toBe('2026-07-01T00:00:00.000Z')
-    expect(view?.range.end.toISOString()).toBe('2026-08-01T00:00:00.000Z')
+    const frames = [...container.querySelectorAll('.mon-chart__frame')]
+    expect(frames).toHaveLength(2)
   })
 
-  it('keeps exactly seven days detailed and switches to overview at seven days plus one millisecond', () => {
-    const exact = renderPage('/?start=2026-07-15T10:00:00.000Z&end=2026-07-22T10:00:00.000Z')
+  it('redirects an initial Monitoring fixed URL longer than seven days to Historical', () => {
+    const router = renderRouted(
+      '/flower/monitoring?start=2026-07-01T00:00:00.000Z&end=2026-08-01T00:00:00.000Z&fixtureSession=long'
+    )
+
+    expect(router.state.location.pathname).toBe('/flower/historical')
+    const params = new URLSearchParams(router.state.location.search)
+    expect(params.get('start')).toBe('2026-07-01T00:00:00.000Z')
+    expect(params.get('end')).toBe('2026-08-01T00:00:00.000Z')
+    expect(params.get('fixtureSession')).toBe('long')
+    expect(screen.getByTestId('history-overview-view')).toBeInTheDocument()
+    expect(pageRenderCount.current).toBe(0)
+    expect(store.setFixedRange).not.toHaveBeenCalled()
+  })
+
+  it('keeps exactly seven days detailed on Monitoring', () => {
+    renderRouted(
+      '/flower/monitoring?start=2026-07-15T10:00:00.000Z&end=2026-07-22T10:00:00.000Z'
+    )
+
     expect(pageRenderCount.current).toBeGreaterThan(0)
     expect(overviewViewProps).toHaveLength(0)
-    exact.unmount()
-
-    pageRenderCount.current = 0
-    store.setFixedRange.mockClear()
-    const plusOne = renderPage(
-      '/?start=2026-07-15T10:00:00.000Z&end=2026-07-22T10:00:00.001Z'
+    expect(store.setFixedRange).toHaveBeenLastCalledWith(
+      new Date('2026-07-15T10:00:00.000Z'),
+      new Date('2026-07-22T10:00:00.000Z')
     )
+  })
+
+  it('navigates a custom Monitoring range longer than seven days to Historical with the exact range', () => {
+    const router = renderRouted('/flower/monitoring?fixtureSession=custom')
+
+    fireEvent.change(screen.getByLabelText('Range start'), {
+      target: { value: '2026-07-01T10:00' },
+    })
+    fireEvent.change(screen.getByLabelText('Range end'), { target: { value: '2026-07-11T12:00' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Apply fixed range' }))
+
+    expect(router.state.location.pathname).toBe('/flower/historical')
+    const params = new URLSearchParams(router.state.location.search)
+    expect(params.get('start')).toBe('2026-07-01T14:00:00.000Z')
+    expect(params.get('end')).toBe('2026-07-11T16:00:00.000Z')
+    expect(params.get('fixtureSession')).toBe('custom')
     expect(screen.getByTestId('history-overview-view')).toBeInTheDocument()
-    expect(pageRenderCount.current).toBe(0)
+  })
+
+  it('turns a drag selection that reaches now into a live range with the selected duration', () => {
+    renderPage()
+    store.setLiveRange.mockClear()
+    store.setFixedRange.mockClear()
+    const now = Date.now()
+
+    act(() => {
+      zoomReporters.at(-1)?.({
+        start: new Date(now - 20 * 60_000),
+        end: new Date(now + 5 * 60_000),
+      })
+    })
+
+    const [duration] = store.setLiveRange.mock.calls.at(-1) ?? []
+    expect(duration).toBeGreaterThanOrEqual(20 * 60_000)
+    expect(duration).toBeLessThanOrEqual(20 * 60_000 + 5_000)
     expect(store.setFixedRange).not.toHaveBeenCalled()
-    plusOne.unmount()
+    expect(screen.getByText('LIVE')).toBeInTheDocument()
   })
 
-  it('hands an overview detail selection to the detailed reader', () => {
-    const overview = renderPage(
-      '/?start=2026-07-01T00:00:00.000Z&end=2026-08-01T00:00:00.000Z'
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Open detailed range' }))
+  it('turns a past drag selection into a fixed range', () => {
+    renderPage()
+    store.setLiveRange.mockClear()
+    store.setFixedRange.mockClear()
+    const now = Date.now()
+    const start = new Date(now - 40 * 60_000)
+    const end = new Date(now - 20 * 60_000)
 
-    expect(pageRenderCount.current).toBeGreaterThan(0)
-    expect(store.setFixedRange).toHaveBeenCalledWith(
-      new Date('2026-07-23T00:00:00.000Z'),
-      new Date('2026-07-26T00:00:00.000Z')
-    )
-    overview.unmount()
+    act(() => {
+      zoomReporters.at(-1)?.({ start, end })
+    })
+
+    expect(store.setFixedRange).toHaveBeenLastCalledWith(start, end)
+    expect(store.setLiveRange).not.toHaveBeenCalled()
   })
 
-  it('Now returns the overview to the detailed live default', () => {
-    const overview = renderPage(
-      '/?start=2026-07-01T00:00:00.000Z&end=2026-08-01T00:00:00.000Z'
-    )
+  it('keeps a fully-future drag selection fixed for a projection-only view', () => {
+    renderPage()
+    store.setLiveRange.mockClear()
+    store.setFixedRange.mockClear()
+    const now = Date.now()
+    const start = new Date(now + 10 * 60_000)
+    const end = new Date(now + 20 * 60_000)
+
+    act(() => {
+      zoomReporters.at(-1)?.({ start, end })
+    })
+
+    expect(store.setFixedRange).toHaveBeenLastCalledWith(start, end)
+    expect(store.setLiveRange).not.toHaveBeenCalled()
+  })
+
+  it('shows Now only on a fixed range and returns to the last live duration', () => {
+    renderPage('/?start=2026-07-15T10:00:00.000Z&end=2026-07-15T12:00:00.000Z')
+
+    expect(screen.getByText('FIXED')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Now' }))
-    expect(store.setLiveRange).toHaveBeenCalledWith(3 * 3600_000)
-    overview.unmount()
+
+    expect(store.setLiveRange).toHaveBeenLastCalledWith(3 * 3600_000)
+    expect(screen.getByText('LIVE')).toBeInTheDocument()
+  })
+
+  it('hides Now while the range is live', () => {
+    renderPage()
+
+    expect(screen.queryByRole('button', { name: 'Now' })).toBeNull()
   })
 })
 
@@ -442,15 +528,8 @@ describe('FlowerMonitoring historical route', () => {
     renderPage('/')
 
     expect(screen.getByRole('button', { name: '1h' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Now' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Now' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Current run' })).toBeNull()
-    expect(getCalendarCurrentRun).not.toHaveBeenCalled()
-  })
-
-  it('keeps the regular overview drill-down in detail mode', () => {
-    renderPage('/?start=2026-07-01T00:00:00.000Z&end=2026-08-01T00:00:00.000Z')
-
-    expect(overviewViewProps.at(-1)?.historicalDrillDown).toBe(false)
     expect(getCalendarCurrentRun).not.toHaveBeenCalled()
   })
 
@@ -464,7 +543,9 @@ describe('FlowerMonitoring historical route', () => {
     fireEvent.click(screen.getByRole('button', { name: '7 days' }))
 
     expect(router.state.location.pathname).toBe('/flower/historical')
-    const [start, end] = store.setFixedRange.mock.calls.at(-1) ?? []
+    const call = store.setFixedRange.mock.calls.at(-1)
+    if (call === undefined) throw new Error('expected a fixed-range apply')
+    const [start, end] = call
     expect(end.getTime() - start.getTime()).toBe(7 * 24 * 3600_000)
     expect(end.getTime()).toBeGreaterThanOrEqual(before)
     expect(end.getTime()).toBeLessThanOrEqual(Date.now())
@@ -482,25 +563,24 @@ describe('FlowerMonitoring historical route', () => {
     )
   })
 
-  it('routes the five-day preset to regular Monitoring with the fixture query preserved', () => {
+  it('keeps the five-day preset on Historical with its exact fixed range', () => {
     const router = renderRouted(
       '/flower/historical?start=2026-07-16T10:00:00.000Z&end=2026-07-22T10:00:00.000Z&scenario=no-current&fixtureSession=hist-7'
     )
 
     fireEvent.click(screen.getByRole('button', { name: '5 days' }))
 
-    expect(router.state.location.pathname).toBe('/flower/monitoring')
+    expect(router.state.location.pathname).toBe('/flower/historical')
     const params = new URLSearchParams(router.state.location.search)
     expect(params.get('scenario')).toBe('no-current')
     expect(params.get('fixtureSession')).toBe('hist-7')
     const start = new Date(params.get('start') ?? '')
     const end = new Date(params.get('end') ?? '')
     expect(end.getTime() - start.getTime()).toBe(5 * 24 * 3600_000)
-    // The remounted regular Monitoring page parses the URL into the detailed store.
     expect(store.setFixedRange).toHaveBeenLastCalledWith(start, end)
   })
 
-  it('hands a sub-five-day absolute Historical range to regular Monitoring exactly', () => {
+  it('keeps a sub-five-day absolute Historical range on Historical exactly', () => {
     const router = renderRouted(
       '/flower/historical?start=2026-07-15T00:00:00.000Z&end=2026-07-22T00:00:00.000Z&fixtureSession=hist-2'
     )
@@ -511,12 +591,16 @@ describe('FlowerMonitoring historical route', () => {
     fireEvent.change(screen.getByLabelText('Range end'), { target: { value: '2026-07-20T12:00' } })
     fireEvent.click(screen.getByRole('button', { name: 'Apply fixed range' }))
 
-    expect(router.state.location.pathname).toBe('/flower/monitoring')
+    expect(router.state.location.pathname).toBe('/flower/historical')
     const params = new URLSearchParams(router.state.location.search)
-    // The exact two-hour range is preserved — never stretched to five days.
+    // The exact two-hour range is preserved — never stretched or handed off.
     expect(params.get('start')).toBe('2026-07-20T14:00:00.000Z')
     expect(params.get('end')).toBe('2026-07-20T16:00:00.000Z')
     expect(params.get('fixtureSession')).toBe('hist-2')
+    expect(store.setFixedRange).toHaveBeenLastCalledWith(
+      new Date('2026-07-20T14:00:00.000Z'),
+      new Date('2026-07-20T16:00:00.000Z')
+    )
   })
 
   it('keeps a wide overview selection on the Historical page with its actual span', () => {
@@ -532,7 +616,7 @@ describe('FlowerMonitoring historical route', () => {
     expect(view?.range.end.toISOString()).toBe('2026-07-25T00:00:00.000Z')
   })
 
-  it('snaps a short overview selection to exactly seven days and stays Historical', () => {
+  it('zooms a short overview selection in place to the exact selection', () => {
     const router = renderRouted(
       '/flower/historical?start=2026-07-01T00:00:00.000Z&end=2026-08-01T00:00:00.000Z'
     )
@@ -541,13 +625,13 @@ describe('FlowerMonitoring historical route', () => {
 
     expect(router.state.location.pathname).toBe('/flower/historical')
     expect(store.setFixedRange).toHaveBeenLastCalledWith(
-      new Date('2026-07-21T00:00:00.000Z'),
-      new Date('2026-07-28T00:00:00.000Z')
+      new Date('2026-07-23T00:00:00.000Z'),
+      new Date('2026-07-26T00:00:00.000Z')
     )
     expect(pageRenderCount.current).toBeGreaterThan(0)
   })
 
-  it('hands a sub-seven-day selection from the seven-day reader to regular Monitoring', () => {
+  it('keeps a sub-seven-day zoom on Historical and writes the exact URL range', () => {
     const router = renderRouted(
       '/flower/historical?start=2026-07-15T10:00:00.000Z&end=2026-07-22T10:00:00.000Z&fixtureSession=hist-9'
     )
@@ -560,7 +644,7 @@ describe('FlowerMonitoring historical route', () => {
       })
     })
 
-    expect(router.state.location.pathname).toBe('/flower/monitoring')
+    expect(router.state.location.pathname).toBe('/flower/historical')
     const params = new URLSearchParams(router.state.location.search)
     expect(params.get('start')).toBe('2026-07-16T00:00:00.000Z')
     expect(params.get('end')).toBe('2026-07-22T00:00:00.000Z')
@@ -569,6 +653,57 @@ describe('FlowerMonitoring historical route', () => {
       new Date('2026-07-16T00:00:00.000Z'),
       new Date('2026-07-22T00:00:00.000Z')
     )
+  })
+
+  it('floors a Historical zoom to five minutes by extending the end', () => {
+    renderRouted(
+      '/flower/historical?start=2026-07-15T10:00:00.000Z&end=2026-07-22T10:00:00.000Z'
+    )
+    const start = new Date('2026-07-16T09:00:00.000Z')
+    const end = new Date('2026-07-16T09:01:00.000Z')
+
+    act(() => {
+      zoomReporters.at(-1)?.({ start, end })
+    })
+
+    expect(store.setFixedRange).toHaveBeenLastCalledWith(
+      start,
+      new Date(start.getTime() + 5 * 60_000)
+    )
+  })
+
+  it('restores the previous ranges with Reset Zoom and disables it when the stack is empty', () => {
+    renderRouted(
+      '/flower/historical?start=2026-07-16T10:00:00.000Z&end=2026-07-22T10:00:00.000Z'
+    )
+    const reset = screen.getByRole('button', { name: 'Reset Zoom' })
+    expect(reset).toBeDisabled()
+
+    const first = {
+      start: new Date('2026-07-18T00:00:00.000Z'),
+      end: new Date('2026-07-19T00:00:00.000Z'),
+    }
+    act(() => {
+      zoomReporters.at(-1)?.(first)
+    })
+    const second = {
+      start: new Date('2026-07-18T06:00:00.000Z'),
+      end: new Date('2026-07-18T12:00:00.000Z'),
+    }
+    act(() => {
+      zoomReporters.at(-1)?.(second)
+    })
+    expect(reset).toBeEnabled()
+
+    fireEvent.click(reset)
+    expect(store.setFixedRange).toHaveBeenLastCalledWith(first.start, first.end)
+
+    fireEvent.click(reset)
+    expect(store.setFixedRange).toHaveBeenLastCalledWith(
+      new Date('2026-07-16T10:00:00.000Z'),
+      new Date('2026-07-22T10:00:00.000Z')
+    )
+    expect(reset).toBeDisabled()
   })
 
   it('disables the Current run action with the honest reason when the calendar has no run', async () => {

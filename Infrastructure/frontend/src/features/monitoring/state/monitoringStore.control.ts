@@ -7,7 +7,6 @@
  */
 import type {
   ControlMonitoringResponse,
-  MonitoringResponse,
   ProjectionPublicationResponse,
 } from '../api'
 
@@ -17,22 +16,21 @@ import type { StoreData } from './monitoringStore.types'
 
 
 /**
- * Install partial initial results, preserving last-good data for any source
- * that failed. Each nullable response falls back to the existing value so a
- * per-service outage never clears sibling panels or recorded history.
+ * Install partial initial results for the control sources, preserving
+ * last-good data for any source that failed. Each nullable response falls
+ * back to the existing value so a per-service outage never clears sibling
+ * panels or recorded history. Sensor history is installed separately by
+ * `applySensorRange` so its bucket completeness rules stay in one place.
  */
 export function applyInitialPartial(
   existing: StoreData,
-  sensorRange: MonitoringResponse | null,
   controlRange: ControlMonitoringResponse | null,
   projection: ProjectionPublicationResponse | null
 ): StoreData {
   const proj = projection ? projectionTimeline(projection) : null
   const history = controlRange ?? existing.controlHistory
   return {
-    series: sensorRange?.series ?? existing.series,
-    statistics: sensorRange?.statistics ?? existing.statistics,
-    live: existing.live,
+    ...existing,
     controlHistory: history,
     projectionHistory: proj ? proj.history : existing.projectionHistory,
     photoperiod: controlRange?.photoperiod ?? existing.photoperiod,
@@ -45,9 +43,6 @@ export function applyInitialPartial(
     runtimeSnapshotVersion:
       controlRange?.runtime_snapshot_version ?? existing.runtimeSnapshotVersion,
     flushHealth: controlRange?.flush_health ?? existing.flushHealth,
-    ...(existing.lightRegistry === undefined
-      ? {}
-      : { lightRegistry: existing.lightRegistry }),
   }
 }
 

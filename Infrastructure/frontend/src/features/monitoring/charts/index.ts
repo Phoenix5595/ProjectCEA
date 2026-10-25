@@ -7,6 +7,8 @@
  */
 export { UPlotChart } from './UPlotChart'
 export type { UPlotChartHandle, UPlotChartProps } from './UPlotChart'
+export { BucketBadge, bucketIntervalLabel } from './BucketBadge'
+export type { BucketBadgeProps } from './BucketBadge'
 export { createMonitoringChartFeed, createMonitoringPanelChartFeed } from './MonitoringChartFeed'
 export type {
   MonitoringChartFeed,

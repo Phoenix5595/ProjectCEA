@@ -8,7 +8,7 @@
  * dashed, pH dotted, temperature dash-dot) so color is never the only
  * distinction.
  */
-import type { AlignedData, AlignedSeries } from '../monitoring/data'
+import type { AlignedData, AlignedSeries, PhotoperiodInterval } from '../monitoring/data'
 
 import { SOIL_METRIC_LABELS, type SoilHistoryResponse, type SoilMetricName } from './api/contracts'
 
@@ -65,9 +65,13 @@ function probeColor(orderedIds: readonly number[], registryId: number): string {
 /**
  * Adapt the API response into the aligned feed: timestamps are the union of
  * all bucket anchors (ascending); each probe/metric series carries `null`
- * for buckets it does not cover (null = gap, never interpolated).
+ * for buckets it does not cover (null = gap, never interpolated). Bucket
+ * extrema and sample counts ride along for the R4 min–max band and tooltip.
  */
-export function adaptSoilHistory(response: SoilHistoryResponse): AlignedData {
+export function adaptSoilHistory(
+  response: SoilHistoryResponse,
+  photoperiod: readonly PhotoperiodInterval[] = []
+): AlignedData {
   const anchors = new Set<number>()
   for (const history of response.series) {
     for (const point of history.points) {
@@ -79,10 +83,21 @@ export function adaptSoilHistory(response: SoilHistoryResponse): AlignedData {
     (left, right) => left - right
   )
   const series: AlignedSeries[] = response.series.map(history => {
-    const y: Array<number | null> = x.map(anchor => {
-      const point = history.points.find(candidate => candidate.bucket_start.getTime() === anchor)
-      return point === undefined ? null : point.average
+    const byStart = new Map(
+      history.points.map(point => [point.bucket_start.getTime(), point] as const)
+    )
+    const y: Array<number | null> = x.map(anchor => byStart.get(anchor)?.average ?? null)
+    const minimum: Array<number | null> = x.map(anchor => {
+      const point = byStart.get(anchor)
+      return point !== undefined && point.sample_count > 1 ? point.minimum : null
     })
+    const maximum: Array<number | null> = x.map(anchor => {
+      const point = byStart.get(anchor)
+      return point !== undefined && point.sample_count > 1 ? point.maximum : null
+    })
+    const sampleCount: Array<number | null> = x.map(
+      anchor => byStart.get(anchor)?.sample_count ?? null
+    )
     return {
       key: `soil:${history.registry_id}:${history.metric}` as AlignedSeries['key'],
       label: probeMetricLabel(history),
@@ -92,6 +107,9 @@ export function adaptSoilHistory(response: SoilHistoryResponse): AlignedData {
       family: familyForMetric(history.metric),
       role: 'mean',
       y,
+      minimum,
+      maximum,
+      sampleCount,
       origin: 'recorded',
       quality: 'exact',
       isAggregated: true,
@@ -107,8 +125,10 @@ export function adaptSoilHistory(response: SoilHistoryResponse): AlignedData {
     x,
     series,
     bands: [],
-    photoperiod: [],
+    photoperiod: [...photoperiod],
     nowIndex: x.length - 1,
+    nowMs: Date.now(),
+    sensorIntervalSeconds: response.bucket_seconds,
     aggregated: true,
   }
 }

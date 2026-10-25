@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest'
 
 import type {
   ControlMonitoringResponse,
-  MonitoringResponse,
   PhotoperiodTimelinePoint,
   ProjectionPublicationResponse,
   TimelineProvenance,
 } from '../../api'
+import { LiveTailBuffer } from '../../data/liveTail'
 import {
   applyControl,
   applyControlFresh,
@@ -44,19 +44,6 @@ function phasePoint(
   > = {}
 ): PhotoperiodTimelinePoint {
   return { time, phase, provenance, ...metadata }
-}
-
-function sensorResponse(): MonitoringResponse {
-  return {
-    metadata: {
-      generated_at: at(0),
-      tier: 'raw',
-      range: { start: at(-60), end: at(0) },
-      room: { room: 'Flower Room', nodes: ['front', 'back'] },
-    },
-    series: [],
-    statistics: [],
-  }
 }
 
 function controlHistory(
@@ -125,7 +112,7 @@ describe('applyInitialPartial', () => {
       { valid_from: at(0), valid_until: at(30), value: 0 },
     ])
 
-    const data = applyInitialPartial(existing, sensorResponse(), null, projection)
+    const data = applyInitialPartial(existing, null, projection)
 
     expect(data.photoperiod).toBe(recorded)
     expect(data.projectionHistory?.photoperiod.map(point => [point.time, point.phase])).toEqual([
@@ -145,7 +132,6 @@ describe('applyInitialPartial', () => {
 
     const data = applyInitialPartial(
       existing,
-      sensorResponse(),
       controlHistory({ start: at(-60), end: at(0) }, fresh),
       emptyProjection()
     )
@@ -387,6 +373,8 @@ function emptyStore(): StoreData {
     series: [],
     statistics: [],
     live: [],
+    liveTail: new LiveTailBuffer(),
+    sensorIntervalSeconds: null,
     controlHistory: null,
     projectionHistory: null,
     photoperiod: [],

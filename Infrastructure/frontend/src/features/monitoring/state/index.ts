@@ -9,6 +9,7 @@ export type {
   FixedRange,
   LiveRange,
   MonitoringRange,
+  MonitoringStoreMode,
   MonitoringStoreOptions,
   StoreData,
   StoreState,

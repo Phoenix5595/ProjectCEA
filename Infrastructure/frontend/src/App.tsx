@@ -7,7 +7,7 @@ import Layout from './components/Layout'
 import { ControlActionsProvider } from './contexts/ControlActionsContext'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { readArchiveNavigationState } from './features/grow-archives/selection'
-import { parseUrlRange, withSerializedRange } from './features/monitoring/components/timeRangeToolbar.time'
+import { HISTORICAL_DEFAULT_DURATION_MS, parseUrlRange, withSerializedRange } from './features/monitoring/components/timeRangeToolbar.time'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const DeviceConfig = lazy(() => import('./pages/DeviceConfig'))
@@ -25,7 +25,12 @@ const CalendarSettings = lazy(() => import('./pages/CalendarSettings'))
 const ThemeSwitcher = import.meta.env.DEV ? lazy(() => import('./components/ThemeSwitcher')) : null
 
 
-/** Historical entry points start in a fixed overview, never a live reader. */
+/**
+ * Historical entry points start in a fixed survey window, never a live reader.
+ * Any fixed range stays on Historical (R3: Historical is a separate page for
+ * analysis, including short exact windows); only a missing or live range is
+ * replaced by the default 31-day fixed window.
+ */
 function HistoricalEntry({ children }: { children: ReactNode }) {
   const location = useLocation()
   // A restored archive hand-off is governed by its in-memory load pin, not by
@@ -34,16 +39,11 @@ function HistoricalEntry({ children }: { children: ReactNode }) {
   if (readArchiveNavigationState(location.state) !== null) return children
   const params = new URLSearchParams(location.search)
   const parsed = parseUrlRange(params, null)
-  if (parsed.kind === 'fixed') {
-    if (parsed.end.getTime() - parsed.start.getTime() < 5 * 24 * 60 * 60 * 1000) {
-      return <Navigate to={`${location.pathname.replace(/\/historical$/, '/monitoring')}${location.search}`} replace />
-    }
-    return children
-  }
+  if (parsed.kind === 'fixed') return children
   const end = new Date()
   const query = withSerializedRange(params, {
     kind: 'fixed',
-    start: new Date(end.getTime() - 31 * 24 * 60 * 60 * 1000),
+    start: new Date(end.getTime() - HISTORICAL_DEFAULT_DURATION_MS),
     end,
   })
   return <Navigate to={`${location.pathname}?${query}`} replace />

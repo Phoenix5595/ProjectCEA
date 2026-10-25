@@ -43,6 +43,8 @@ interface ToolbarHarnessOptions {
   /** Historical mode: ready/title drive the Current run action's state. */
   historical?: { ready: boolean; title: string }
   now?: () => Date
+  liveDuration?: number
+  resetZoomDisabled?: boolean
 }
 
 function StatefulToolbar({
@@ -53,6 +55,8 @@ function StatefulToolbar({
   suppressInitialUrlParse,
   historical,
   now,
+  liveDuration,
+  resetZoomDisabled,
 }: {
   initialRange: MonitoringRange
   initialIsLive: boolean
@@ -61,6 +65,8 @@ function StatefulToolbar({
   suppressInitialUrlParse?: boolean
   historical?: HistoricalToolbarControl
   now?: () => Date
+  liveDuration?: number
+  resetZoomDisabled?: boolean
 }) {
   const [range, setRange] = useState(initialRange)
   const [isLive, setIsLive] = useState(initialIsLive)
@@ -81,6 +87,8 @@ function StatefulToolbar({
       onPause={spies.onPause}
       onResume={spies.onResume}
       onResetZoom={spies.onResetZoom}
+      resetZoomDisabled={resetZoomDisabled}
+      liveDuration={liveDuration}
       maxRangeMs={maxRangeMs}
       suppressInitialUrlParse={suppressInitialUrlParse}
       historical={historical}
@@ -95,7 +103,6 @@ interface StatefulRender {
   onPause: Mock<() => void>
   onResume: Mock<() => void>
   onResetZoom: Mock<() => void>
-  onMonitoringRoute: Mock<(start: Date, end: Date) => void>
   onCurrentRun: Mock<() => void>
   router: { navigate: (to: string) => Promise<void> | void; state: { location: { search: string } } }
 }
@@ -113,13 +120,11 @@ function renderStateful(
     onResume: vi.fn<() => void>(),
     onResetZoom: vi.fn<() => void>(),
   }
-  const onMonitoringRoute = vi.fn<(start: Date, end: Date) => void>()
   const onCurrentRun = vi.fn<() => void>()
   const historical: HistoricalToolbarControl | undefined =
     options.historical === undefined
       ? undefined
       : {
-          onMonitoringRoute,
           currentRun: {
             ready: options.historical.ready,
             title: options.historical.title,
@@ -139,6 +144,8 @@ function renderStateful(
             suppressInitialUrlParse={options.suppressInitialUrlParse}
             historical={historical}
             now={options.now}
+            liveDuration={options.liveDuration}
+            resetZoomDisabled={options.resetZoomDisabled}
           />
         ),
       },
@@ -146,7 +153,7 @@ function renderStateful(
     { initialEntries }
   )
   render(<RouterProvider router={router} />)
-  return { ...spies, onMonitoringRoute, onCurrentRun, router }
+  return { ...spies, onCurrentRun, router }
 }
 
 describe('monitoring time-range toolbar', () => {
@@ -288,10 +295,19 @@ describe('monitoring time-range toolbar', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/Enter both/)
   })
 
-  it('Now returns to live mode with the selected preset duration', () => {
-    const h = renderStateful(liveRange(3 * 3600_000), true, ['/'])
+  it('shows Now only on a fixed range and restores the last live duration', () => {
+    const live = renderStateful(liveRange(3 * 3600_000), true, ['/'])
+    expect(screen.queryByRole('button', { name: 'Now' })).toBeNull()
+    live.onLive.mockClear()
+
+    const fixed = renderStateful(
+      fixedRange(new Date('2026-07-15T14:00:00.000Z'), new Date('2026-07-15T20:00:00.000Z')),
+      false,
+      ['/'],
+      { liveDuration: 6 * 3600_000 }
+    )
     fireEvent.click(screen.getByRole('button', { name: 'Now' }))
-    expect(h.onLive).toHaveBeenCalledWith(3 * 3600_000)
+    expect(fixed.onLive).toHaveBeenCalledWith(6 * 3600_000)
   })
 
   it('exposes the chart reset zoom action', () => {
@@ -300,6 +316,17 @@ describe('monitoring time-range toolbar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reset Zoom' }))
 
     expect(h.onResetZoom).toHaveBeenCalledOnce()
+  })
+
+  it('disables Reset Zoom while no earlier range is available', () => {
+    const h = renderStateful(liveRange(3 * 3600_000), true, ['/'], {
+      resetZoomDisabled: true,
+    })
+
+    const reset = screen.getByRole('button', { name: 'Reset Zoom' })
+    expect(reset).toBeDisabled()
+    fireEvent.click(reset)
+    expect(h.onResetZoom).not.toHaveBeenCalled()
   })
 
   it('applies valid Toronto wall-time inputs through the fixed-range callback', () => {
@@ -458,15 +485,14 @@ describe('historical time-range toolbar', () => {
     }
   })
 
-  it('applies fixed now-ended ranges and routes five days to regular Monitoring', () => {
+  it('applies every historical preset as a fixed now-ended range on Historical', () => {
     const h = renderStateful(liveRange(3 * 3600_000), true, ['/'], historicalOptions(false))
 
     fireEvent.click(screen.getByRole('button', { name: '5 days' }))
-    expect(h.onMonitoringRoute).toHaveBeenCalledWith(
+    expect(h.onFixedRange).toHaveBeenLastCalledWith(
       new Date(NOW.getTime() - 5 * 24 * 3600_000),
       NOW
     )
-    expect(h.onFixedRange).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole('button', { name: '7 days' }))
     expect(h.onFixedRange).toHaveBeenLastCalledWith(
@@ -488,7 +514,7 @@ describe('historical time-range toolbar', () => {
     expect(h.onFixedRange).toHaveBeenLastCalledWith(new Date('2025-12-31T15:00:00.000Z'), NOW)
 
     expect(h.onLive).not.toHaveBeenCalled()
-    expect(h.onMonitoringRoute).toHaveBeenCalledTimes(1)
+    expect(h.onFixedRange).toHaveBeenCalledTimes(5)
   })
 
   it('disables the Current run action with the honest reason until the calendar is ready', () => {

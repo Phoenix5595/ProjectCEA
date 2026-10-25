@@ -14,10 +14,18 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('../../features/soil/api', () => ({ soilApi: mocks.soilApi }))
-vi.mock('../../features/monitoring/charts', () => ({
-  UPlotChart: () => <div data-testid="soil-chart" />,
-  createMonitoringChartFeed: () => mocks.chartFeed,
-}))
+vi.mock('../../features/monitoring/charts', async () => {
+  // vi.mock factories are hoisted above static imports, so React is loaded here.
+  const { useEffect } = await import('react')
+  return {
+    UPlotChart: ({ onRequestBudgetChange }: { onRequestBudgetChange?: (budget: number) => void }) => {
+      // The real chart reports its measured plot width; history waits for it.
+      useEffect(() => onRequestBudgetChange?.(800), [onRequestBudgetChange])
+      return <div data-testid="soil-chart" />
+    },
+    createMonitoringChartFeed: () => mocks.chartFeed,
+  }
+})
 
 const HISTORY_RESPONSE = {
   start: new Date('2026-09-28T09:00:00Z'),

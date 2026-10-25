@@ -11,9 +11,15 @@
 import { z } from 'zod'
 
 import { RoomMetadata, UnitFamily, utcDate } from '../monitoring/api'
-import type { ControlReadScope } from '../monitoring/api'
+import type { ControlOverviewScope } from '../monitoring/api'
 
-import { chooseHistoryBucket, historyBucketBounds, isHistoryBucketSeconds } from './buckets'
+import {
+  MAX_REQUESTED_POINTS,
+  MIN_REQUESTED_POINTS,
+  chooseHistoryBucket,
+  historyBucketBounds,
+  isHistoryBucketSeconds,
+} from './buckets'
 
 // ---------------------------------------------------------------------------
 // Request contract
@@ -290,7 +296,7 @@ export const HistoryOverviewMetadata = z
     generated_at: utcDate,
     range: z.object({ start: utcDate, end: utcDate }).strict(),
     room: RoomMetadata,
-    requested_max_points: z.number().int().min(10).max(1000),
+    requested_max_points: z.number().int().min(MIN_REQUESTED_POINTS).max(MAX_REQUESTED_POINTS),
     bucket: HistoryBucketSchema,
     source_coverage: z.enum(['ready', 'unavailable']),
     all_aggregated: z.literal(true),
@@ -444,7 +450,7 @@ export function historyOverviewSensorContract(
  */
 export function historyOverviewControlContract(
   request: HistoryOverviewRequest,
-  scope: ControlReadScope = 'all'
+  scope: ControlOverviewScope = 'all'
 ): z.ZodType<HistoryOverviewControlResponse> {
   return addResponseRefinement(HistoryOverviewControlResponse, (response, context) => {
     if (!refineMetadata(response.metadata, request, CONTROL_MIN_DURATION_MS, context)) return

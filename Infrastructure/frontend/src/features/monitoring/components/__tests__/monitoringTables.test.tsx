@@ -114,7 +114,7 @@ describe('monitoring table primitives', () => {
     expect(spans.every(span => span.classList.contains('block'))).toBe(true)
   })
 
-  it('matches Flower Veg statistics and keeps the accessible chart data table in production', () => {
+  it('matches Flower Veg statistics and shows the chart data table in debug fixture builds', () => {
     // --- Veg sensor values: canonical ordering + unit-family formatting ---
     const veg = tablePanel(vegManifest, 'Sensor Values')
     const vegValues: LiveSensorValue[] = [
@@ -296,9 +296,12 @@ describe('monitoring table primitives', () => {
       ],
       photoperiod: [],
       nowIndex: 0,
+      nowMs: Date.parse('2026-10-24T12:00:00.000Z'),
+      sensorIntervalSeconds: null,
       aggregated: false,
     }
-    vi.stubEnv('MODE', 'production')
+    vi.stubEnv('DEV', false)
+    vi.stubEnv('VITE_MONITORING_DEBUG', '1')
     const { container: chartContainer } = render(<ChartDataTable title="Climate" data={aligned} />)
     const toggle = screen.getByRole('button', { name: 'View data as table' })
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
@@ -317,6 +320,13 @@ describe('monitoring table primitives', () => {
     expect(within(firstRow).getAllByRole('cell')[1].textContent).toContain('recorded/exact')
     expect(within(firstRow).getAllByRole('cell')[2].textContent).toBe('—')
   }, 30000)
+
+  it('hides the chart data table in production builds (R6)', () => {
+    vi.stubEnv('DEV', false)
+    vi.stubEnv('VITE_MONITORING_DEBUG', undefined)
+    render(<ChartDataTable title="Climate" data={emptyAlignedData()} />)
+    expect(screen.queryByRole('button', { name: 'View data as table' })).toBeNull()
+  })
 
   it('does not fabricate missing paired averages or null PID', () => {
     // --- Flower averages with an empty (valid) Front cluster ---
@@ -356,6 +366,8 @@ describe('monitoring table primitives', () => {
       bands: [],
       photoperiod: [],
       nowIndex: 0,
+      nowMs: NOW.getTime(),
+      sensorIntervalSeconds: null,
       aggregated: false,
     }
     const { container: chartContainer } = render(<ChartDataTable title="Climate" data={aligned} />)
@@ -365,3 +377,16 @@ describe('monitoring table primitives', () => {
     expect(within(firstRow).getAllByRole('cell')[1].textContent).toBe('—')
   })
 })
+
+function emptyAlignedData(): AlignedData {
+  return {
+    x: [],
+    series: [],
+    bands: [],
+    photoperiod: [],
+    nowIndex: -1,
+    nowMs: 0,
+    sensorIntervalSeconds: null,
+    aggregated: false,
+  }
+}

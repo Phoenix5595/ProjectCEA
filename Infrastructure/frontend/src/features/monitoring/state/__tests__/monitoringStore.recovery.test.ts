@@ -17,6 +17,7 @@ function sensorResponse(average = 24): MonitoringResponse {
       tier: 'raw',
       range: { start: new Date(NOW.getTime() - 3600_000), end: NOW },
       room: { room: 'Flower Room', nodes: ['front'] },
+      interval_seconds: 60,
     },
     series: [
       {
@@ -24,7 +25,15 @@ function sensorResponse(average = 24): MonitoringResponse {
         node: 'front',
         unit_family: 'celsius',
         unit: '°C',
-        points: [{ timestamp: NOW, average, minimum: average, maximum: average, sample_count: 1 }],
+        points: [
+          {
+            timestamp: new Date(NOW.getTime() - 120_000),
+            average,
+            minimum: average,
+            maximum: average,
+            sample_count: 1,
+          },
+        ],
       },
     ],
     statistics: [
@@ -69,6 +78,13 @@ function apiWithHealthyDefaults(): MonitoringApi {
   return api
 }
 
+/** Store whose first range load is released by a reported chart budget. */
+function makeStore(api: MonitoringApi): MonitoringStore {
+  const store = new MonitoringStore('Flower Room', api, { now: () => new Date() })
+  store.setRangeBudget(2_000)
+  return store
+}
+
 describe('monitoring store recovery', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -87,7 +103,7 @@ describe('monitoring store recovery', () => {
     vi.mocked(api.controlProjection).mockRejectedValueOnce(
       new MonitoringHttpError('monitoring', 503, 'projection unavailable')
     )
-    const store = new MonitoringStore('Flower Room', api, { now: () => new Date() })
+    const store = makeStore(api)
     const unsubscribe = store.subscribe(() => {})
     await vi.advanceTimersByTimeAsync(0)
 
@@ -105,23 +121,29 @@ describe('monitoring store recovery', () => {
     unsubscribe()
   })
 
-  it('keeps fixed ranges immutable across ticks until an explicit retry', async () => {
+  it('retries a failed fixed range at 5 s, 15 s, then every 60 s', async () => {
     const api = apiWithHealthyDefaults()
     vi.mocked(api.controlRange).mockRejectedValue(
       new MonitoringHttpError('monitoring', 503, 'control unavailable')
     )
-    const store = new MonitoringStore('Flower Room', api, { now: () => new Date() })
+    const store = makeStore(api)
     const unsubscribe = store.subscribe(() => {})
     await vi.advanceTimersByTimeAsync(0)
     store.setFixedRange(new Date('2026-09-12T09:00:00.000Z'), new Date('2026-09-12T10:00:00.000Z'))
     await vi.advanceTimersByTimeAsync(0)
-    const controlCalls = vi.mocked(api.controlRange).mock.calls.length
-    const projectionCalls = vi.mocked(api.controlProjection).mock.calls.length
+    const initialCalls = vi.mocked(api.controlRange).mock.calls.length
 
-    await vi.advanceTimersByTimeAsync(10 * 60_000)
+    // No retry before the first cadence step.
+    await vi.advanceTimersByTimeAsync(4_000)
+    expect(vi.mocked(api.controlRange)).toHaveBeenCalledTimes(initialCalls)
 
-    expect(vi.mocked(api.controlRange)).toHaveBeenCalledTimes(controlCalls)
-    expect(vi.mocked(api.controlProjection)).toHaveBeenCalledTimes(projectionCalls)
+    // +5 s, then +15 s, then the stable 60 s cadence.
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(vi.mocked(api.controlRange)).toHaveBeenCalledTimes(initialCalls + 1)
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(vi.mocked(api.controlRange)).toHaveBeenCalledTimes(initialCalls + 2)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(vi.mocked(api.controlRange)).toHaveBeenCalledTimes(initialCalls + 3)
     expect(store.getSnapshot().sourceOutcomes['control-history'].status).toBe('failed')
     unsubscribe()
   })
@@ -129,7 +151,7 @@ describe('monitoring store recovery', () => {
   it('clamps live control tails to exactly two minutes for stale history', async () => {
     const api = apiWithHealthyDefaults()
     vi.mocked(api.controlTail).mockResolvedValue(controlResponse())
-    const store = new MonitoringStore('Flower Room', api, { now: () => new Date() })
+    const store = makeStore(api)
     const unsubscribe = store.subscribe(() => {})
     await vi.advanceTimersByTimeAsync(0)
     await vi.advanceTimersByTimeAsync(1000)
@@ -145,7 +167,7 @@ describe('monitoring store recovery', () => {
       .mockResolvedValueOnce(sensorResponse())
       .mockRejectedValueOnce(new MonitoringHttpError('monitoring', 503, 'sensor unavailable'))
       .mockResolvedValue(sensorResponse(25))
-    const store = new MonitoringStore('Flower Room', api, { now: () => new Date() })
+    const store = makeStore(api)
     const unsubscribe = store.subscribe(() => {})
     await vi.advanceTimersByTimeAsync(0)
 
@@ -163,7 +185,7 @@ describe('monitoring store recovery', () => {
     vi.mocked(api.controlProjection).mockRejectedValue(
       new MonitoringHttpError('monitoring', 503, 'projection unavailable')
     )
-    const store = new MonitoringStore('Flower Room', api, { now: () => new Date() })
+    const store = makeStore(api)
     const unsubscribe = store.subscribe(() => {})
     await vi.advanceTimersByTimeAsync(0)
 

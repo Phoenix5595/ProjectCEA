@@ -3,6 +3,11 @@ import type { PointerEvent as ReactPointerEvent } from 'react'
 import uPlot from 'uplot'
 
 import 'uplot/dist/uPlot.min.css'
+import { photoperiodPlugin } from '../monitoring/charts/plugins/photoperiodPlugin'
+import { requestBudget } from '../monitoring/data'
+import type { PhotoperiodInterval } from '../monitoring/data'
+
+import { decimateStepLast } from './decimateStepLast'
 import type {
   RelayIntervalSummary,
   RelayStateInterval,
@@ -34,6 +39,8 @@ export interface RelayTimelineChartProps {
   readonly lanes: readonly RelayTimelineChartLane[]
   readonly range: RelayTimelineWindow
   readonly viewportKey: string
+  /** Recorded/projected SUN/MOON intervals for the same window (R5). */
+  readonly photoperiod?: readonly PhotoperiodInterval[]
 }
 
 export interface RelayTimelineChartHandle {
@@ -195,38 +202,69 @@ function drawLaneTimeline(plot: uPlot, lanes: readonly RelayTimelineChartLane[])
     const centerY = rowTop + rowHeight / 2
     const maxAmplitude = backgroundHeight / 2
     const outputs = lane.requestedOutput
-    for (let index = 0; index < outputs.length; index += 1) {
-      const output = outputs[index]
-      if (output === undefined) continue
-      const visibleStart = Math.max(output.start, rangeMin * 1000)
-      const visibleEnd = Math.min(output.end, rangeMax * 1000)
-      const left = xPosition(visibleStart)
-      const right = xPosition(visibleEnd)
-      if (right <= left) continue
-
-      // Subordinate min/max envelope behind the primary requested output for
-      // genuinely aggregated buckets, drawn with the same percent-to-amplitude
-      // geometry between the recorded bucket bounds. An unknown bound leaves
-      // this ring out entirely rather than faking equality. It renders even
-      // when the retained percent is zero, because the recorded range is real.
-      const extrema = aggregatedBucketExtrema(output)
-      if (extrema !== null && extrema.min < extrema.max) {
-        ctx.fillStyle = 'rgba(56, 189, 248, 0.18)'
+    // R1: never draw more step samples than the plot has pixel columns. The
+    // decimated line keeps the latest sample per column (step-after).
+    const columns = requestBudget(
+      bbox.width / (uPlot.pxRatio > 0 ? uPlot.pxRatio : 1)
+    )
+    const decimated = decimateStepLast(
+      outputs.map(output => output.start),
+      outputs.map(output => output.requestedPercent),
+      columns
+    )
+    if (decimated.xs.length < outputs.length) {
+      for (let index = 0; index < decimated.xs.length; index += 1) {
+        const x = decimated.xs[index]
+        const percent = decimated.ys[index]
+        if (x === undefined || percent === undefined || percent <= 0) continue
+        const next = decimated.xs[index + 1] ?? rangeMax * 1000
+        const left = Math.max(bbox.left, xPosition(Math.max(x, rangeMin * 1000)))
+        const right = Math.min(
+          bbox.left + bbox.width,
+          xPosition(Math.min(next, rangeMax * 1000))
+        )
+        if (right <= left) continue
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.62)'
         ctx.beginPath()
-        traceRequestedStep(ctx, left, right, centerY, maxAmplitude * (extrema.max / 100))
-        traceRequestedStep(ctx, left, right, centerY, maxAmplitude * (extrema.min / 100))
-        ctx.fill('evenodd')
+        traceRequestedStep(ctx, left, right, centerY, maxAmplitude * (percent / 100))
+        ctx.fill()
       }
+    } else {
+      for (let index = 0; index < outputs.length; index += 1) {
+        const output = outputs[index]
+        if (output === undefined) continue
+        const visibleStart = Math.max(output.start, rangeMin * 1000)
+        const visibleEnd = Math.min(output.end, rangeMax * 1000)
+        const left = xPosition(visibleStart)
+        const right = xPosition(visibleEnd)
+        if (right <= left) continue
 
-      const requestedPercent =
-        requestedOutputAt(outputs, visibleStart)?.percent ?? output.requestedPercent
-      if (requestedPercent <= 0) continue
-      const amplitude = maxAmplitude * (requestedPercent / 100)
+        // Subordinate min/max envelope behind the primary requested output for
+        // genuinely aggregated buckets, drawn with the same percent-to-amplitude
+        // geometry between the recorded bucket bounds. An unknown bound leaves
+        // this ring out entirely rather than faking equality. It renders even
+        // when the retained percent is zero, because the recorded range is real.
+        const extrema = aggregatedBucketExtrema(output)
+        if (extrema !== null && extrema.min < extrema.max) {
+          ctx.fillStyle = 'rgba(56, 189, 248, 0.18)'
+          ctx.beginPath()
+          traceRequestedStep(ctx, left, right, centerY, maxAmplitude * (extrema.max / 100))
+          traceRequestedStep(ctx, left, right, centerY, maxAmplitude * (extrema.min / 100))
+          ctx.fill('evenodd')
+        }
 
-      ctx.fillStyle = output.aggregated ? 'rgba(56, 189, 248, 0.62)' : 'rgba(14, 165, 233, 0.72)'
-      ctx.beginPath()
-      traceRequestedStep(ctx, left, right, centerY, amplitude)
-      ctx.fill()
+        const requestedPercent =
+          requestedOutputAt(outputs, visibleStart)?.percent ?? output.requestedPercent
+        if (requestedPercent <= 0) continue
+        const amplitude = maxAmplitude * (requestedPercent / 100)
+
+        ctx.fillStyle = output.aggregated
+          ? 'rgba(56, 189, 248, 0.62)'
+          : 'rgba(14, 165, 233, 0.72)'
+        ctx.beginPath()
+        traceRequestedStep(ctx, left, right, centerY, amplitude)
+        ctx.fill()
+      }
     }
 
     ctx.strokeStyle = 'rgba(148, 163, 184, 0.28)'
@@ -284,18 +322,23 @@ function intervalNote(interval: RelayStateInterval): string | null {
 }
 
 export const RelayTimelineChart = forwardRef<RelayTimelineChartHandle, RelayTimelineChartProps>(
-  function RelayTimelineChart({ lanes, range, viewportKey }, forwardedRef) {
+  function RelayTimelineChart(
+    { lanes, range, viewportKey, photoperiod = [] },
+    forwardedRef
+  ) {
     const frameRef = useRef<HTMLDivElement>(null)
     const plotElementRef = useRef<HTMLDivElement>(null)
     const plotRef = useRef<uPlot | null>(null)
     const lanesRef = useRef(lanes)
     const rangeRef = useRef(range)
     const viewportKeyRef = useRef(viewportKey)
+    const photoperiodRef = useRef<readonly PhotoperiodInterval[]>(photoperiod)
     const programmaticScaleRef = useRef(false)
     const userZoomedRef = useRef(false)
     const [active, setActive] = useState<ActivePosition | null>(null)
     lanesRef.current = lanes
     rangeRef.current = range
+    photoperiodRef.current = photoperiod
 
     const focusStops = useMemo(() => makeFocusStops(lanes, range), [lanes, range])
     const plotHeight = Math.max(180, lanes.length * LANE_HEIGHT + TOP_GUTTER + BOTTOM_GUTTER)
@@ -394,7 +437,7 @@ export const RelayTimelineChart = forwardRef<RelayTimelineChartHandle, RelayTime
               points: { show: false },
               drag: { x: true, y: false, setScale: true },
             },
-            plugins: [plugin],
+            plugins: [photoperiodPlugin(() => photoperiodRef.current), plugin],
           },
           dataRef.current,
           element
@@ -442,7 +485,7 @@ export const RelayTimelineChart = forwardRef<RelayTimelineChartHandle, RelayTime
     }, [data, range, viewportKey])
     useEffect(() => {
       plotRef.current?.redraw()
-    }, [lanes])
+    }, [lanes, photoperiod])
 
     const selectedLane = active === null ? null : (lanes[active.laneIndex] ?? null)
     const selectedInterval =

@@ -33,6 +33,8 @@ function slugify(value: string): string {
 export function ChartDataTable({ title, data }: ChartDataTableProps) {
   const [open, setOpen] = useState(false)
 
+  // R6: the table alternative ships only in dev and guarded fixture builds.
+  if (import.meta.env.DEV !== true && import.meta.env.VITE_MONITORING_DEBUG !== '1') return null
   const tableId = `chart-data-${slugify(title)}`
 
   const visible = data.series.filter(s => s.role !== 'min' && s.role !== 'max')

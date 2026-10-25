@@ -14,10 +14,11 @@
  *
  * On historical routes (`historical`) the live preset group is replaced by the
  * fixed history presets plus the Calendar-backed "Current run" action: every
- * preset resolves to a `now`-anchored fixed range, the five-day minimum hands
- * off to regular Monitoring through `onMonitoringRoute`, and the current-run
- * button stays disabled with an honest explanation until the calendar returns
- * exactly one current run.
+ * preset resolves to a `now`-anchored fixed range that stays on Historical,
+ * and the current-run button stays disabled with an honest explanation until
+ * the calendar returns exactly one current run. Historical pages keep the
+ * Reset Zoom action enabled only while the range-owner stack has a prior
+ * range to restore.
  */
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -70,8 +71,6 @@ export interface HistoricalCurrentRunControl {
 export type HistoricalViewMode = 'range' | 'archives'
 
 export interface HistoricalToolbarControl {
-  /** Route the five-day minimum handoff to the sector's regular Monitoring page. */
-  readonly onMonitoringRoute: (start: Date, end: Date) => void
   /** Calendar current-run state behind the trailing preset action. */
   readonly currentRun: HistoricalCurrentRunControl
   /** Local Historical surface selection; it is deliberately not serialized in the URL. */
@@ -122,8 +121,16 @@ export interface TimeRangeToolbarProps {
   onPause: () => void
   onResume: () => void
   onResetZoom?: () => void
+  /** Disable the Reset Zoom action while no earlier range is available. */
+  resetZoomDisabled?: boolean
   now?: () => Date
   defaultDuration?: number
+  /**
+   * Live duration the Now action restores after a fixed range. Pages pass the
+   * store's last live duration so a past zoom returns to the window the user
+   * watched before it, not a stale toolbar selection.
+   */
+  liveDuration?: number
   /** Fixed-range cap; `null` opts the page into unlimited fixed ranges
    * (all-history overview pages). Live windows stay detailed and capped. */
   maxRangeMs?: MaxRangeCap
@@ -147,8 +154,10 @@ export function TimeRangeToolbar({
   onPause,
   onResume,
   onResetZoom,
+  resetZoomDisabled = false,
   now,
   defaultDuration,
+  liveDuration,
   maxRangeMs,
   suppressInitialUrlParse,
   historical,
@@ -269,8 +278,8 @@ export function TimeRangeToolbar({
   /**
    * Historical presets always resolve to a `now`-anchored fixed range: day and
    * week presets subtract a fixed span, month presets subtract Toronto
-   * calendar months. The five-day minimum routes to regular Monitoring; every
-   * other preset stays on the Historical page as a fixed range.
+   * calendar months. Every preset stays on the Historical page as a fixed
+   * range, however short (R3).
    */
   function applyHistoricalPreset(preset: HistoricalPreset): void {
     const rangeNow = nowFn()
@@ -279,14 +288,14 @@ export function TimeRangeToolbar({
     setPaused(false)
     setError(null)
     setFallFold(null)
-    if (preset.route === 'monitoring') historical.onMonitoringRoute(next.start, next.end)
-    else callbacksRef.current.onFixedRange(next.start, next.end)
+    callbacksRef.current.onFixedRange(next.start, next.end)
   }
 
+  /** Return to live with the page's last live duration (fixed range only). */
   function handleNow(): void {
     setPaused(false)
     setError(null)
-    callbacksRef.current.onLive(selectedDuration)
+    callbacksRef.current.onLive(liveDuration ?? selectedDuration)
   }
 
   function submitFixed(override?: { field: 'start' | 'end'; choice: FallFoldChoice }): void {
@@ -372,9 +381,11 @@ export function TimeRangeToolbar({
                   {p.label}
                 </button>
               ))}
-              <button type="button" className="mon-toolbar__now" onClick={handleNow}>
-                Now
-              </button>
+              {!live && (
+                <button type="button" className="mon-toolbar__now" onClick={handleNow}>
+                  Now
+                </button>
+              )}
             </>
           ) : (
             <>
@@ -457,7 +468,7 @@ export function TimeRangeToolbar({
           )}
           <span className="mon-toolbar__tz">{tzLabel}</span>
           {onResetZoom && (
-            <button type="button" onClick={onResetZoom}>
+            <button type="button" onClick={onResetZoom} disabled={resetZoomDisabled}>
               Reset Zoom
             </button>
           )}

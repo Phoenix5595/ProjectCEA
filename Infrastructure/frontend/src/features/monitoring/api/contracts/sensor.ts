@@ -56,6 +56,8 @@ export const MonitoringMetadata = z.object({
   room: RoomMetadata,
   requested_max_points: z.number().int().min(10).max(100_000).optional(),
   interval_seconds: z.number().int().positive().optional(),
+  /** Echo of the explicit interval_seconds request; null when derived. */
+  requested_interval_seconds: z.number().int().positive().nullable().optional(),
 })
 export type MonitoringMetadata = z.infer<typeof MonitoringMetadata>
 

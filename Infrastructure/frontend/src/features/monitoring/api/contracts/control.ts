@@ -20,12 +20,21 @@ import {
 } from './shared'
 
 /**
- * Which recorded control families one read may carry. `lights` rejects every
- * non-light automation family, so a stale backend cannot feed device, PID or
- * climate-target tracking into room monitoring/Historical graphs; `all` is
- * the unchanged default for Automation and generic callers.
+ * Which recorded control families one history/tail read may carry.
+ *
+ * - `all`: the unchanged full automation envelope (Automation callers).
+ * - `room`: climate setpoints + raw lights + photoperiod; devices/PID are
+ *   rejected because room graphs never show automation device state.
+ * - `climate`: climate setpoints + photoperiod; lights/devices/PID rejected.
+ * - `photoperiod`: photoperiod only; every other family rejected.
+ *
+ * The overview endpoints keep their own `all | lights` scope
+ * (`ControlOverviewScope`), which is not a history/tail read scope.
  */
-export type ControlReadScope = 'all' | 'lights'
+export type ControlHistoryScope = 'all' | 'room' | 'climate' | 'photoperiod'
+
+/** Overview (`/overview/control`) scope: unchanged full or light-only read. */
+export type ControlOverviewScope = 'all' | 'lights'
 
 const SampleExtrema = {
   // Recorded extrema of every sample the point/step represents: an aggregate
@@ -290,26 +299,32 @@ export type ControlMonitoringResponse = z.infer<typeof ControlMonitoringResponse
 
 /**
  * Parse contract for `/api/monitoring/control/{room}/history` and `.../tail`,
- * bound to the requested read scope. A `lights` response that still carries
- * recorded climate, device or PID series is rejected before any caller sees
- * it, so a stale backend can never repopulate room automation tracking.
+ * bound to the requested read scope. A response that still carries a family
+ * the scope excludes is rejected before any caller sees it, so a stale
+ * backend can never repopulate data the page does not display.
  */
 export function controlMonitoringContract(
-  scope: ControlReadScope
+  scope: ControlHistoryScope
 ): z.ZodType<ControlMonitoringResponse> {
   if (scope === 'all') return ControlMonitoringResponse
+  const excluded: readonly string[] =
+    scope === 'room'
+      ? ['device', 'pid']
+      : scope === 'climate'
+        ? ['light', 'device', 'pid']
+        : ['climate', 'light', 'device', 'pid']
   return ControlMonitoringResponse.superRefine((response, context) => {
-    // Recorded automation families one lights read must never carry.
     const counts: Record<string, number> = {
       climate: response.climate.length,
+      light: response.lights.length,
       device: response.devices.length,
       pid: response.pid.length,
     }
-    for (const [family, count] of Object.entries(counts)) {
-      if (count === 0) continue
+    for (const family of excluded) {
+      if ((counts[family] ?? 0) === 0) continue
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: `lights scope control history must not return ${family} series`,
+        message: `${scope} scope control history must not return ${family} series`,
       })
     }
   })

@@ -14,14 +14,12 @@ export {
   chooseHistoryBucket,
   drillDownRange,
 } from './buckets'
-export { resolveHistoricalSelection } from './historicalSelection'
-export type { HistoricalSelection, HistoricalSelectionSurface } from './historicalSelection'
+export { HistoryOverviewApi } from './api'
 export type {
   HistoryBucketMetadata,
   HistoryBucketBounds,
   HistoryBucketBoundsEntry,
 } from './buckets'
-export { HistoryOverviewApi } from './api'
 export { useHistoryOverview } from './useHistoryOverview'
 export type { UseHistoryOverviewOptions, UseHistoryOverviewResult } from './useHistoryOverview'
 export { buildHistoryOverviewAlignedData } from './aligned'

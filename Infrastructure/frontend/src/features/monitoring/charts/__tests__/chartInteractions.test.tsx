@@ -196,6 +196,8 @@ function makeData(): AlignedData {
       { start: 2500, end: 4000, phase: 'MOON' },
     ],
     nowIndex: 2,
+    nowMs: 3000,
+    sensorIntervalSeconds: null,
     aggregated: false,
   }
 }
@@ -346,7 +348,7 @@ describe('monitoring chart interactions', () => {
     expect(lastCall?.[1]).toBe(false)
   })
 
-  it('keeps the recorded endpoint stable through repeated cross-divider zoom feedback cycles', () => {
+  it('keeps the exact drag selection through repeated zoom feedback cycles', () => {
     const data = makeData()
     const emittedEnds: number[] = []
     const onZoom = vi.fn((range: { start: Date; end: Date }) => {
@@ -362,35 +364,36 @@ describe('monitoring chart interactions', () => {
     // The initial uPlot scale marks the chart as ready.
     plot.setScale('x', { min: 1500, max: 4000 })
 
-    // A cross-divider user selection must persist only the recorded portion
-    // (uPlot fires setSelect with the box visible right before the scale).
+    // R3: the page receives the exact selection — including a strip beyond the
+    // last recorded point — and decides itself whether it is live or fixed.
     const crossSelectHook = plot.opts.hooks?.setSelect?.[0] as (self: uPlot) => void
-    ;(plot as unknown as { select: { show: boolean; width: number } }).select = {
+    // MockUPlot keeps a mutable selection box; the setSelect hook reads it.
+    const selectable = plot as unknown as { select: { show: boolean; width: number } }
+    selectable.select = {
       show: true,
       width: 60,
     }
     crossSelectHook?.(plot as unknown as uPlot)
     plot.setScale('x', { min: 1500, max: 4000 })
-    expect(onZoom).toHaveBeenCalledWith({ start: new Date(1500), end: new Date(3000) })
+    expect(onZoom).toHaveBeenCalledWith({ start: new Date(1500), end: new Date(4000) })
 
-    // Re-aligning preserves the future strip in rendered data, then a second
-    // user zoom must not feed that strip back into the next fixed range.
+    // Re-aligning to the applied fixed range never rewrites the next selection.
     rerender(
       <ThemeProvider>
         <ChartHarness
           data={makeData()}
-          range={{ kind: 'fixed', start: new Date(1500), end: new Date(3000) }}
+          range={{ kind: 'fixed', start: new Date(1500), end: new Date(4000) }}
           onZoom={onZoom}
         />
       </ThemeProvider>
     )
-    ;(plot as unknown as { select: { show: boolean; width: number } }).select = {
+    selectable.select = {
       show: true,
       width: 60,
     }
     crossSelectHook?.(plot as unknown as uPlot)
     plot.setScale('x', { min: 1500, max: 4000 })
-    expect(emittedEnds).toEqual([3000, 3000])
+    expect(emittedEnds).toEqual([4000, 4000])
   })
 
   it('programmatic reset stays silent while a simulated user zoom emits once', () => {

@@ -1,6 +1,6 @@
 import { sensorUrlClustersFor } from '../../../config/clusterTopology'
 import { logger } from '../../../utils/logger'
-import { CONTROL_HISTORY_MAX_POINTS, MonitoringApi } from '../api'
+import { MonitoringApi } from '../api'
 
 import {
   applyControl,
@@ -9,15 +9,22 @@ import {
   lastControlTimestamp,
   projectionExpired,
 } from './monitoringStore.control'
-import { downgradeQuality, iso, mergeLive } from './monitoringStore.merge'
+import { downgradeQuality, iso } from './monitoringStore.merge'
+import { applySensorIncremental, applySensorRange } from './monitoringStore.sensor'
 import type { LiveRequest, PollerHooks } from './monitoringStore.poller.types'
 import {
   controlTailStart,
   isSourceRetryEligible,
+  LIVE_SENSOR_FULL_RELOAD_MS,
+  nextSensorIncrementalAt,
   pollingEligibility,
+  sensorIncrementalStart,
 } from './monitoringStore.pollingPolicy'
 
 export type { LiveRequest, PollerHooks } from './monitoringStore.poller.types'
+
+/** Retry a live full sensor load when the base has no completed bucket yet. */
+const EMPTY_BASE_RETRY_MS = 60_000
 
 export class MonitoringLivePoller {
   private controlWindowInFlight = false
@@ -26,9 +33,11 @@ export class MonitoringLivePoller {
   private readonly liveInFlight = new Set<string>()
   private lastReconcileAt: Date | null = null
   private lastProjectionAttemptAt: Date | null = null
-  private controlRecoveryNotBefore: Date | null = null
   private lastSensorHistoryRefreshAt: number
+  private lastSensorFullRefreshAt: number
+  private sensorHistoryFailed = false
   private reconciling = false
+  private controlReconcilePending = false
 
   constructor(
     private readonly location: string,
@@ -36,16 +45,26 @@ export class MonitoringLivePoller {
     private readonly hooks: PollerHooks
   ) {
     this.lastSensorHistoryRefreshAt = hooks.now().getTime()
+    this.lastSensorFullRefreshAt = this.lastSensorHistoryRefreshAt
+  }
+
+  /** Reset the incremental schedule after the range loader installed a base. */
+  markFullRangeLoad(at: Date): void {
+    this.lastSensorHistoryRefreshAt = at.getTime()
+    this.lastSensorFullRefreshAt = at.getTime()
+    this.sensorHistoryFailed = false
   }
 
   tick(): void {
     if (this.hooks.isPaused() || !this.hooks.isActive()) return
-    void this.pollSensors()
-    const eligibility = pollingEligibility(this.hooks.read().range)
-    if (!eligibility.projection && !eligibility.sensorHistory && !eligibility.controlTail) return
-    this.checkProjection()
-    void this.refreshSensorHistory()
-    void this.pollControlWindow()
+    const mode = this.hooks.isHistorical() ? 'historical' : 'monitoring'
+    if (mode === 'monitoring') void this.pollSensors()
+    // Recorded reads wait for the first chart-reported budget (R1).
+    if (this.hooks.getRangeMaxPoints() === null) return
+    const eligibility = pollingEligibility(this.hooks.read().range, mode)
+    if (eligibility.projection) this.checkProjection()
+    if (eligibility.sensorHistory) void this.refreshSensorHistory()
+    if (eligibility.controlTail) void this.pollControlWindow()
   }
 
   private checkProjection(): void {
@@ -107,8 +126,7 @@ export class MonitoringLivePoller {
         .sensorLive(this.location, node)
         .then(values => {
           if (!this.hooks.isActive() || this.hooks.isPaused()) return
-          const data = this.hooks.read().data
-          this.hooks.applyData({ ...data, live: mergeLive(data.live, values) })
+          this.hooks.applyLiveValues(values)
         })
         .catch((err: unknown) => {
           if (this.hooks.isActive() && !this.hooks.isPaused())
@@ -118,49 +136,138 @@ export class MonitoringLivePoller {
     }
   }
 
+  /**
+   * Live sensor refresh: completed buckets only, appended incrementally from
+   * an overlapped start, with a periodic full reload for statistics.
+   */
   private async refreshSensorHistory(): Promise<void> {
     const state = this.hooks.read()
-    if (
-      state.range.kind !== 'live' ||
-      this.sensorHistoryInFlight ||
-      !isSourceRetryEligible(
-        'sensor-history',
-        this.hooks.now(),
-        new Date(this.lastSensorHistoryRefreshAt)
-      )
-    ) {
-      return
-    }
+    if (state.range.kind !== 'live' || this.sensorHistoryInFlight) return
     const requestedRange = state.range
     const request = this.hooks.liveRequest()
     if (request === null) return
     const now = this.hooks.now()
-    const start = new Date(now.getTime() - requestedRange.duration)
+    const nowMs = now.getTime()
+    if (
+      this.sensorHistoryFailed &&
+      !isSourceRetryEligible('sensor-history', now, new Date(this.lastSensorHistoryRefreshAt))
+    ) {
+      return
+    }
+    const baseCompleteUntil = state.data.liveTail.baseCompleteUntil
+    if (baseCompleteUntil === null) {
+      if (!this.sensorHistoryFailed && nowMs - this.lastSensorHistoryRefreshAt < EMPTY_BASE_RETRY_MS) {
+        return
+      }
+      await this.fullSensorRefresh(request, requestedRange, now)
+      return
+    }
+    if (nowMs - this.lastSensorFullRefreshAt >= LIVE_SENSOR_FULL_RELOAD_MS) {
+      await this.fullSensorRefresh(request, requestedRange, now)
+      return
+    }
+    const intervalMs = state.data.liveTail.intervalMs
+    if (nowMs < nextSensorIncrementalAt(this.lastSensorHistoryRefreshAt, baseCompleteUntil, intervalMs)) {
+      return
+    }
+    // The backend rejects an explicit interval that would exceed the budget;
+    // a stalled baseline widens the window, so fall back to a full load then.
+    const budget = this.hooks.getRangeMaxPoints()
+    const incrementalPoints = Math.ceil(
+      (nowMs - sensorIncrementalStart(baseCompleteUntil, intervalMs)) / intervalMs
+    )
+    if (budget !== null && incrementalPoints > budget) {
+      await this.fullSensorRefresh(request, requestedRange, now)
+      return
+    }
+    await this.incrementalSensorRefresh(request, requestedRange, now)
+  }
+
+  private async fullSensorRefresh(
+    request: LiveRequest,
+    range: { readonly duration: number },
+    requestedAt: Date
+  ): Promise<void> {
+    const maxPoints = this.hooks.getRangeMaxPoints()
+    if (maxPoints === null) return
     this.sensorHistoryInFlight = true
-    this.lastSensorHistoryRefreshAt = now.getTime()
+    this.lastSensorHistoryRefreshAt = requestedAt.getTime()
+    const start = new Date(requestedAt.getTime() - range.duration)
     try {
       const response = await this.monitoringApi.sensorRange(
         this.location,
         iso(start),
-        iso(now),
-        this.hooks.getSensorRangeMaxPoints()
+        iso(requestedAt),
+        maxPoints
       )
       if (!this.hooks.isLiveRequestCurrent(request)) return
-      const current = this.hooks.read()
-      this.hooks.applyData({
-        ...current.data,
-        series: response.series,
-        statistics: response.statistics,
-      })
-      this.hooks.applySourceSuccess('sensor-history', this.hooks.now())
+      const completedAt = this.hooks.now()
+      this.hooks.applyData(
+        applySensorRange(this.hooks.read().data, response, {
+          live: true,
+          nowMs: completedAt.getTime(),
+          durationMs: range.duration,
+        })
+      )
+      this.hooks.applySourceSuccess('sensor-history', completedAt)
+      this.lastSensorFullRefreshAt = completedAt.getTime()
+      this.sensorHistoryFailed = false
     } catch (err) {
       if (!this.hooks.isLiveRequestCurrent(request)) return
+      this.sensorHistoryFailed = true
       this.hooks.applySourceFailure({
         source: 'sensor-history',
         message: err instanceof Error ? err.message : String(err),
         errorAt: this.hooks.now(),
       })
       logger.warn('sensor history refresh failed', err)
+    } finally {
+      this.sensorHistoryInFlight = false
+    }
+  }
+
+  private async incrementalSensorRefresh(
+    request: LiveRequest,
+    range: { readonly duration: number },
+    requestedAt: Date
+  ): Promise<void> {
+    const data = this.hooks.read().data
+    const baseline = data.liveTail.baseCompleteUntil
+    if (baseline === null) return
+    const maxPoints = this.hooks.getRangeMaxPoints()
+    if (maxPoints === null) return
+    const intervalMs = data.liveTail.intervalMs
+    const intervalSeconds = data.sensorIntervalSeconds ?? Math.max(1, Math.round(intervalMs / 1_000))
+    this.sensorHistoryInFlight = true
+    this.lastSensorHistoryRefreshAt = requestedAt.getTime()
+    try {
+      const response = await this.monitoringApi.sensorRange(
+        this.location,
+        iso(new Date(sensorIncrementalStart(baseline, intervalMs))),
+        iso(requestedAt),
+        maxPoints,
+        { intervalSeconds }
+      )
+      if (!this.hooks.isLiveRequestCurrent(request)) return
+      const completedAt = this.hooks.now()
+      const current = this.hooks.read().data
+      const next = applySensorIncremental(current, response, {
+        live: true,
+        nowMs: completedAt.getTime(),
+        durationMs: range.duration,
+      })
+      if (next !== current) this.hooks.applyData(next)
+      this.hooks.applySourceSuccess('sensor-history', completedAt)
+      this.sensorHistoryFailed = false
+    } catch (err) {
+      if (!this.hooks.isLiveRequestCurrent(request)) return
+      this.sensorHistoryFailed = true
+      this.hooks.applySourceFailure({
+        source: 'sensor-history',
+        message: err instanceof Error ? err.message : String(err),
+        errorAt: this.hooks.now(),
+      })
+      logger.warn('sensor incremental refresh failed', err)
     } finally {
       this.sensorHistoryInFlight = false
     }
@@ -177,13 +284,20 @@ export class MonitoringLivePoller {
     }
     const request = this.hooks.liveRequest()
     if (request === null) return
+    const maxPoints = this.hooks.getRangeMaxPoints()
+    if (maxPoints === null) return
     this.controlWindowInFlight = true
     this.hooks.setFlags({ tailLoading: true })
     try {
       const now = this.hooks.now()
       const last = lastControlTimestamp(this.hooks.read().data)
       const start = controlTailStart(now, last)
-      const resp = await this.monitoringApi.controlTail(this.location, iso(start), iso(now))
+      const resp = await this.monitoringApi.controlTail(
+        this.location,
+        iso(start),
+        iso(now),
+        maxPoints
+      )
       if (!this.hooks.isLiveRequestCurrent(request)) return
       const previous = this.hooks.read()
       if (previous.data.controlHistory) {
@@ -191,12 +305,16 @@ export class MonitoringLivePoller {
       } else {
         this.hooks.applyData(applyControlFresh(previous.data, resp))
       }
-      if (previous.sourceOutcomes['control-history'].status === 'failed') {
-        if (previous.data.controlHistory === null && this.controlRecoveryNotBefore === null) {
-          this.controlRecoveryNotBefore = new Date(now.getTime() + 60_000)
-        }
-        await this.reconcile(request)
+      // A healthy tail refreshes control freshness. After a failure the tail
+      // alone cannot prove the window is complete: the next full read decides
+      // (it clears the error at once when the outage has ended, while a
+      // persistent history outage stays visible).
+      const wasFailed = previous.sourceOutcomes['control-history'].status === 'failed'
+      if (!wasFailed && !this.controlReconcilePending) {
+        this.hooks.applySourceSuccess('control-history', this.hooks.now())
       }
+      if (wasFailed) this.controlReconcilePending = true
+      if (this.controlReconcilePending) await this.reconcile(request)
     } catch (err) {
       if (!this.hooks.isLiveRequestCurrent(request)) return
       logger.warn('control window failed, reconciling', err)
@@ -214,10 +332,8 @@ export class MonitoringLivePoller {
 
   private async reconcile(request: LiveRequest): Promise<void> {
     const now = this.hooks.now()
-    if (this.controlRecoveryNotBefore !== null && now < this.controlRecoveryNotBefore) return
-    const outcome = this.hooks.read().sourceOutcomes['control-history']
-    const lastAttemptAt =
-      this.lastReconcileAt ?? (outcome?.status === 'failed' ? outcome.errorAt : null)
+    // The first reconcile runs immediately; later attempts follow the cadence.
+    const lastAttemptAt = this.lastReconcileAt
     if (
       !this.hooks.isLiveRequestCurrent(request) ||
       this.reconciling ||
@@ -226,6 +342,8 @@ export class MonitoringLivePoller {
       return
     this.lastReconcileAt = now
     if (!this.hooks.isActive()) return
+    const maxPoints = this.hooks.getRangeMaxPoints()
+    if (maxPoints === null) return
     this.reconciling = true
     this.hooks.setFlags({ reconciling: true })
     try {
@@ -234,12 +352,12 @@ export class MonitoringLivePoller {
         this.location,
         iso(start),
         iso(end),
-        CONTROL_HISTORY_MAX_POINTS
+        maxPoints
       )
       if (!this.hooks.isLiveRequestCurrent(request)) return
       this.hooks.applyData(applyControlFresh(this.hooks.read().data, resp))
       this.hooks.applySourceSuccess('control-history', this.hooks.now())
-      this.controlRecoveryNotBefore = null
+      this.controlReconcilePending = false
     } catch (err) {
       if (!this.hooks.isLiveRequestCurrent(request)) return
       this.hooks.applySourceFailure({

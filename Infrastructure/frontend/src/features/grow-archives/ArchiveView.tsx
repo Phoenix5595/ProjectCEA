@@ -265,6 +265,8 @@ function buildArchiveAlignedData(
     bands,
     photoperiod: [],
     nowIndex: -1,
+    nowMs: x[x.length - 1] ?? Date.now(),
+    sensorIntervalSeconds: null,
     aggregated: graph.tier === 'overview',
     ...(overview === undefined ? {} : { overview }),
   }

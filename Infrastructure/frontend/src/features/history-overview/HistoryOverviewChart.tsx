@@ -24,7 +24,7 @@ import {
 import '../monitoring/styles/monitoring.css'
 import { UPlotChart, createMonitoringChartFeed } from '../monitoring/charts'
 import type { AlignedData } from '../monitoring/data'
-import type { MonitoringManifest } from '../monitoring/config'
+import type { MonitoringManifest, TimeseriesPanelSpec } from '../monitoring/config'
 import type { MonitoringRequestContext } from '../monitoring/api'
 import type { FixedRange } from '../monitoring/state'
 import { splitChartGroups } from '../monitoring/pages/chartGroups'
@@ -33,6 +33,7 @@ import { buildHistoryOverviewAlignedData } from './aligned'
 import { drillDownRange } from './buckets'
 import { HistoryOverviewTables } from './HistoryOverviewTables'
 import { useHistoryOverview } from './useHistoryOverview'
+import { useOverviewBudget } from './useOverviewBudget'
 
 export interface HistoryOverviewChartProps {
   readonly data: AlignedData
@@ -43,6 +44,7 @@ export interface HistoryOverviewChartProps {
   readonly height?: number
   /** Accessible chart title/label. */
   readonly label?: string
+  readonly onRequestBudgetChange?: (maxPoints: number) => void
 }
 
 /** Click selections carry zero width; `drillDownRange` widens them to a day. */
@@ -55,6 +57,7 @@ export function HistoryOverviewChart({
   historicalDrillDown = false,
   height,
   label,
+  onRequestBudgetChange,
 }: HistoryOverviewChartProps) {
   const feed = useMemo(() => createMonitoringChartFeed(data, range), [data, range])
   const frameRef = useRef<HTMLDivElement | null>(null)
@@ -115,7 +118,14 @@ export function HistoryOverviewChart({
       onPointerDown={handlePointerDown}
       onClick={handleClick}
     >
-      <UPlotChart feed={feed} onZoom={handleZoom} title={label} description={description} />
+      <UPlotChart
+        feed={feed}
+        onZoom={handleZoom}
+        title={label}
+        description={description}
+        onRequestBudgetChange={onRequestBudgetChange}
+        bucketIntervalSeconds={data.sensorIntervalSeconds}
+      />
     </div>
   )
 }
@@ -147,8 +157,10 @@ function retainSeries(aligned: AlignedData, series: AlignedData['series']): Alig
     x: aligned.x,
     series,
     bands: aligned.bands.filter(band => keep.has(band.minKey) && keep.has(band.maxKey)),
-    photoperiod: [],
+    photoperiod: aligned.photoperiod,
     nowIndex: aligned.nowIndex,
+    nowMs: aligned.nowMs,
+    sensorIntervalSeconds: aligned.sensorIntervalSeconds,
     aggregated: aligned.aggregated,
     overview: aligned.overview,
   }
@@ -166,12 +178,18 @@ function paneGroups(
   if (panels.length >= 2 && manifest !== undefined) {
     return splitChartGroups(manifest, aligned)
   }
-  const sensors = aligned.series.filter(candidate => candidate.source === 'sensor')
   return {
-    climate: retainSeries(aligned, sensors),
+    climate: retainSeries(
+      aligned,
+      aligned.series.filter(
+        candidate => candidate.source === 'sensor' || candidate.source === 'climate'
+      )
+    ),
     device: retainSeries(
       aligned,
-      aligned.series.filter(item => item.source !== 'sensor')
+      aligned.series.filter(
+        candidate => candidate.source !== 'sensor' && candidate.source !== 'climate'
+      )
     ),
   }
 }
@@ -187,22 +205,52 @@ export function HistoryOverviewView({
   climateHeight,
   deviceHeight,
 }: HistoryOverviewViewProps) {
-  const { sensor, control, loading, error, retry } = useHistoryOverview({
+  const timeseriesPanels: TimeseriesPanelSpec[] =
+    manifest === undefined
+      ? []
+      : manifest.panels.filter(
+          (panel): panel is TimeseriesPanelSpec => panel.kind === 'timeseries'
+        )
+  // R1 budget: measure the first rendered panel's y-axis gutters before the
+  // first request; charts then report their exact plot width.
+  const budget = useOverviewBudget(
+    timeseriesPanels[controlOnly ? 1 : 0]?.families.length ?? (controlOnly ? 1 : 2)
+  )
+  const { sensor, control, climate, loading, error, retry } = useHistoryOverview({
     room,
     range,
     requestContext,
     controlOnly,
+    maxPoints: budget.budget,
   })
   const aligned = useMemo(
     () =>
       buildHistoryOverviewAlignedData({
         sensor,
         control,
+        climate,
         manifest,
         includeAutomation: controlOnly,
       }),
-    [sensor, control, manifest, controlOnly]
+    [sensor, control, climate, manifest, controlOnly]
   )
+  const measuredFrame =
+    budget.budget === null ? (
+      <div className="mon-main">
+        <section className="mon-card">
+          <div
+            ref={budget.placeholderRef}
+            className="mon-chart__frame"
+            aria-hidden="true"
+            style={{
+              height: controlOnly
+                ? (deviceHeight ?? DEFAULT_DEVICE_HEIGHT)
+                : (climateHeight ?? DEFAULT_CLIMATE_HEIGHT),
+            }}
+          />
+        </section>
+      </div>
+    ) : null
 
   if (loading) {
     return (
@@ -210,6 +258,7 @@ export function HistoryOverviewView({
         <div role="status" className="mon-banner">
           Loading history overview for {rangeLabel(range)}…
         </div>
+        {measuredFrame}
       </div>
     )
   }
@@ -248,16 +297,16 @@ export function HistoryOverviewView({
             onDetail={onDetail}
             height={deviceHeight ?? DEFAULT_DEVICE_HEIGHT}
             label="Aggregated relay time"
+            onRequestBudgetChange={points => budget.reportBudget('relay', points)}
           />
         </section>
       </div>
     )
   }
 
-  const { climate, device } = paneGroups(manifest, aligned)
-  const panels = timeseriesTitles(manifest)
-  const climateTitle = panels[0] ?? 'Climate conditions'
-  const deviceTitle = panels[1] ?? 'Relay & device activity'
+  const { climate: climatePane, device } = paneGroups(manifest, aligned)
+  const climateTitle = timeseriesPanels[0]?.title ?? 'Climate conditions'
+  const deviceTitle = timeseriesPanels[1]?.title ?? 'Relay & device activity'
 
   return (
     <div className="mon-page">
@@ -265,12 +314,13 @@ export function HistoryOverviewView({
         <section className="mon-card" aria-label={climateTitle}>
           <h2 className="mon-card__title">{climateTitle}</h2>
           <HistoryOverviewChart
-            data={climate}
+            data={climatePane}
             range={range}
             onDetail={onDetail}
             historicalDrillDown={historicalDrillDown}
             height={climateHeight ?? DEFAULT_CLIMATE_HEIGHT}
             label={climateTitle}
+            onRequestBudgetChange={points => budget.reportBudget('climate', points)}
           />
         </section>
         <section className="mon-card" aria-label={deviceTitle}>
@@ -282,6 +332,7 @@ export function HistoryOverviewView({
             historicalDrillDown={historicalDrillDown}
             height={deviceHeight ?? DEFAULT_DEVICE_HEIGHT}
             label={deviceTitle}
+            onRequestBudgetChange={points => budget.reportBudget('device', points)}
           />
         </section>
         {(sensor?.statistics.length ?? 0) > 0 && (
@@ -292,9 +343,4 @@ export function HistoryOverviewView({
       </div>
     </div>
   )
-}
-
-function timeseriesTitles(manifest: MonitoringManifest | undefined): string[] {
-  if (manifest === undefined) return []
-  return manifest.panels.filter(panel => panel.kind === 'timeseries').map(panel => panel.title)
 }

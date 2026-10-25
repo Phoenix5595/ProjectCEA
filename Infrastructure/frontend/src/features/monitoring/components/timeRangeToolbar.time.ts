@@ -79,35 +79,33 @@ export function durationToLabel(duration: number): string | null {
 }
 
 /**
- * Minimum history span on the Historical routes, in milliseconds. A fixed
- * range shorter than this is the regular Monitoring surface, never history:
- * the pages route it to `/{sector}/monitoring` with the exact range instead of
- * stretching it to the minimum.
+ * Default fixed window for a Historical entry with no usable range, in
+ * milliseconds. The app entry point and the pages both fall back to it so a
+ * direct page mount and a routed entry show the same 31-day survey window.
  */
-export const MIN_HISTORY_MS = 5 * 24 * 3600_000
+export const HISTORICAL_DEFAULT_DURATION_MS = 31 * 24 * 3600_000
 
 /**
  * Historical-route preset: a fixed `now`-anchored range, never a live window.
  *
  * `duration` presets subtract a fixed millisecond span from `now`; `months`
  * presets subtract whole Toronto calendar months (day clamp + DST resolution).
- * `route` names the surface the preset lands on: `monitoring` for the
- * five-day minimum-history handoff, `history` for the Historical page itself.
+ * Every preset stays on the Historical page: a short range is still an exact
+ * fixed Historical range under R3, never a hand-off to Monitoring.
  */
 export interface HistoricalPreset {
   readonly label: string
-  readonly route: 'history' | 'monitoring'
   readonly duration?: number
   readonly months?: number
 }
 
 /** Historical-route replacement for the live `PRESETS` group. */
 export const HISTORICAL_PRESETS: readonly HistoricalPreset[] = [
-  { label: '5 days', route: 'monitoring', duration: MIN_HISTORY_MS },
-  { label: '7 days', route: 'history', duration: 7 * 24 * 3600_000 },
-  { label: '2 weeks', route: 'history', duration: 14 * 24 * 3600_000 },
-  { label: '1 month', route: 'history', months: 1 },
-  { label: '3 months', route: 'history', months: 3 },
+  { label: '5 days', duration: 5 * 24 * 3600_000 },
+  { label: '7 days', duration: 7 * 24 * 3600_000 },
+  { label: '2 weeks', duration: 14 * 24 * 3600_000 },
+  { label: '1 month', months: 1 },
+  { label: '3 months', months: 3 },
 ]
 
 /**

@@ -24,10 +24,12 @@ Full text: `Infrastructure/frontend/REQUIREMENTS.md` → "Owner graph rules (R1�
 | Concern | File(s) |
 |---------|---------|
 | Room manifests | `config/flowerManifest.ts`, `config/vegManifest.ts`, `config/manifestTypes.ts` |
-| Store + 1 Hz live loop | `state/monitoringStore.ts`, `state/monitoringStore.poller.ts` |
+| Store + 1 Hz live loop | `state/monitoringStore.ts`, `state/monitoringStore.poller.ts`, `state/monitoringStore.pollingPolicy.ts` (incremental refresh cadence, fixed-range retries 5 s → 15 s → 60 s) |
+| Sensor base + live tail (R4) | `state/monitoringStore.sensor.ts` (completed-bucket base, incremental replacement), `data/liveTail.ts` (`LiveTailBuffer`) |
+| Point budget (R1) | `data/pointBudget.ts`, `pages/useMonitoringRangeBudget.ts`, `charts/useRequestBudgetReporter.ts` |
 | Control-state merge | `state/monitoringStore.control.ts`, `state/monitoringStore.merge.ts` |
-| Series alignment | `data/alignSeries.ts`, `data/alignSeries.*.ts` |
-| uPlot charts | `charts/UPlotChart.tsx`, `charts/options/`, `charts/plugins/` |
+| Series alignment | `data/alignSeries.ts`, `data/alignSeries.*.ts`, `data/panelAlignment.ts` |
+| uPlot charts | `charts/UPlotChart.tsx`, `charts/BucketBadge.tsx`, `charts/options/` (incl. `sensorBands.ts` min–max bands), `charts/plugins/` |
 | Tables | `components/ChartDataTable.tsx`, `components/StatisticsTable.tsx`, `components/RoomAveragesTable.tsx`, `components/SensorValueTable.tsx` |
 | Time-range toolbar | `components/TimeRangeToolbar.tsx` and inputs/time helpers |
 | Design/accessibility tokens | `designTokens.ts`, `accessibilityPolicy.ts` |

@@ -123,6 +123,8 @@ class PanelChartFeed extends ChartFeed implements MonitoringPanelChartFeed {
   private readonly panel: TimeseriesPanelSpec | undefined
   private readonly seriesSpecs: SeriesSpec[]
   private readonly now: () => Date
+  /** Live `now` of the latest unpaused alignment; a paused view keeps drawing at it. */
+  private lastLiveNow: Date | null = null
 
   constructor(options: MonitoringPanelChartFeedOptions) {
     const initialRange = { kind: 'live', duration: 3_600_000 } as const
@@ -155,18 +157,28 @@ class PanelChartFeed extends ChartFeed implements MonitoringPanelChartFeed {
 
   private inputFor(snapshot: StoreState): AlignInput {
     const fulfilled = snapshot.fulfilledRange
+    // A paused live view freezes its viewport where it was last drawn, unless
+    // a newer range (requested while paused) has since been fulfilled.
+    const paused = snapshot.pausedAt !== null && snapshot.pausedAt !== undefined
+    let liveNow = this.now()
+    if (paused) {
+      const frozen = this.lastLiveNow ?? snapshot.pausedAt ?? liveNow
+      const fulfilledEnd = fulfilled?.end
+      liveNow = fulfilledEnd !== undefined && fulfilledEnd > frozen ? fulfilledEnd : frozen
+    }
+    this.lastLiveNow = liveNow
     if (fulfilled === null) {
       return {
         ...snapshot.data,
         range: snapshot.range,
-        now: this.now(),
+        now: liveNow,
         seriesSpecs: this.seriesSpecs,
       }
     }
     return {
       ...snapshot.data,
       range: fulfilled.range,
-      now: fulfilled.range.kind === 'live' ? this.now() : fulfilled.end,
+      now: fulfilled.range.kind === 'live' ? liveNow : fulfilled.end,
       seriesSpecs: this.seriesSpecs,
     }
   }
@@ -222,6 +234,8 @@ function emptyData(): AlignedData {
     bands: [],
     photoperiod: [],
     nowIndex: -1,
+    nowMs: 0,
+    sensorIntervalSeconds: null,
     aggregated: false,
   }
 }

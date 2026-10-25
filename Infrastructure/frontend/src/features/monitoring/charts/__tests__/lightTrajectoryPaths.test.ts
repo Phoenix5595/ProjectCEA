@@ -49,6 +49,8 @@ function alignedData(series: AlignedSeries): AlignedData {
     bands: [],
     photoperiod: [],
     nowIndex: 0,
+    nowMs: 0,
+    sensorIntervalSeconds: null,
     aggregated: false,
   }
 }

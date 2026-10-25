@@ -1,4 +1,5 @@
-import { CONTROL_HISTORY_MAX_POINTS, MonitoringApi, SENSOR_RANGE_MAX_POINTS } from '../api'
+import { MonitoringApi } from '../api'
+import { LiveTailBuffer } from '../data/liveTail'
 import { logger } from '../../../utils/logger'
 
 import { applyInitialPartial } from './monitoringStore.control'
@@ -14,16 +15,21 @@ import {
   applySourceSuccessToState,
 } from './monitoringStore.outcomes'
 import { MonitoringLivePoller } from './monitoringStore.poller'
+import { fixedRangeRetryDelay } from './monitoringStore.pollingPolicy'
 import { rangeBounds, rangeChanged } from './monitoringStore.range'
-import type { MonitoringRange, MonitoringStoreOptions, StoreState } from './monitoringStore.types'
+import { applySensorRange, applyLiveValues } from './monitoringStore.sensor'
+import type {
+  MonitoringRange,
+  MonitoringStoreMode,
+  MonitoringStoreOptions,
+  StoreState,
+} from './monitoringStore.types'
 
-const DEFAULT_POLL_MS = 1000
-const DEFAULT_DURATION_MS = 3600_000
-
-interface RangeBudget {
-  readonly sensor: number
-  readonly control: number
-}
+const DEFAULT_POLL_MS = 1_000
+const DEFAULT_DURATION_MS = 3_600_000
+/** A budget change smaller than this does not justify a reload. */
+const BUDGET_RELOAD_THRESHOLD = 0.1
+const BUDGET_RELOAD_DEBOUNCE_MS = 500
 
 export class MonitoringStore {
   private state: StoreState
@@ -31,12 +37,14 @@ export class MonitoringStore {
   private readonly pollIntervalMs: number
   private readonly now: () => Date
   private readonly loadDeviceRegistry: MonitoringStoreOptions['loadDeviceRegistry']
+  private readonly mode: MonitoringStoreMode
   private activationGeneration = 0
   private registryLoadingGeneration: number | null = null
   private registryLoadedGeneration: number | null = null
   private registryLoadFailed = false
   private readonly poller: MonitoringLivePoller
   private timerId: ReturnType<typeof setInterval> | null = null
+  private budgetTimer: ReturnType<typeof setTimeout> | null = null
   private subscriberCount = 0
   private active = false
   private paused = false
@@ -44,10 +52,11 @@ export class MonitoringStore {
   private lastRangeIdentity?: MonitoringRange
   private rangeInFlight = false
   private rangeController: AbortController | null = null
-  private rangeBudget: RangeBudget = {
-    sensor: SENSOR_RANGE_MAX_POINTS,
-    control: CONTROL_HISTORY_MAX_POINTS,
-  }
+  /** Page budget; the first range load waits until a chart reports one. */
+  private rangeBudget: number | null = null
+  private lastLiveDuration = DEFAULT_DURATION_MS
+  private fixedRetry: { failures: number; nextAt: number } | null = null
+  private budgetReloadPending = false
 
   constructor(
     private readonly location: string,
@@ -57,14 +66,20 @@ export class MonitoringStore {
     this.pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_MS
     this.now = options.now ?? (() => new Date())
     this.loadDeviceRegistry = options.loadDeviceRegistry
+    this.mode = options.mode ?? 'monitoring'
+    this.lastLiveDuration = options.defaultLiveDurationMs ?? DEFAULT_DURATION_MS
     this.state = this.initialState()
     this.poller = new MonitoringLivePoller(location, monitoringApi, {
       read: () => this.state,
-      getSensorRangeMaxPoints: () => this.rangeBudget.sensor,
+      getRangeMaxPoints: () => this.rangeBudget,
       applyData: data => this.setState({ data }),
+      applyLiveValues: values => {
+        this.setState({ data: applyLiveValues(this.state.data, values) })
+      },
       setFlags: patch => this.setState(patch),
       isActive: () => this.active,
       isPaused: () => this.paused,
+      isHistorical: () => this.mode === 'historical',
       now: () => this.now(),
       liveRequest: () =>
         this.state.range.kind === 'live'
@@ -86,6 +101,11 @@ export class MonitoringStore {
 
   getSnapshot(): StoreState {
     return this.state
+  }
+
+  /** Duration of the most recent live range; the Now button restores it. */
+  lastLiveDurationMs(): number {
+    return this.lastLiveDuration
   }
 
   subscribe(listener: () => void): () => void {
@@ -114,10 +134,12 @@ export class MonitoringStore {
   pause(): void {
     this.paused = true
     this.stopTimer()
+    this.setState({ pausedAt: this.now() })
   }
 
   resume(): void {
     this.paused = false
+    this.setState({ pausedAt: null })
     if (this.subscriberCount > 0 && this.timerId === null) {
       this.startTimer()
       void this.tick()
@@ -129,32 +151,64 @@ export class MonitoringStore {
     if (sameRange(this.state.range, nextRange)) return
     this.rangeSequence += 1
     this.abortRangeLoad()
+    this.fixedRetry = null
     this.setState({ range: nextRange, isLive: false })
     void this.loadRangeIfChanged()
   }
 
   setLiveRange(duration: number): void {
     const nextRange: MonitoringRange = { kind: 'live', duration }
+    this.lastLiveDuration = duration
     if (sameRange(this.state.range, nextRange)) return
     this.rangeSequence += 1
     this.abortRangeLoad()
+    this.fixedRetry = null
     this.setState({ range: nextRange, isLive: true })
     void this.loadRangeIfChanged()
   }
 
+  /**
+   * Install the page budget (minimum plot width over mounted charts). The
+   * first call starts the first range load; later calls reload when the
+   * budget moved by more than 10 %, debounced to settle resize bursts.
+   */
   setRangeBudget(maxPoints: number): void {
-    if (this.rangeBudget.sensor === maxPoints && this.rangeBudget.control === maxPoints) return
-    this.rangeBudget = { sensor: maxPoints, control: maxPoints }
+    if (!Number.isFinite(maxPoints) || maxPoints <= 0) return
+    const next = Math.max(1, Math.floor(maxPoints))
+    const previous = this.rangeBudget
+    this.rangeBudget = next
+    if (previous === null) {
+      if (this.active) void this.loadRangeIfChanged()
+      return
+    }
+    if (previous === next) return
+    if (Math.abs(next - previous) / previous <= BUDGET_RELOAD_THRESHOLD) return
+    this.scheduleBudgetReload()
   }
 
   /** Re-run the initial range load, preserving last-good data on failure. */
   retry(): void {
     this.rangeSequence += 1
     this.abortRangeLoad()
+    this.fixedRetry = null
     void this.loadRangeIfChanged({ force: true })
     if (this.active && this.registryLoadFailed) {
       this.loadDeviceRegistryForActivation(this.activationGeneration)
     }
+  }
+
+  private scheduleBudgetReload(): void {
+    clearTimeout(this.budgetTimer ?? undefined)
+    this.budgetTimer = setTimeout(() => {
+      this.budgetTimer = null
+      if (!this.active) return
+      // A paused view makes no requests; the reload runs on the resume tick.
+      if (this.rangeInFlight || this.paused) {
+        this.budgetReloadPending = true
+        return
+      }
+      void this.loadRangeIfChanged({ force: true })
+    }, BUDGET_RELOAD_DEBOUNCE_MS)
   }
 
   private loadDeviceRegistryForActivation(generation: number): void {
@@ -208,13 +262,15 @@ export class MonitoringStore {
 
   private initialState(): StoreState {
     return {
-      range: { kind: 'live', duration: DEFAULT_DURATION_MS },
+      range: { kind: 'live', duration: this.lastLiveDuration },
       fulfilledRange: null,
       isLive: true,
       data: {
         series: [],
         statistics: [],
         live: [],
+        liveTail: new LiveTailBuffer(),
+        sensorIntervalSeconds: null,
         controlHistory: null,
         projectionHistory: null,
         photoperiod: [],
@@ -234,6 +290,7 @@ export class MonitoringStore {
       errors: [],
       lastGoodRangeAt: null,
       rangeErrorAt: null,
+      pausedAt: null,
     }
   }
 
@@ -245,10 +302,10 @@ export class MonitoringStore {
   }
 
   private stopTimer(): void {
-    if (this.timerId !== null) {
-      clearInterval(this.timerId)
-      this.timerId = null
-    }
+    clearInterval(this.timerId ?? undefined)
+    this.timerId = null
+    clearTimeout(this.budgetTimer ?? undefined)
+    this.budgetTimer = null
   }
 
   private setState(patch: Partial<StoreState>): void {
@@ -264,6 +321,10 @@ export class MonitoringStore {
   private tick(): void {
     void this.loadRangeIfChanged()
     this.poller.tick()
+    const retry = this.fixedRetry
+    if (retry !== null && this.now().getTime() >= retry.nextAt) {
+      void this.loadRangeIfChanged({ force: true })
+    }
   }
 
   private abortRangeLoad(): void {
@@ -274,20 +335,32 @@ export class MonitoringStore {
 
   private async loadRangeIfChanged(options: { force?: boolean } = {}): Promise<void> {
     if (this.rangeInFlight) return
-    if (!options.force && !rangeChanged(this.state.range, this.lastRangeIdentity)) return
+    if (this.rangeBudget === null) return
+    const pendingReload = this.budgetReloadPending
+    if (!pendingReload && !options.force && !rangeChanged(this.state.range, this.lastRangeIdentity)) {
+      return
+    }
+    this.budgetReloadPending = false
     const sequence = ++this.rangeSequence
     const requestedRange = this.state.range
+    const budget = this.rangeBudget
     const { start: requestedStart, end: requestedEnd } = rangeBounds(this.state.range, this.now())
     const controller = new AbortController()
     this.rangeController = controller
     this.rangeInFlight = true
     this.setState({ loading: true })
+    const projectionRequest =
+      this.mode === 'historical'
+        ? Promise.resolve(null)
+        : this.monitoringApi.controlProjection(this.location, {
+            signal: controller.signal,
+          })
     const settled = await Promise.allSettled([
       this.monitoringApi.sensorRange(
         this.location,
         iso(requestedStart),
         iso(requestedEnd),
-        this.rangeBudget.sensor,
+        budget,
         {
           signal: controller.signal,
         }
@@ -296,14 +369,13 @@ export class MonitoringStore {
         this.location,
         iso(requestedStart),
         iso(requestedEnd),
-        this.rangeBudget.control,
+        budget,
+        undefined,
         {
           signal: controller.signal,
         }
       ),
-      this.monitoringApi.controlProjection(this.location, {
-        signal: controller.signal,
-      }),
+      projectionRequest,
     ])
     if (this.rangeController === controller) {
       this.rangeInFlight = false
@@ -319,12 +391,10 @@ export class MonitoringStore {
       settled[1],
       completedAt
     )
-    const projectionResult = applySettledSource(
-      controlResult.state,
-      'projection',
-      settled[2],
-      completedAt
-    )
+    const projectionResult =
+      this.mode === 'historical'
+        ? { state: controlResult.state, value: null }
+        : applySettledSource(controlResult.state, 'projection', settled[2], completedAt)
     const sensorRange = sensorResult.value
     const controlRange = controlResult.value
     const projection = projectionResult.value
@@ -333,14 +403,34 @@ export class MonitoringStore {
     this.lastRangeIdentity = requestedRange
     const hasHistory = sensorRange !== null || controlRange !== null
     const rangeFreshness = deriveRangeFreshness(outcomes)
+    let data = projectionResult.state.data
+    if (sensorRange !== null) {
+      data = applySensorRange(data, sensorRange, {
+        live: requestedRange.kind === 'live',
+        nowMs: completedAt.getTime(),
+        durationMs: requestedRange.kind === 'live' ? requestedRange.duration : 0,
+      })
+      if (requestedRange.kind === 'live') this.poller.markFullRangeLoad(completedAt)
+    }
+    if (hasHistory || projection !== null) {
+      data = applyInitialPartial(data, controlRange, projection)
+    }
+    this.fixedRetry =
+      requestedRange.kind === 'fixed' &&
+      (outcomes['sensor-history'].status === 'failed' ||
+        outcomes['control-history'].status === 'failed')
+        ? {
+            failures: (this.fixedRetry?.failures ?? 0) + 1,
+            nextAt:
+              completedAt.getTime() +
+              fixedRangeRetryDelay((this.fixedRetry?.failures ?? 0) + 1),
+          }
+        : null
     this.setState({
       loading: false,
       errors,
       sourceOutcomes: outcomes,
-      data:
-        hasHistory || projection !== null
-          ? applyInitialPartial(this.state.data, sensorRange, controlRange, projection)
-          : this.state.data,
+      data,
       ...(hasHistory
         ? {
             fulfilledRange: {
@@ -353,5 +443,9 @@ export class MonitoringStore {
         : {}),
       ...rangeFreshness,
     })
+    if (this.budgetReloadPending && this.active) {
+      this.budgetReloadPending = false
+      void this.loadRangeIfChanged({ force: true })
+    }
   }
 }

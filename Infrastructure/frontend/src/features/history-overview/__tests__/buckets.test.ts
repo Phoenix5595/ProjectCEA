@@ -59,7 +59,9 @@ describe('historyOverviewBucketBounds', () => {
     const end = date('2026-01-02T00:00:00.000Z')
     expect(() => historyOverviewBucketBounds(start, end, 9)).toThrow(HistoryOverviewRangeError)
     expect(() => historyOverviewBucketBounds(start, end, 10.5)).toThrow(HistoryOverviewRangeError)
-    expect(() => historyOverviewBucketBounds(start, end, 1001)).toThrow(HistoryOverviewRangeError)
+    expect(() => historyOverviewBucketBounds(start, end, 4001)).toThrow(
+      HistoryOverviewRangeError
+    )
     expect(() => historyOverviewBucketBounds(end, start, 600)).toThrow(HistoryOverviewRangeError)
     expect(() => historyOverviewBucketBounds(new Date(NaN), end, 10)).toThrow(
       HistoryOverviewRangeError

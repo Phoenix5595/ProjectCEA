@@ -155,6 +155,19 @@ const OVERVIEW_DATE_FORMATS = {
   }),
 }
 
+const TORONTO_CLOCK_SECONDS = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Toronto',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+})
+
+/** Toronto wall-clock time with seconds, shared by bucket tooltips. */
+export function formatTorontoClock(instantMs: number): string {
+  return TORONTO_CLOCK_SECONDS.format(new Date(instantMs))
+}
+
 /** Build scales and axes for every family present in the data. */
 export function buildScales(data: AlignedData): ChartScales {
   const families = new Set<ChartFamily>()

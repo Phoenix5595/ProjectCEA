@@ -8,6 +8,8 @@ export function emptyAlignedData(): AlignedData {
     bands: [],
     photoperiod: [],
     nowIndex: -1,
+    nowMs: Date.now(),
+    sensorIntervalSeconds: null,
     aggregated: false,
   }
 }

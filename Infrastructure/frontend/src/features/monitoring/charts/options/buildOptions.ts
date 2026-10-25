@@ -16,6 +16,7 @@ import { tooltipPlugin } from '../tooltip/chartTooltip'
 import { buildBands } from './bands'
 import { buildScales } from './scales'
 import { lightProjectedStrokePlugin } from './lightTrajectoryPaths'
+import { chartDataWithBands } from './sensorBands'
 import { buildSeries } from './seriesOptions'
 import { readToken } from './tokens'
 
@@ -40,7 +41,7 @@ export function buildOptions(
   const { scales, axes } = buildScales(data)
   const currentData = getData ?? (() => data)
   const series = buildSeries(data, currentData)
-  const bands = buildBands(data)
+  const bands = buildBands(chartDataWithBands(data).data)
 
   const initialNowX =
     data.nowIndex >= 0 && data.nowIndex < data.x.length ? data.x[data.nowIndex] : null

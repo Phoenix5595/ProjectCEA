@@ -11,47 +11,54 @@ import {
   MonitoringResponse,
   ProjectionPublicationResponse,
 } from './contracts'
-import type { ControlReadScope, ControlMonitoringResponse } from './contracts'
+import type { ControlHistoryScope, ControlMonitoringResponse } from './contracts'
 
-/** Interim shared chart budget; T19 will tune panel-specific budgets. */
-export const SENSOR_RANGE_MAX_POINTS = 2000
-
-/** Interim recorded-control-history budget; T19 will tune panel-specific budgets. */
-export const CONTROL_HISTORY_MAX_POINTS = 1000
+/** Extra range options: an explicit bucket interval for incremental reads. */
+export interface SensorRangeOptions extends MonitoringRequestOptions {
+  /** Must be one of the backend's nice intervals; only sent with `maxPoints`. */
+  readonly intervalSeconds?: number
+}
 
 export class MonitoringApi {
   /**
    * `controlScope` selects the backend read scope for recorded control
-   * history/tail: room Monitoring/Historical readers pass `lights` (query
-   * `scope=lights`, non-light families rejected) while the `all` default —
-   * used by Automation and generic callers — keeps the full-history request
-   * and contract unchanged.
+   * history/tail when a call does not pass one explicitly: room
+   * Monitoring/Historical readers pass `room` while the `all` default — used
+   * by Automation and generic callers — keeps the full-history request and
+   * contract unchanged. Overview endpoints keep their own `all | lights`
+   * scope and do not go through this class's history/tail methods.
    */
   constructor(
     requestContext?: MonitoringRequestContext,
     client?: MonitoringClient,
-    controlScope: ControlReadScope = 'all'
+    controlScope: ControlHistoryScope = 'all'
   ) {
     this.client = client ?? new MonitoringClient(requestContext)
     this.controlScope = controlScope
   }
 
   private readonly client: MonitoringClient
-  private readonly controlScope: ControlReadScope
+  private readonly controlScope: ControlHistoryScope
 
   sensorRange(
     location: string,
     start?: string,
     end?: string,
     maxPoints?: number,
-    options?: MonitoringRequestOptions
+    options?: SensorRangeOptions
   ): Promise<MonitoringResponse> {
     const path = `/api/sensors/monitoring/range/${encodeURIComponent(location)}${buildQuery({
       start,
       end,
       max_points: maxPoints?.toString(),
+      interval_seconds:
+        maxPoints === undefined ? undefined : options?.intervalSeconds?.toString(),
     })}`
-    return this.client.get(path, MonitoringResponse, options)
+    const requestOptions: MonitoringRequestOptions | undefined =
+      options === undefined
+        ? undefined
+        : { signal: options.signal, timeoutMs: options.timeoutMs }
+    return this.client.get(path, MonitoringResponse, requestOptions)
   }
 
   sensorLive(
@@ -63,37 +70,39 @@ export class MonitoringApi {
     return this.client.get(path, z.array(LiveSensorValue), options)
   }
 
-
   controlRange(
     location: string,
     start?: string,
     end?: string,
     maxPoints?: number,
+    scope: ControlHistoryScope = this.controlScope,
     options?: MonitoringRequestOptions
   ): Promise<ControlMonitoringResponse> {
     const path = `/api/monitoring/control/${encodeURIComponent(location)}/history${buildQuery({
       start,
       end,
       max_points: maxPoints?.toString(),
-      // Scope selection stays explicitly typed; `all` relies on the backend default.
-      scope: this.controlScope === 'lights' ? 'lights' : undefined,
+      // `all` relies on the backend default; every other scope is explicit.
+      scope: scope === 'all' ? undefined : scope,
     })}`
-    return this.client.get(path, controlMonitoringContract(this.controlScope), options)
+    return this.client.get(path, controlMonitoringContract(scope), options)
   }
 
   controlTail(
     location: string,
     start?: string,
     end?: string,
+    maxPoints?: number,
+    scope: ControlHistoryScope = this.controlScope,
     options?: MonitoringRequestOptions
   ): Promise<ControlMonitoringResponse> {
     const path = `/api/monitoring/control/${encodeURIComponent(location)}/tail${buildQuery({
       start,
       end,
-      max_points: CONTROL_HISTORY_MAX_POINTS.toString(),
-      scope: this.controlScope === 'lights' ? 'lights' : undefined,
+      max_points: maxPoints?.toString(),
+      scope: scope === 'all' ? undefined : scope,
     })}`
-    return this.client.get(path, controlMonitoringContract(this.controlScope), options)
+    return this.client.get(path, controlMonitoringContract(scope), options)
   }
 
   controlProjection(
@@ -112,6 +121,7 @@ export class MonitoringApi {
     const path = `/api/monitoring/control/${encodeURIComponent(location)}/current`
     return this.client.get(path, CurrentPublicationResponse, options)
   }
+
   relayTimeline(
     location: string,
     start: string,

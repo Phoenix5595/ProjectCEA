@@ -25,6 +25,8 @@ function makeData(): AlignedData {
     bands: [],
     photoperiod: [],
     nowIndex: 1,
+    nowMs: 10,
+    sensorIntervalSeconds: null,
     aggregated: false,
   }
 }

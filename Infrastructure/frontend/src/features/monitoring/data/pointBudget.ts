@@ -1,33 +1,23 @@
 /**
  * Stable monitoring point budgets derived only from rendered width.
  *
- * One range request serves every panel, so the widest panel determines its
- * budget. The budget is one point per CSS pixel, bounded to 10–50,000.
+ * R1: one point per CSS pixel of the plot area, never more than
+ * `MAX_POINTS_PER_LINE`. The page budget is the minimum over every mounted
+ * chart (see `pages/useMonitoringRangeBudget.ts`), so no displayed line can
+ * exceed one point per pixel.
  */
+export const MAX_POINTS_PER_LINE = 4_000
 export const MIN_BUDGET = 10
-export const MAX_BUDGET = 50_000
 
 interface PointRun {
   readonly start: number
   readonly length: number
 }
 
-export function panelBudget(widthPx: number): number {
-  if (Number.isNaN(widthPx) || widthPx <= 0) return MIN_BUDGET
-  if (!Number.isFinite(widthPx)) return MAX_BUDGET
-
-  return Math.min(MAX_BUDGET, Math.max(MIN_BUDGET, Math.ceil(widthPx)))
-}
-
-export function shouldReportBudget(previous: number | null, next: number): boolean {
-  return previous !== next
-}
-
-export function requestBudget(panelWidths: readonly number[]): number {
-  return panelWidths.reduce((widestBudget, width) => {
-    if (!Number.isFinite(width) || width <= 0) return widestBudget
-    return Math.max(widestBudget, panelBudget(width))
-  }, MIN_BUDGET)
+/** Budget for one plot area: one point per CSS pixel, bounded to 10–4000. */
+export function requestBudget(plotWidthCssPx: number): number {
+  if (Number.isNaN(plotWidthCssPx)) return MIN_BUDGET
+  return Math.min(MAX_POINTS_PER_LINE, Math.max(MIN_BUDGET, Math.floor(plotWidthCssPx)))
 }
 
 /**

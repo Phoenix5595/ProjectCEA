@@ -220,15 +220,12 @@ describe('monitoring api boundary', () => {
     await expect(api.controlProjection('Flower Room')).rejects.toBeInstanceOf(MonitoringParseError)
   })
 
-  it('rejects legacy non-light payloads in light-only history and tail reads', async () => {
+  it('enforces the requested history scope and sends it as a query', async () => {
     const fetchMock = vi.mocked(fetch)
-    const api = new MonitoringApi(undefined, undefined, 'lights')
+    const api = new MonitoringApi()
     const start = '2026-08-02T11:00:00.000Z'
     const end = '2026-08-02T12:00:00.000Z'
-
-
-    // A stale backend that ignores the scope query cannot feed room graphs.
-    for (const stale of [controlPayload, {
+    const pidPayload = {
       ...lightsControlPayload,
       pid: [
         {
@@ -245,16 +242,71 @@ describe('monitoring api boundary', () => {
           ],
         },
       ],
-    }]) {
-      fetchMock.mockResolvedValueOnce(jsonResponse(stale))
-      await expect(api.controlRange('Flower Room', start, end, 1000)).rejects.toBeInstanceOf(
-        MonitoringParseError
-      )
-      fetchMock.mockResolvedValueOnce(jsonResponse(stale))
-      await expect(api.controlTail('Flower Room', start, end)).rejects.toBeInstanceOf(
-        MonitoringParseError
-      )
     }
+    const devicePayload = {
+      ...controlPayload,
+      devices: [
+        {
+          name: 'heater_f',
+          provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false },
+          warnings: [],
+          points: [
+            {
+              time: '2026-08-02T11:00:00.000Z',
+              provenance: { origin: 'recorded', quality: 'exact', is_aggregated: false },
+              device_name: 'heater_f',
+              device_state: 1,
+              device_mode: 'AUTO',
+              control_reason: 'schedule',
+            },
+          ],
+        },
+      ],
+    }
+
+    // room: climate targets + lights + photoperiod are accepted and scoped.
+    fetchMock.mockResolvedValueOnce(jsonResponse(controlPayload))
+    await expect(
+      api.controlRange('Flower Room', start, end, 1000, 'room')
+    ).resolves.toBeDefined()
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringContaining('scope=room'),
+      expect.any(Object)
+    )
+    fetchMock.mockResolvedValueOnce(jsonResponse(lightsControlPayload))
+    await expect(api.controlTail('Flower Room', start, end, 1000, 'room')).resolves.toBeDefined()
+
+    // room: automation device state and PID stay rejected.
+    for (const stale of [devicePayload, pidPayload]) {
+      fetchMock.mockResolvedValueOnce(jsonResponse(stale))
+      await expect(
+        api.controlRange('Flower Room', start, end, 1000, 'room')
+      ).rejects.toBeInstanceOf(MonitoringParseError)
+    }
+
+    // climate: lights are rejected, climate targets + photoperiod pass.
+    fetchMock.mockResolvedValueOnce(jsonResponse(lightsControlPayload))
+    await expect(
+      api.controlRange('Flower Room', start, end, 1000, 'climate')
+    ).rejects.toBeInstanceOf(MonitoringParseError)
+    fetchMock.mockResolvedValueOnce(jsonResponse(controlPayload))
+    await expect(
+      api.controlRange('Flower Room', start, end, 1000, 'climate')
+    ).resolves.toBeDefined()
+
+    // photoperiod: only the phase list is accepted.
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ...controlPayload, climate: [] }))
+    await expect(
+      api.controlRange('Flower Room', start, end, 1000, 'photoperiod')
+    ).resolves.toBeDefined()
+    fetchMock.mockResolvedValueOnce(jsonResponse(controlPayload))
+    await expect(
+      api.controlTail('Flower Room', start, end, 1000, 'photoperiod')
+    ).rejects.toBeInstanceOf(MonitoringParseError)
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringContaining('scope=photoperiod'),
+      expect.any(Object)
+    )
   })
 
   it('keeps the all scope unscoped and accepting the full automation payload', async () => {
@@ -299,6 +351,34 @@ describe('monitoring api boundary', () => {
       expect.any(Object)
     )
 
+    // An explicit bucket interval rides with max_points only.
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        ...sensorRangePayload,
+        metadata: {
+          ...sensorRangePayload.metadata,
+          requested_max_points: 1000,
+          interval_seconds: 600,
+          requested_interval_seconds: 600,
+        },
+      })
+    )
+    const incremental = await api.sensorRange('Flower Room', start, end, 1000, {
+      intervalSeconds: 600,
+    })
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.stringContaining('max_points=1000&interval_seconds=600'),
+      expect.any(Object)
+    )
+    expect(incremental.metadata.requested_interval_seconds).toBe(600)
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(sensorRangePayload))
+    await api.sensorRange('Flower Room', start, end, undefined, { intervalSeconds: 600 })
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      expect.not.stringContaining('interval_seconds'),
+      expect.any(Object)
+    )
+
 
     fetchMock.mockResolvedValueOnce(jsonResponse(controlPayload))
     await api.controlRange('Flower Room', start, end, 1000)
@@ -310,7 +390,7 @@ describe('monitoring api boundary', () => {
     )
 
     fetchMock.mockResolvedValueOnce(jsonResponse(controlPayload))
-    await api.controlTail('Flower Room', start, end)
+    await api.controlTail('Flower Room', start, end, 1000)
     expect(fetchMock).toHaveBeenLastCalledWith(
       expect.stringContaining(
         '/api/monitoring/control/Flower%20Room/tail?start=2026-08-02T11%3A00%3A00.000Z&end=2026-08-02T12%3A00%3A00.000Z&max_points=1000'
@@ -336,6 +416,7 @@ describe('monitoring api boundary', () => {
           ...sensorRangePayload.metadata,
           requested_max_points: 1000,
           interval_seconds: 600,
+          requested_interval_seconds: 600,
         },
         series: [{ ...sensorRangePayload.series[0], point_count: 1, sample_count_total: 60 }],
         statistics: [{ ...sensorRangePayload.statistics[0], stddev_quality: 'approximate' }],
@@ -345,6 +426,7 @@ describe('monitoring api boundary', () => {
     const budgeted = await api.sensorRange('Flower Room')
     expect(budgeted.metadata.requested_max_points).toBe(1000)
     expect(budgeted.metadata.interval_seconds).toBe(600)
+    expect(budgeted.metadata.requested_interval_seconds).toBe(600)
     expect(budgeted.series[0].sample_count_total).toBe(60)
     expect(budgeted.statistics[0].stddev_quality).toBe('approximate')
     expect('ignored_by_existing_schema' in budgeted).toBe(false)

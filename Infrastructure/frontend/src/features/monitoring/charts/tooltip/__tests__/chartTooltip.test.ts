@@ -166,6 +166,8 @@ describe('light trajectory tooltip', () => {
       bands: [],
       photoperiod: [],
       nowIndex: 0,
+      nowMs: 0,
+      sensorIntervalSeconds: null,
       aggregated: false,
     })
     let currentData = asData(initial)
@@ -237,6 +239,7 @@ describe('overview bucket tooltip', () => {
     const data: AlignedData = {
       x: buckets.map(bucket => (bucket.start + bucket.end) / 2),
       series: [series], bands: [], photoperiod: [], nowIndex: -1,
+      nowMs: 0, sensorIntervalSeconds: 3600,
       aggregated: true, overview: { buckets },
     }
     let instant = Date.UTC(2025, 0, 31, 23)
@@ -254,13 +257,20 @@ describe('overview bucket tooltip', () => {
     onReady(plot)
     onCursor(plot)
     const tooltip = root.querySelector<HTMLDivElement>('.mon-tooltip')!
+    const torontoClock = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Toronto',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    })
     expect(tooltip.textContent).toContain('10 %')
-    expect(tooltip.textContent).toContain(new Date(boundaries[0]).toISOString())
-    expect(tooltip.textContent).toContain(new Date(boundaries[1]).toISOString())
+    expect(tooltip.textContent).toContain(torontoClock.format(new Date(boundaries[0])))
+    expect(tooltip.textContent).toContain(torontoClock.format(new Date(boundaries[1])))
     instant = boundaries[1]
     onCursor(plot)
     expect(tooltip.textContent).toContain('90 %')
-    expect(tooltip.textContent).toContain(new Date(boundaries[2]).toISOString())
+    expect(tooltip.textContent).toContain(torontoClock.format(new Date(boundaries[2])))
     instant = boundaries[2]
     onCursor(plot)
     expect(tooltip.textContent).toContain('unavailable')

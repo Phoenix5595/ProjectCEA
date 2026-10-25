@@ -18,6 +18,7 @@ import type {
   SourceCursor,
 } from '../api'
 import type { DeviceRegistryEntry } from '../../../types/device'
+import type { LiveTailBuffer } from '../data/liveTail'
 
 import type { MonitoringSourceOutcomes } from './monitoringStore.health'
 
@@ -48,6 +49,10 @@ export interface StoreData {
   series: SensorSeries[]
   statistics: SensorStatistics[]
   live: LiveSensorValue[]
+  /** Raw live tail (≤ one point per bucket) appended at its own timestamps. */
+  liveTail: LiveTailBuffer
+  /** Recorded sensor bucket interval in seconds; null means raw/unknown. */
+  sensorIntervalSeconds: number | null
   controlHistory: ControlMonitoringResponse | null
   projectionHistory: ControlMonitoringResponse | null
   /** Recorded historical room-photoperiod points only; the projection
@@ -82,11 +87,20 @@ export interface StoreState {
   errors: string[]
   lastGoodRangeAt: Date | null
   rangeErrorAt: Date | null
+  /** Wall-clock instant the live view was paused; the live viewport freezes there. */
+  pausedAt?: Date | null
 }
+
+/** Which page owns this store: Monitoring (live + projection) or Historical. */
+export type MonitoringStoreMode = 'monitoring' | 'historical'
 
 /** Construction options for `MonitoringStore`. */
 export interface MonitoringStoreOptions {
   pollIntervalMs?: number
   now?: () => Date
   loadDeviceRegistry?: () => Promise<DeviceRegistryEntry[]>
+  /** Historical stores never load a projection or poll live sources. */
+  mode?: MonitoringStoreMode
+  /** Live duration the Now button restores before any live range was shown. */
+  defaultLiveDurationMs?: number
 }

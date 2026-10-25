@@ -6,6 +6,8 @@ import type { DeviceRegistryEntry } from '../../types/device'
 import { HistoryOverviewView } from '../history-overview'
 import { MonitoringApi, monitoringRequestContextFromSearchParams } from '../monitoring/api'
 import type { MonitoringRequestContext } from '../monitoring/api'
+import { alignPhotoperiod } from '../monitoring/data'
+import type { PhotoperiodInterval } from '../monitoring/data'
 import {
   MAX_RANGE_MS,
   TimeRangeToolbar,
@@ -13,6 +15,8 @@ import {
   withSerializedRange,
 } from '../monitoring/components'
 import type { FixedRange, MonitoringRange } from '../monitoring/state'
+
+import { logger } from '../../utils/logger'
 
 import type { RelayTimelineResponse } from './contracts'
 import {
@@ -260,6 +264,7 @@ function RelayTimelineDetail({
   const [history, setHistory] = useState<LoadedTimeline | null>(null)
   const [loadingViewKey, setLoadingViewKey] = useState<string | null>(null)
   const [requestError, setRequestError] = useState<TimelineRequestError | null>(null)
+  const [photoperiod, setPhotoperiod] = useState<PhotoperiodInterval[]>([])
 
   const isLive = range.kind === 'live'
   const liveDuration = isLive ? range.duration : 0
@@ -439,6 +444,36 @@ function RelayTimelineDetail({
 
   const currentHistory = history?.viewKey === viewKey ? history : null
   const currentError = requestError?.viewKey === viewKey ? requestError.message : null
+  const loadedRangeStartMs = currentHistory?.range.start.getTime()
+  const loadedRangeEndMs = currentHistory?.range.end.getTime()
+
+  // R5: the sun/moon overlay comes only from recorded photoperiod for the
+  // same loaded window; relay pages never derive it from climate periods.
+  useEffect(() => {
+    if (loadedRangeStartMs === undefined || loadedRangeEndMs === undefined) return
+    const controller = new AbortController()
+    void monitoringApi
+      .controlRange(
+        location,
+        new Date(loadedRangeStartMs).toISOString(),
+        new Date(loadedRangeEndMs).toISOString(),
+        4_000,
+        'photoperiod',
+        { signal: controller.signal }
+      )
+      .then(response => {
+        if (controller.signal.aborted) return
+        setPhotoperiod(
+          alignPhotoperiod(response.photoperiod, loadedRangeStartMs, loadedRangeEndMs)
+        )
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return
+        logger.error('Relay photoperiod fetch failed', error)
+      })
+    return () => controller.abort()
+  }, [loadedRangeStartMs, loadedRangeEndMs, location, monitoringApi])
+
   const historyLoading = loadingViewKey === viewKey
   const sourceCoverageComplete =
     currentHistory !== null &&
@@ -719,6 +754,7 @@ function RelayTimelineDetail({
               lanes={chartLanes}
               range={displayRange}
               viewportKey={viewKey}
+              photoperiod={photoperiod}
             />
           </div>
         </>

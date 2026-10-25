@@ -18,15 +18,22 @@ import type {
   SeriesPresentation,
   SeriesSource,
 } from '../monitoring/data'
+import { alignPhotoperiod } from '../monitoring/data'
+import { seriesKey } from '../monitoring/data/alignSeries.types'
 import {
+  controlFamily,
   findSpec,
   familyForUnit,
   presentationFromSpec,
 } from '../monitoring/data/alignSeries.builder'
-import { seriesKey } from '../monitoring/data/alignSeries.types'
+import { metricFromName } from '../monitoring/data/alignSeries.control'
 import type { ChartFamily } from '../monitoring/charts/options/family'
 import type { MonitoringManifest, SeriesSpec } from '../monitoring/config'
-import type { UnitFamily } from '../monitoring/api'
+import type {
+  ClimateTimelineSeries,
+  ControlMonitoringResponse,
+  UnitFamily,
+} from '../monitoring/api'
 
 import type {
   HistoryOverviewControlResponse,
@@ -42,6 +49,12 @@ import type { HistoryBucketBoundsEntry } from './buckets'
 export interface HistoryOverviewAlignedOptions {
   readonly sensor?: HistoryOverviewSensorResponse | null
   readonly control?: HistoryOverviewControlResponse | null
+  /**
+   * Recorded climate history (scope=climate) for the same fixed range. Room
+   * charts draw its setpoint lines; every overview keeps its photoperiod for
+   * the sun/moon overlay.
+   */
+  readonly climate?: ControlMonitoringResponse | null
   /** Room manifest supplying canonical display names/colors/soft bounds. */
   readonly manifest?: MonitoringManifest
   /**
@@ -89,6 +102,8 @@ function emptyOverviewData(): AlignedData {
     bands: [],
     photoperiod: [],
     nowIndex: -1,
+    nowMs: Date.now(),
+    sensorIntervalSeconds: null,
     aggregated: false,
     overview: { buckets: [] },
   }
@@ -133,10 +148,17 @@ function sampleValues(
   })
 }
 
+interface SampleBucketDetail {
+  readonly minimum: (number | null)[]
+  readonly maximum: (number | null)[]
+  readonly sampleCount: (number | null)[]
+}
+
 function sampledSeries(
   identity: SampleIdentity,
   role: 'mean' | 'min' | 'max',
-  values: (number | null)[]
+  values: (number | null)[],
+  bucketDetail?: SampleBucketDetail
 ): AlignedSeries {
   return {
     key: seriesKey(identity.source, identity.metric, role) as SeriesKey,
@@ -154,6 +176,7 @@ function sampledSeries(
     unit: identity.unit,
     unitFamily: identity.unitFamily,
     presentation: identity.presentation,
+    ...(bucketDetail === undefined ? {} : bucketDetail),
     ...(identity.node !== undefined ? { node: identity.node } : {}),
   }
 }
@@ -192,7 +215,20 @@ function addSampledGroup(
     sampledSeries(
       identity,
       'mean',
-      sampleValues(buckets, points, point => point.average)
+      sampleValues(buckets, points, point => point.average),
+      identity.source === 'sensor'
+        ? {
+            // R4: tooltip bucket span/count/min–max; min/max stay null for a
+            // single-sample bucket so no band is implied.
+            minimum: sampleValues(buckets, points, point =>
+              point.sample_count > 1 ? point.minimum : null
+            ),
+            maximum: sampleValues(buckets, points, point =>
+              point.sample_count > 1 ? point.maximum : null
+            ),
+            sampleCount: sampleValues(buckets, points, point => point.sample_count),
+          }
+        : undefined
     )
   )
   series.push(
@@ -329,11 +365,51 @@ function addRelayLane(
   }
 }
 
+/** Step-hold recorded climate targets onto the overview bucket grid (R2). */
+function climateOverviewSeries(
+  raw: ClimateTimelineSeries,
+  buckets: readonly HistoryBucketBoundsEntry[],
+  specs: SeriesSpec[],
+  usedMetrics: Set<string>
+): AlignedSeries | null {
+  const baseMetric = raw.metric ?? raw.points[0]?.metric ?? metricFromName(raw.name)
+  const metric = uniqueMetric(usedMetrics, baseMetric)
+  const entries = [...raw.points, ...raw.steps]
+    .map(point => ({ time: point.time.getTime(), value: point.value }))
+    .sort((left, right) => left.time - right.time)
+  let cursor = 0
+  let held: number | null = null
+  const y = buckets.map(bucket => {
+    const end = bucket.end.getTime()
+    while (cursor < entries.length && (entries[cursor]?.time ?? Infinity) < end) {
+      held = entries[cursor]?.value ?? null
+      cursor += 1
+    }
+    return held
+  })
+  if (!y.some(value => value !== null)) return null
+  const spec = findSpec(specs, raw.name)
+  return {
+    key: seriesKey('climate', metric, 'step') as SeriesKey,
+    label: spec?.displayName ?? raw.name,
+    kind: 'step',
+    source: 'climate',
+    metric,
+    family: controlFamily({ kind: 'climate', metric }),
+    role: 'step',
+    y,
+    origin: 'recorded',
+    quality: 'exact',
+    isAggregated: true,
+  }
+}
+
 export function buildHistoryOverviewAlignedData(
   options: HistoryOverviewAlignedOptions
 ): AlignedData {
   const sensor = options.sensor ?? undefined
   const control = options.control ?? undefined
+  const climate = options.climate ?? undefined
   const source = control ?? sensor
   if (source === undefined) return emptyOverviewData()
   const range = source.metadata.range
@@ -389,13 +465,24 @@ export function buildHistoryOverviewAlignedData(
       }
     }
   }
+  if (climate !== undefined && !options.includeAutomation) {
+    for (const rawSeries of climate.climate) {
+      const built = climateOverviewSeries(rawSeries, buckets, specs, usedMetrics)
+      if (built !== null) series.push(built)
+    }
+  }
 
   return {
     x: latticeMidpoints(buckets),
     series,
     bands,
-    photoperiod: [],
+    photoperiod:
+      climate === undefined || climate.photoperiod.length === 0
+        ? []
+        : alignPhotoperiod(climate.photoperiod, range.start.getTime(), range.end.getTime()),
     nowIndex: -1,
+    nowMs: Date.now(),
+    sensorIntervalSeconds: source.metadata.bucket.seconds,
     aggregated: true,
     overview: {
       buckets: buckets.map(bucket => ({

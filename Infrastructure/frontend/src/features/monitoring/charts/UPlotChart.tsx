@@ -23,9 +23,12 @@ import {
 } from '../perfMarks'
 
 import { measureChartContainer } from './chartSizing'
+import { BucketBadge } from './BucketBadge'
 import { ExternalLegend, type LegendEntry } from './legend/ExternalLegend'
 import type { MonitoringChartFeed } from './MonitoringChartFeed'
+import type { MonitoringRange } from '../state'
 import { isEnvelopeSeries, seriesColor } from './options/seriesOptions'
+import { chartDataWithBands } from './options/sensorBands'
 import {
   getSeriesVisibilitySnapshot,
   isSeriesHidden,
@@ -43,6 +46,19 @@ export interface UPlotChartProps {
   readonly title?: string
   readonly description?: string
   readonly onRequestBudgetChange?: (maxPoints: number) => void
+  /** Recorded sensor bucket span; `null`/1 renders `Buckets: raw`. */
+  readonly bucketIntervalSeconds?: number | null
+}
+
+/**
+ * R1: report the plot area (not the frame) so a line never exceeds one point
+ * per CSS pixel. `bbox` is in device pixels, so divide by uPlot's ratio.
+ */
+function reportPlotWidth(plot: uPlot, reportRequestBudget: (width: number) => void): void {
+  const ratio = uPlot.pxRatio > 0 ? uPlot.pxRatio : 1
+  const width = plot.bbox?.width
+  if (typeof width !== 'number' || width <= 0) return
+  reportRequestBudget(width / ratio)
 }
 
 function slugify(value: string): string {
@@ -58,7 +74,7 @@ export interface UPlotChartHandle {
 
 export const UPlotChart = memo(
   forwardRef<UPlotChartHandle, UPlotChartProps>(function UPlotChart(
-    { feed, className, onZoom, title, description, onRequestBudgetChange },
+    { feed, className, onZoom, title, description, onRequestBudgetChange, bucketIntervalSeconds },
     ref
   ) {
     const { theme } = useTheme()
@@ -100,13 +116,18 @@ export const UPlotChart = memo(
     useEffect(() => {
       const plot = plotRef.current
       if (plot === null) return
+      const bandCompanions = chartDataWithBands(feed.getData()).companionsByParent
       structuralRef.current.series.forEach((series, index) => {
         const show = !visibility.hidden.has(series.key)
         if (visibilityRef.current.get(series.key) === show) return
         visibilityRef.current.set(series.key, show)
         plot.setSeries(index + 1, { show })
+        const companion = bandCompanions.get(series.key)
+        if (companion === undefined) return
+        plot.setSeries(companion.minIndex, { show })
+        plot.setSeries(companion.maxIndex, { show })
       })
-    }, [visibility, structural.revision])
+    }, [visibility, structural.revision, feed])
 
     const legendEntries = useMemo<LegendEntry[]>(() => {
       const seenKeys = new Set<string>()
@@ -134,13 +155,16 @@ export const UPlotChart = memo(
           const plot = plotRef.current
           if (plot === null) return
           const range = structuralRef.current.range
-          const bounds =
-            range.kind === 'fixed'
-              ? { min: range.start.getTime(), max: range.end.getTime() }
-              : fullDataRange(feed)
-          if (bounds === null) return
           followLiveViewportRef.current = true
-          plot.setScale('x', bounds)
+          if (range.kind === 'fixed') {
+            plot.setScale('x', { min: range.start.getTime(), max: range.end.getTime() })
+            return
+          }
+          const data = feed.getData()
+          plot.setScale('x', {
+            min: data.nowMs - range.duration,
+            max: data.nowMs + range.duration / 9,
+          })
         },
       }),
       [feed]
@@ -157,7 +181,6 @@ export const UPlotChart = memo(
         const { clientWidth, clientHeight } = frameElement
         if (clientWidth <= 0 || clientHeight <= 0) return
         const { width, height } = measureChartContainer(frameElement)
-        reportRequestBudget(width)
         const existingPlot = plotRef.current
         if (existingPlot !== null) {
           chartResizeCountRef.current += 1
@@ -166,6 +189,7 @@ export const UPlotChart = memo(
           } else {
             existingPlot.setSize({ width, height })
           }
+          reportPlotWidth(existingPlot, reportRequestBudget)
           const chartDebug = chartDebugRef.current
           if (chartDebug !== null)
             updateMonitoringChart(chartDebug, {
@@ -177,7 +201,7 @@ export const UPlotChart = memo(
         }
         const data = feed.getData()
         const plot = new uPlot(
-          initializeOverviewScales(buildOptions(
+          initializeFixedScales(buildOptions(
             data,
             width,
             height,
@@ -204,13 +228,10 @@ export const UPlotChart = memo(
                 }
                 if (!userScale) return
                 if (min === undefined || max === undefined) return
-                const data = feed.getData()
-                const recordedEnd = data.x[data.nowIndex]
-                const selectedEnd =
-                  recordedEnd !== undefined && min < recordedEnd && recordedEnd < max
-                    ? recordedEnd
-                    : max
-                onZoomRef.current?.({ start: new Date(min), end: new Date(selectedEnd) })
+                // R3: the page decides what the selection means. Never clamp
+                // the requested end to the last recorded point: a selection
+                // ending past now must stay a live window.
+                onZoomRef.current?.({ start: new Date(min), end: new Date(max) })
               },
               onSetSeries: (_self, seriesIndex, options) => {
                 if (seriesIndex === null || options.show === undefined) return
@@ -235,14 +256,21 @@ export const UPlotChart = memo(
           container
         )
         plotRef.current = plot
+        reportPlotWidth(plot, reportRequestBudget)
         readyRef.current = true
         lastAppliedStructuralRevisionRef.current = structural.revision
         if (data.overview !== undefined) {
           lastAppliedViewportRevisionRef.current = structural.viewportRevision
         }
+        const bandCompanions = chartDataWithBands(data).companionsByParent
         structural.series.forEach((series, index) => {
           const show = visibilityRef.current.get(series.key)
-          if (show !== undefined) plot.setSeries(index + 1, { show }, false)
+          if (show === undefined) return
+          plot.setSeries(index + 1, { show }, false)
+          const companion = bandCompanions.get(series.key)
+          if (companion === undefined) return
+          plot.setSeries(companion.minIndex, { show }, false)
+          plot.setSeries(companion.maxIndex, { show }, false)
         })
         lastAppliedViewportRevisionRef.current = structural.viewportRevision
         chartResizeCountRef.current = 0
@@ -284,18 +312,25 @@ export const UPlotChart = memo(
     }, [feed, reportRequestBudget, structural, theme, title])
 
     const wasLiveRef = useRef<boolean | null>(null)
+    const appliedRangeRef = useRef<MonitoringRange | null>(null)
     const updateData = useCallback((): void => {
       const plot = plotRef.current
       if (plot === null) return
       const currentStructural = feed.getStructuralSnapshot()
       if (currentStructural.revision !== lastAppliedStructuralRevisionRef.current) return
       const data = feed.getData()
-      // Returning to a live preset after a zoom must resume viewport
-      // following; otherwise the chart keeps the stale zoom window.
+      // Applying a new live range (preset or a zoom selection that reaches
+      // now) must resume viewport following; otherwise the chart keeps the
+      // stale drag window. Fixed ranges never follow.
       const isLive = currentStructural.range.kind === 'live'
       const transitionedToLive = isLive && wasLiveRef.current === false
+      const appliedNewRange =
+        appliedRangeRef.current !== null && appliedRangeRef.current !== currentStructural.range
       wasLiveRef.current = isLive
-      if (transitionedToLive) followLiveViewportRef.current = true
+      appliedRangeRef.current = currentStructural.range
+      if (isLive && (transitionedToLive || appliedNewRange)) {
+        followLiveViewportRef.current = true
+      }
       const needsViewportScale =
         currentStructural.viewportRevision !== lastAppliedViewportRevisionRef.current ||
         (currentStructural.range.kind === 'live' && followLiveViewportRef.current)
@@ -317,11 +352,14 @@ export const UPlotChart = memo(
           lastAppliedViewportRevisionRef.current = currentStructural.viewportRevision
         }
         if (currentStructural.range.kind === 'live' && followLiveViewportRef.current) {
-          const alignedNow = data.x[data.nowIndex]
           const duration = currentStructural.range.duration
-          if (alignedNow !== undefined) {
-            plot.setScale('x', { min: alignedNow - duration, max: alignedNow + duration / 9 })
-          }
+          // R4: follow wall-clock now, not the last recorded x slot, so the
+          // future duration/9 area is always reserved even when no raw value
+          // has arrived yet.
+          plot.setScale('x', {
+            min: data.nowMs - duration,
+            max: data.nowMs + duration / 9,
+          })
         }
       } else {
         if (PERFORMANCE_MARKS_ENABLED) {
@@ -339,8 +377,14 @@ export const UPlotChart = memo(
     useEffect(() => feed.subscribe(updateData), [feed, updateData])
 
     const descId = title === undefined ? undefined : `mon-chart-desc-${slugify(title)}`
+    const bucketInterval =
+      bucketIntervalSeconds !== undefined
+        ? bucketIntervalSeconds
+        : feed.getData().sensorIntervalSeconds
+    const showBucketBadge = structural.series.some(series => series.source === 'sensor')
     return (
-      <div className="mon-chart">
+      <div className="mon-chart" style={{ position: 'relative' }}>
+        {showBucketBadge && <BucketBadge intervalSeconds={bucketInterval} />}
         <div ref={frameRef} className="mon-chart__frame">
           <div
             ref={containerRef}
@@ -362,13 +406,15 @@ export const UPlotChart = memo(
   })
 )
 
-function initializeOverviewScales(options: uPlot.Options, feed: MonitoringChartFeed): uPlot.Options {
+function initializeFixedScales(options: uPlot.Options, feed: MonitoringChartFeed): uPlot.Options {
   const range = feed.getStructuralSnapshot().range
-  if (feed.getData().overview !== undefined && range.kind === 'fixed') {
+  if (range.kind === 'fixed') {
     const scales = options.scales ?? (options.scales = {})
     const x = scales.x ?? (scales.x = {})
     // Set before construction: ready/zoom hooks must see the real requested
-    // extent, including empty outer buckets, not just populated midpoints.
+    // extent, including empty outer buckets, not just populated midpoints. A
+    // fixed range is exact on both pages (R2/R3) — no future space on
+    // Historical and exact zoom bounds on Monitoring.
     x.min = range.start.getTime()
     x.max = range.end.getTime()
   }
@@ -376,12 +422,11 @@ function initializeOverviewScales(options: uPlot.Options, feed: MonitoringChartF
 }
 
 function fullDataRange(feed: MonitoringChartFeed): { min: number; max: number } | null {
-  const data = feed.getData()
   const range = feed.getStructuralSnapshot().range
-  if (data.overview !== undefined && range.kind === 'fixed') {
+  if (range.kind === 'fixed') {
     return { min: range.start.getTime(), max: range.end.getTime() }
   }
-  const x = data.x
+  const x = feed.getData().x
   const start = x[0]
   const end = x[x.length - 1]
   return start === undefined || end === undefined ? null : { min: start, max: end }

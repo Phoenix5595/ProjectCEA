@@ -1,77 +1,30 @@
 import { describe, expect, it } from 'vitest'
 
-import { decimateSeries, panelBudget, requestBudget, shouldReportBudget } from '../pointBudget'
+import { decimateSeries, MAX_POINTS_PER_LINE, requestBudget } from '../pointBudget'
 
-describe('panelBudget', () => {
+describe('requestBudget', () => {
   it.each([
     [375, 375],
     [800, 800],
     [1_280, 1_280],
+    [4_000, 4_000],
     [5, 10],
-    [100_000, 50_000],
+    [100_000, 4_000],
     [0, 10],
     [-100, 10],
     [Number.NaN, 10],
-    [Number.POSITIVE_INFINITY, 50_000],
-    [20_000, 20_000],
-  ])('maps width %d to budget %d', (width, expected) => {
-    expect(panelBudget(width)).toBe(expected)
+    [Number.POSITIVE_INFINITY, 4_000],
+    [1_800.9, 1_800],
+  ])('maps plot width %d to budget %d', (width, expected) => {
+    expect(requestBudget(width)).toBe(expected)
   })
 
-  it('never lowers a budget as rendered width grows', () => {
-    // Given: an ordered range of possible panel widths
-    const widths: number[] = []
-    for (let index = 0; index <= 80; index++) widths.push(index * 125)
+  it('never exceeds the 4000-point per-line maximum', () => {
+    // Given: any plot wider than the point ceiling
+    const widths = [4_001, 8_000, 20_000, MAX_POINTS_PER_LINE * 10]
 
-    // When: deriving their budgets
-    const budgets = widths.map(panelBudget)
-
-    // Then: every wider panel has an equal or larger budget
-    for (let index = 1; index < budgets.length; index++) {
-      expect(budgets[index]).toBeGreaterThanOrEqual(budgets[index - 1] ?? 0)
-    }
-  })
-})
-
-describe('shouldReportBudget', () => {
-  it('reports the first and every distinct integer budget', () => {
-    // Given: an initial report and adjacent integer budgets
-    const first = shouldReportBudget(null, 800)
-    const duplicate = shouldReportBudget(800, 800)
-
-    // When: the rendered width advances one CSS pixel
-    const next = shouldReportBudget(800, 801)
-
-    // Then: only duplicate budgets are suppressed
-    expect(first).toBe(true)
-    expect(duplicate).toBe(false)
-    expect(next).toBe(true)
-  })
-})
-
-describe('requestBudget', () => {
-  it('uses the widest rendered panel while retaining a bounded empty fallback', () => {
-    // Given: no panels, then two independently rendered panels
-    const widths = [300, 1_200]
-
-    // When: deriving their aggregate range-request budgets
-    const emptyBudget = requestBudget([])
-    const aggregateBudget = requestBudget(widths)
-
-    // Then: one shared range request serves the widest panel's needs
-    expect(emptyBudget).toBe(10)
-    expect(aggregateBudget).toBe(1_200)
-  })
-
-  it('ignores non-positive and non-finite panel widths', () => {
-    // Given: no valid rendered panel widths
-    const widths = [Number.NaN, 0, -1]
-
-    // When: deriving a shared range-request budget
-    const budget = requestBudget(widths)
-
-    // Then: the API-compatible floor is retained
-    expect(budget).toBe(10)
+    // When/Then: R1 caps every displayed line at the constant
+    for (const width of widths) expect(requestBudget(width)).toBe(MAX_POINTS_PER_LINE)
   })
 })
 

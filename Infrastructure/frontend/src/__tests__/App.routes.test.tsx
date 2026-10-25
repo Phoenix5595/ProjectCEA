@@ -23,6 +23,18 @@ vi.mock('../pages/FlowerSoil', () => ({
   },
 }))
 
+vi.mock('../pages/FlowerMonitoring', () => ({
+  default: function FlowerMonitoringFixture() {
+    return <div>Flower monitoring fixture</div>
+  },
+}))
+
+vi.mock('../pages/VegetationMonitoring', () => ({
+  default: function VegetationMonitoringFixture() {
+    return <div>Vegetation monitoring fixture</div>
+  },
+}))
+
 const LEGACY_REDIRECTS: ReadonlyArray<{
   from: string
   to: string
@@ -57,6 +69,60 @@ describe('legacy frontend routes', () => {
       }
     })
   }
+})
+
+describe('historical entry', () => {
+  it('keeps a short fixed Historical range on Historical', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/flower/historical?start=2026-07-20T14%3A00%3A00.000Z&end=2026-07-20T16%3A00%3A00.000Z'
+    )
+
+    render(<App />)
+
+    expect(await screen.findByText('Flower monitoring fixture')).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/flower/historical')
+    const params = new URLSearchParams(window.location.search)
+    expect(params.get('start')).toBe('2026-07-20T14:00:00.000Z')
+    expect(params.get('end')).toBe('2026-07-20T16:00:00.000Z')
+  })
+
+  it('replaces a live Historical entry with the 31-day fixed default', async () => {
+    window.history.replaceState({}, '', '/flower/historical?range=live-1h')
+
+    render(<App />)
+
+    await waitFor(() => {
+      const params = new URLSearchParams(window.location.search)
+      expect(params.get('range')).toBeNull()
+      expect(params.get('start')).not.toBeNull()
+      expect(params.get('end')).not.toBeNull()
+    })
+    const params = new URLSearchParams(window.location.search)
+    const start = new Date(params.get('start') ?? '')
+    const end = new Date(params.get('end') ?? '')
+    expect(end.getTime() - start.getTime()).toBe(31 * 24 * 3600_000)
+    expect(window.location.pathname).toBe('/flower/historical')
+  })
+
+  it('replaces a bare Historical entry with the 31-day fixed default', async () => {
+    window.history.replaceState({}, '', '/vegetation/historical')
+
+    render(<App />)
+
+    expect(await screen.findByText('Vegetation monitoring fixture')).toBeInTheDocument()
+    await waitFor(() => {
+      const params = new URLSearchParams(window.location.search)
+      expect(params.get('start')).not.toBeNull()
+      expect(params.get('end')).not.toBeNull()
+    })
+    const params = new URLSearchParams(window.location.search)
+    const start = new Date(params.get('start') ?? '')
+    const end = new Date(params.get('end') ?? '')
+    expect(end.getTime() - start.getTime()).toBe(31 * 24 * 3600_000)
+    expect(window.location.pathname).toBe('/vegetation/historical')
+  })
 })
 
 describe('sector navigation', () => {

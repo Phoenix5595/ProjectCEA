@@ -1,9 +1,11 @@
 import uPlot from 'uplot'
 
 import type { AlignedData, AlignedSeries } from '../../data'
+import { colorWithAlpha } from './colors'
 import { lightTrajectoryPaths } from './lightTrajectoryPaths'
 
 import { resolveFamily, type ChartFamily } from './family'
+import { chartDataWithBands } from './sensorBands'
 import { readToken } from './tokens'
 
 export function isEnvelopeSeries(series: AlignedSeries): boolean {
@@ -56,22 +58,13 @@ function parseDash(value: string): number[] {
     .map(Number)
 }
 
-/** Apply an alpha channel to a hex color, leaving other formats untouched. */
-function withAlpha(color: string, alpha: number): string {
-  if (!color.startsWith('#')) return color
-  const hex = color.slice(1)
-  const r = parseInt(hex.slice(0, 2), 16)
-  const g = parseInt(hex.slice(2, 4), 16)
-  const b = parseInt(hex.slice(4, 6), 16)
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`
-}
-
 /** Build the full uPlot series array (index 0 is the time axis). */
 export function buildSeries(data: AlignedData, getData?: () => AlignedData): uPlot.Series[] {
+  const expanded = chartDataWithBands(data).data
   const getCurrentData = getData ?? (() => data)
   return [
     { label: 'Time' },
-    ...data.series.map(s => {
+    ...expanded.series.map(s => {
       const family = resolveFamily(s)
       const target = s.source === 'climate' || s.source === 'light'
       const projected = target && s.origin === 'projected'
@@ -126,7 +119,7 @@ export function buildSeries(data: AlignedData, getData?: () => AlignedData): uPl
         }
         if (projected) {
           const opacity = parseFloat(readToken('targetProjectedOpacity'))
-          series.stroke = withAlpha(color, Number.isFinite(opacity) ? opacity : 0.5)
+          series.stroke = colorWithAlpha(color, Number.isFinite(opacity) ? opacity : 0.5)
         }
       }
       return series

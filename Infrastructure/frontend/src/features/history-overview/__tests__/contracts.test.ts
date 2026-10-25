@@ -94,6 +94,17 @@ describe('historyOverviewSensorContract', () => {
     expect(parsed.metadata.room).toEqual({ room: 'Flower Room', nodes: ['front'] })
   })
 
+  it('accepts the full 4000-point plot-width budget (R1)', () => {
+    const contract = historyOverviewSensorContract({ ...SENSOR_REQUEST, maxPoints: 4000 })
+    const parsed = contract.parse(
+      sensorPayload({
+        metadata: sensorMetadata({ requested_max_points: 4000, bucket: { kind: 'fixed', seconds: 3_600 } }),
+        series: [],
+      })
+    )
+    expect(parsed.metadata.requested_max_points).toBe(4000)
+  })
+
   it('rejects responses whose range or budget disagree with the request', () => {
     const contract = historyOverviewSensorContract(SENSOR_REQUEST)
     expect(() =>

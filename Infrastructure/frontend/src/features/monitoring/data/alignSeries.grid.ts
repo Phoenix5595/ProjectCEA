@@ -11,8 +11,6 @@ type TimestampInput = Pick<
   'series' | 'controlHistory' | 'projectionHistory' | 'photoperiod'
 >
 
-export const DEFAULT_MAX_POINTS = 5000
-
 /** Resolve the visible window from a fixed or live range relative to `now`. */
 export function windowBounds(
   range: AlignInput['range'],

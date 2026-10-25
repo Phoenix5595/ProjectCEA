@@ -10,10 +10,12 @@
  */
 import { MonitoringClient, buildQuery } from '../monitoring/api'
 import type {
-  ControlReadScope,
+  ControlMonitoringResponse,
+  ControlOverviewScope,
   MonitoringRequestContext,
   MonitoringRequestOptions,
 } from '../monitoring/api'
+import { controlMonitoringContract } from '../monitoring/api'
 
 import { chooseHistoryBucket } from './buckets'
 import { historyOverviewControlContract, historyOverviewSensorContract } from './contracts'
@@ -24,13 +26,9 @@ import type {
 } from './contracts'
 
 /**
- * UI default request budget: the overview API cap (1000 points), about one
- * point per plot pixel on the lowest supported 1280px viewport (~990px plot).
- * The backend keeps its generic 600-point default for non-UI callers; every
- * UI call requests this explicit budget.
+ * UI request budget: one point per plot pixel of the smallest mounted
+ * overview chart (R1), measured by the view before the first request.
  */
-export const HISTORY_OVERVIEW_MAX_POINTS = 1000
-
 const OVERVIEW_TIMEOUT_MS = 8000
 
 function overviewRequest(
@@ -51,19 +49,19 @@ export class HistoryOverviewApi {
     requestContext?: MonitoringRequestContext,
     client?: MonitoringClient,
     defaultTimeoutMs = OVERVIEW_TIMEOUT_MS,
-    controlScope: ControlReadScope = 'all'
+    controlScope: ControlOverviewScope = 'all'
   ) {
     this.client = client ?? new MonitoringClient(requestContext, defaultTimeoutMs)
     this.controlScope = controlScope
   }
 
   private readonly client: MonitoringClient
-  private readonly controlScope: ControlReadScope
+  private readonly controlScope: ControlOverviewScope
 
   async sensor(
     room: string,
     range: { start: Date; end: Date },
-    maxPoints: number = HISTORY_OVERVIEW_MAX_POINTS,
+    maxPoints: number,
     options?: MonitoringRequestOptions
   ): Promise<HistoryOverviewSensorResponse> {
     // Shared picker as the single query validator: an invalid range or a
@@ -85,7 +83,7 @@ export class HistoryOverviewApi {
   async control(
     room: string,
     range: { start: Date; end: Date },
-    maxPoints: number = HISTORY_OVERVIEW_MAX_POINTS,
+    maxPoints: number,
     options?: MonitoringRequestOptions
   ): Promise<HistoryOverviewControlResponse> {
     chooseHistoryBucket(range.start, range.end, maxPoints)
@@ -101,5 +99,25 @@ export class HistoryOverviewApi {
       historyOverviewControlContract(request, this.controlScope),
       options
     )
+  }
+
+  /**
+   * Recorded climate targets plus the recorded photoperiod for the same fixed
+   * range. Historical > 7 d draws the setpoint lines from this read and the
+   * sun/moon overlay from its `photoperiod`; it never reads a projection.
+   */
+  async climate(
+    room: string,
+    range: { start: Date; end: Date },
+    maxPoints: number,
+    options?: MonitoringRequestOptions
+  ): Promise<ControlMonitoringResponse> {
+    const path = `/api/monitoring/control/${encodeURIComponent(room)}/history${buildQuery({
+      start: range.start.toISOString(),
+      end: range.end.toISOString(),
+      max_points: maxPoints.toString(),
+      scope: 'climate',
+    })}`
+    return this.client.get(path, controlMonitoringContract('climate'), options)
   }
 }

@@ -14,14 +14,16 @@ import { ThemeProvider } from '../../../contexts/ThemeContext'
 import { flowerManifest } from '../../monitoring/config'
 import type { AlignedData } from '../../monitoring/data'
 import { historyOverviewControlContract, historyOverviewSensorContract } from '../contracts'
-import { HISTORY_OVERVIEW_MAX_POINTS } from '../api'
 import { buildHistoryOverviewAlignedData } from '../aligned'
 import { HistoryOverviewChart, HistoryOverviewView } from '../HistoryOverviewChart'
 import { useHistoryOverview } from '../useHistoryOverview'
 import { seriesKey } from '@/features/monitoring/data/alignSeries.types'
 
 type FixedRequestRange = { kind: 'fixed'; start: Date; end: Date }
-type OverviewRole = 'sensor' | 'control'
+type OverviewRole = 'sensor' | 'control' | 'climate'
+
+/** Measured plot budget the view placeholder produces at clientWidth 1160. */
+const TEST_MAX_POINTS = 1000
 
 const HOUR_MS = 3_600_000
 const DAY_MS = 24 * HOUR_MS
@@ -40,6 +42,7 @@ const { MockUPlot, instances } = vi.hoisted(() => {
   const instances: MockUPlot[] = []
   class MockUPlot {
     static instances = instances
+    static paths = { stepped: () => () => null }
     opts: unknown
     data: unknown
     root: HTMLElement
@@ -133,7 +136,7 @@ function requestedOverviewFromUrl(url: string): RequestedOverview {
   return {
     start: parsed.searchParams.get('start') ?? OVERVIEW_RANGE.start,
     end: parsed.searchParams.get('end') ?? OVERVIEW_RANGE.end,
-    maxPoints: Number(parsed.searchParams.get('max_points') ?? HISTORY_OVERVIEW_MAX_POINTS),
+    maxPoints: Number(parsed.searchParams.get('max_points') ?? TEST_MAX_POINTS),
   }
 }
 
@@ -283,18 +286,71 @@ function lightsControlPayload(request: RequestedOverview) {
   }
 }
 
+function climateHistoryPayload(request: RequestedOverview) {
+  const provenance = { origin: 'recorded', quality: 'exact', is_aggregated: false } as const
+  return {
+    range: { start: request.start, end: request.end },
+    runtime_snapshot_version: 1,
+    requested_max_points: request.maxPoints,
+    interval_seconds: null,
+    cursors: [],
+    flush_health: [],
+    climate: [
+      {
+        name: 'heating_setpoint',
+        metric: 'heating_setpoint',
+        trajectory_kind: 'effective',
+        provenance,
+        warnings: [],
+        points: [
+          {
+            time: request.start,
+            metric: 'heating_setpoint',
+            value: 22,
+            nominal_value: 22,
+            provenance,
+          },
+        ],
+        steps: [],
+        linear: [],
+      },
+    ],
+    lights: [],
+    devices: [],
+    pid: [],
+    photoperiod: [
+      {
+        time: request.start,
+        phase: 'SUN',
+        provenance,
+      },
+    ],
+  }
+}
+
 const OVERVIEW_REQUEST: RequestedOverview = {
   start: OVERVIEW_RANGE.start,
   end: OVERVIEW_RANGE.end,
-  maxPoints: HISTORY_OVERVIEW_MAX_POINTS,
+  maxPoints: TEST_MAX_POINTS,
+}
+
+/** One payload per endpoint role, echoing the actual request range/budget. */
+function payloadFor(
+  role: OverviewRole,
+  scope: RequestedOverviewScope,
+  request: RequestedOverview
+): unknown {
+  if (role === 'sensor') return sensorPayload(request, 'dry_bulb_f')
+  if (role === 'climate') return climateHistoryPayload(request)
+  return scope === 'lights' ? lightsControlPayload(request) : controlPayload(request, 3)
 }
 const parsedSensor = historyOverviewSensorContract({
   range: { start: new Date(OVERVIEW_RANGE.start), end: new Date(OVERVIEW_RANGE.end) },
-  maxPoints: HISTORY_OVERVIEW_MAX_POINTS,
+  maxPoints: TEST_MAX_POINTS,
 }).parse(sensorPayload(OVERVIEW_REQUEST, 'dry_bulb_f'))
 const parsedControl = historyOverviewControlContract({
   range: { start: new Date(OVERVIEW_RANGE.start), end: new Date(OVERVIEW_RANGE.end) },
-  maxPoints: HISTORY_OVERVIEW_MAX_POINTS,
+  maxPoints: TEST_MAX_POINTS,
 }).parse(controlPayload(OVERVIEW_REQUEST, 3))
 
 function fixedRange(range: { start: string; end: string }): FixedRequestRange {
@@ -302,7 +358,7 @@ function fixedRange(range: { start: string; end: string }): FixedRequestRange {
 }
 
 const SENSOR_URL_MARKER = '/api/sensors/monitoring/overview/'
-type RequestedOverviewScope = 'lights' | 'all'
+type RequestedOverviewScope = 'lights' | 'all' | 'climate'
 
 /** Stub fetch by endpoint role with URL-parameter-aware payload echoes. */
 function stubOverviewFetch(
@@ -317,9 +373,15 @@ function stubOverviewFetch(
   let callIndex = 0
   fetchMock.mockImplementation((input: RequestInfo | URL) => {
     const url = String(input)
-    const role: OverviewRole = url.includes(SENSOR_URL_MARKER) ? 'sensor' : 'control'
+    const path = new URL(url, 'http://fixture.local')
+    const role: OverviewRole = url.includes(SENSOR_URL_MARKER)
+      ? 'sensor'
+      : path.pathname.endsWith('/overview')
+        ? 'control'
+        : 'climate'
+    const requestedScope = path.searchParams.get('scope')
     const scope: RequestedOverviewScope =
-      new URL(url, 'http://fixture.local').searchParams.get('scope') === 'lights' ? 'lights' : 'all'
+      requestedScope === 'lights' ? 'lights' : requestedScope === 'climate' ? 'climate' : 'all'
     const resolved = handler(role, callIndex, requestedOverviewFromUrl(url), scope)
     callIndex += 1
     return Promise.resolve(resolved)
@@ -337,7 +399,7 @@ beforeEach(() => {
   )
   Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
     configurable: true,
-    get: () => 800,
+    get: () => 1160,
   })
   Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
     configurable: true,
@@ -416,7 +478,7 @@ describe('buildHistoryOverviewAlignedData', () => {
     // graphs: the automation groups exist only behind `includeAutomation`.
     const mixedControlPayload = historyOverviewControlContract({
       range: { start: new Date(OVERVIEW_RANGE.start), end: new Date(OVERVIEW_RANGE.end) },
-      maxPoints: HISTORY_OVERVIEW_MAX_POINTS,
+      maxPoints: TEST_MAX_POINTS,
     }).parse({
       ...controlPayload(OVERVIEW_REQUEST, 3),
       lights: [
@@ -453,18 +515,12 @@ describe('useHistoryOverview', () => {
     const staleSensor = deferred()
     stubOverviewFetch(fetchMock, (role, callIndex, request, scope) => {
       if (callIndex === 0 && role === 'sensor') return staleSensor.promise
-      return jsonResponse(
-        role === 'sensor'
-          ? sensorPayload(request, 'dry_bulb_f')
-          : scope === 'lights'
-            ? lightsControlPayload(request)
-            : controlPayload(request, 3)
-      )
+      return jsonResponse(payloadFor(role, scope, request))
     })
 
     const initialResult = renderHook(
       ({ range }: { range: FixedRequestRange }) =>
-        useHistoryOverview({ room: 'Flower Room', range }),
+        useHistoryOverview({ room: 'Flower Room', range, maxPoints: TEST_MAX_POINTS }),
       { initialProps: { range: fixedRange(OVERVIEW_RANGE) } }
     )
     expect(initialResult.result.current.loading).toBe(true)
@@ -488,7 +544,9 @@ describe('useHistoryOverview', () => {
       await Promise.resolve()
     })
     expect(initialResult.result.current.sensor).toBe(publishedSensor)
-    expect(fetchMock).toHaveBeenCalledTimes(4)
+    // Two reads for the superseded generation (its climate read is skipped on
+    // abort) plus three for the current generation.
+    expect(fetchMock).toHaveBeenCalledTimes(5)
 
     // The superseded generation's requests were aborted.
     const firstCall = fetchMock.mock.calls[0]
@@ -504,13 +562,15 @@ describe('useHistoryOverview', () => {
         if (sensorFailureCount === 1) return jsonResponse({ detail: 'boom' }, 500)
         return jsonResponse(sensorPayload(request, 'dry_bulb_f'))
       }
-      return jsonResponse(
-        scope === 'lights' ? lightsControlPayload(request) : controlPayload(request, 3)
-      )
+      return jsonResponse(payloadFor(role, scope, request))
     })
 
     const probe = renderHook(() =>
-      useHistoryOverview({ room: 'Flower Room', range: fixedRange(OVERVIEW_RANGE) })
+      useHistoryOverview({
+        room: 'Flower Room',
+        range: fixedRange(OVERVIEW_RANGE),
+        maxPoints: TEST_MAX_POINTS,
+      })
     )
     await waitFor(() => expect(probe.result.current.error).not.toBeNull())
     expect(probe.result.current.sensor).toBeNull()
@@ -524,26 +584,24 @@ describe('useHistoryOverview', () => {
     expect(probe.result.current.error).toBeNull()
   })
 
-  it('requests the explicit 1000-point UI budget by default', async () => {
+  it('requests the measured one-point-per-pixel budget on every read', async () => {
     const fetchMock = vi.mocked(fetch)
     stubOverviewFetch(fetchMock, (role, _callIndex, request, scope) =>
-      jsonResponse(
-        role === 'sensor'
-          ? sensorPayload(request, 'dry_bulb_f')
-          : scope === 'lights'
-            ? lightsControlPayload(request)
-            : controlPayload(request, 3)
-      )
+      jsonResponse(payloadFor(role, scope, request))
     )
     const probe = renderHook(() =>
-      useHistoryOverview({ room: 'Flower Room', range: fixedRange(OVERVIEW_RANGE) })
+      useHistoryOverview({
+        room: 'Flower Room',
+        range: fixedRange(OVERVIEW_RANGE),
+        maxPoints: TEST_MAX_POINTS,
+      })
     )
     await waitFor(() => expect(probe.result.current.loading).toBe(false))
     expect(probe.result.current.error).toBeNull()
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
     for (const call of fetchMock.mock.calls) {
       const url = new URL(String(call[0]), 'http://fixture.local')
-      expect(url.searchParams.get('max_points')).toBe('1000')
+      expect(url.searchParams.get('max_points')).toBe(String(TEST_MAX_POINTS))
     }
   })
 
@@ -565,10 +623,8 @@ describe('HistoryOverviewView rendering', () => {
   it('shows sensor statistics without relay, PID or light summary rows', async () => {
     const onDetail = vi.fn()
     const fetchMock = vi.mocked(fetch)
-    stubOverviewFetch(fetchMock, (role, _callIndex, request) =>
-      jsonResponse(
-        role === 'sensor' ? sensorPayload(request, 'dry_bulb_f') : lightsControlPayload(request)
-      )
+    stubOverviewFetch(fetchMock, (role, _callIndex, request, scope) =>
+      jsonResponse(payloadFor(role, scope, request))
     )
     render(
       <ThemeProvider>
@@ -594,8 +650,8 @@ describe('HistoryOverviewView rendering', () => {
 
   it('shows the control-only aggregated relay view without sensor requests', async () => {
     const fetchMock = vi.mocked(fetch)
-    stubOverviewFetch(fetchMock, (_role, _callIndex, request) =>
-      jsonResponse(controlPayload(request, 3))
+    stubOverviewFetch(fetchMock, (role, _callIndex, request, scope) =>
+      jsonResponse(payloadFor(role, scope, request))
     )
     render(
       <ThemeProvider>
@@ -619,13 +675,13 @@ describe('HistoryOverviewView rendering', () => {
   it('surfaces errors with a retry that republishes a fresh pair', async () => {
     const fetchMock = vi.mocked(fetch)
     let sensorFailureCount = 0
-    stubOverviewFetch(fetchMock, (role, _callIndex, request) => {
+    stubOverviewFetch(fetchMock, (role, _callIndex, request, scope) => {
       if (role === 'sensor') {
         sensorFailureCount += 1
         if (sensorFailureCount === 1) return jsonResponse({ detail: 'unavailable' }, 503)
         return jsonResponse(sensorPayload(request, 'dry_bulb_f'))
       }
-      return jsonResponse(lightsControlPayload(request))
+      return jsonResponse(payloadFor(role, scope, request))
     })
     render(
       <ThemeProvider>
@@ -673,6 +729,8 @@ describe('HistoryOverviewChart drill-down', () => {
       bands: [],
       photoperiod: [],
       nowIndex: -1,
+      nowMs: Date.now(),
+      sensorIntervalSeconds: 3600,
       aggregated: true,
       overview: {
         buckets: [

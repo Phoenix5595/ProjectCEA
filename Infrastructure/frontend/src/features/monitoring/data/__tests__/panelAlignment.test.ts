@@ -17,6 +17,7 @@ import { windowBounds } from '../alignSeries.grid'
 import { seriesKey } from '../alignSeries.types'
 import type { AlignInput } from '../alignSeries.types'
 import { lightValueAt } from '../lightTrajectory'
+import { LiveTailBuffer } from '../liveTail'
 import { createPanelAlignment } from '../panelAlignment'
 
 const START = new Date('2026-08-02T11:00:00.000Z')
@@ -160,18 +161,16 @@ describe('panel alignment', () => {
     const alignment = createPanelAlignment()
     const firstNow = new Date(NOW.getTime() + 1_000)
     const secondNow = new Date(NOW.getTime() + 2_000)
+    const liveTail = new LiveTailBuffer()
+    liveTail.push({ sensor: 'dry_bulb', timestamp: firstNow.getTime(), value: 24.8 })
 
-    alignment.align({
-      ...source,
-      panel: CLIMATE_PANEL,
-      live: [{ sensor: 'dry_bulb', value: 24.8, timestamp: firstNow }],
-      now: firstNow,
-    })
+    alignment.align({ ...source, panel: CLIMATE_PANEL, liveTail, now: firstNow })
+    liveTail.push({ sensor: 'dry_bulb', timestamp: secondNow.getTime(), value: 24.9 })
     const result = alignment.align({
       ...source,
       panel: CLIMATE_PANEL,
       controlHistory: controls([{ time: firstNow, value: 23 }]),
-      live: [{ sensor: 'dry_bulb', value: 24.9, timestamp: secondNow }],
+      liveTail,
       now: secondNow,
     })
     const mean = result.series.find(
@@ -197,32 +196,31 @@ describe('panel alignment', () => {
     })
 
     const legacy = alignSeries(source)
-    const split = applyLiveTail(alignSeriesBase(source), source.live, source.now)
+    const split = applyLiveTail(alignSeriesBase(source), source, source.now)
     const panel = createPanelAlignment().align({ ...source, panel: CLIMATE_PANEL })
 
     expect(split).toEqual(legacy)
     expect(panel).toEqual(legacy)
   })
 
-  it('rebuilds the rolling live frame for 120 ticks and bounds tail updates', () => {
+  it('keeps one base across 120 live ticks and bounds tail updates', () => {
     const source = input({ range: { kind: 'live', duration: 60 * 60 * 1000 } })
     const alignment = createPanelAlignment()
-    let result = alignment.align({ ...source, panel: CLIMATE_PANEL })
+    const liveTail = new LiveTailBuffer()
+    let result = alignment.align({ ...source, panel: CLIMATE_PANEL, liveTail })
     for (let tick = 1; tick <= 120; tick++) {
       const now = new Date(NOW.getTime() + tick * 1000)
-      result = alignment.align({
-        ...source,
-        panel: CLIMATE_PANEL,
-        live: [{ sensor: 'dry_bulb', value: 24 + tick / 10, timestamp: now }],
-        now,
-      })
+      liveTail.push({ sensor: 'dry_bulb', timestamp: now.getTime(), value: 24 + tick / 10 })
+      result = alignment.align({ ...source, panel: CLIMATE_PANEL, liveTail, now })
     }
 
     const mean = result.series.find(
       series => series.metric === 'dry_bulb' && series.role === 'mean'
     )
-    expect(alignment.counts).toEqual({ baseAlignments: 121, liveTailUpdates: 120 })
+    // The grid is rebuilt once; ticks only merge tail points (one per second).
+    expect(alignment.counts).toEqual({ baseAlignments: 1, liveTailUpdates: 120 })
     expect(mean?.y[result.nowIndex]).toBe(36)
+    expect(liveTail.size).toBe(120)
   })
 
   it('invalidates the base exactly once when control history changes', () => {
@@ -275,7 +273,7 @@ describe('panel alignment', () => {
     expect(tempPoint).toBeUndefined()
   })
 
-  it('filters unrelated inputs before alignment and caps legacy buffers at 20,000 points', () => {
+  it('filters unrelated inputs before alignment and enforces the 4000-point cap', () => {
     const unrelated = new Date(NOW.getTime() + 30_000)
     const source = input({
       series: [
@@ -299,31 +297,86 @@ describe('panel alignment', () => {
       maximum: 25,
       sample_count: 1,
     }))
-    const legacyCapped = alignSeries(
-      input({
-        series: [{ ...input().series[0], points: dense }],
-        range: { kind: 'fixed', start: START, end: new Date(START.getTime() + 20_100 * 1000) },
-      })
-    )
-    const budgeted = alignSeries(
-      input({
-        series: [{ ...input().series[0], points: dense }],
-        range: { kind: 'fixed', start: START, end: new Date(START.getTime() + 20_100 * 1000) },
-        maxPoints: 25_000,
-      })
-    )
+    const denseInput = input({
+      series: [{ ...input().series[0], points: dense }],
+      range: { kind: 'fixed', start: START, end: new Date(START.getTime() + 20_100 * 1000) },
+    })
+    const unbudgeted = alignSeries(denseInput)
+    const oversized = alignSeries({ ...denseInput, maxPoints: 25_000 })
+    const budgeted = alignSeries({ ...denseInput, maxPoints: 1_000 })
 
     expect(filtered.x).not.toContain(unrelated.getTime())
     expect(filtered.bands).toHaveLength(1)
-    expect(legacyCapped.x.length).toBeLessThanOrEqual(20_000)
-    expect(budgeted.x.length).toBeGreaterThan(20_000)
+    // R1: no line exceeds 4000 points, budgeted or legacy.
+    expect(unbudgeted.x.length).toBeLessThanOrEqual(4_000)
+    expect(oversized.x.length).toBeLessThanOrEqual(4_000)
+    expect(budgeted.x.length).toBeLessThanOrEqual(1_000)
   })
-  it('keeps recorded climate targets out of both room panels but retains sensors', () => {
+  it('exposes the bucket interval and multi-sample detail only on sensor means', () => {
+    // Given: one source-aggregated sensor bucket and one single-sample bucket
+    const bucketed = input({
+      sensorIntervalSeconds: 600,
+      series: [
+        {
+          sensor: 'dry_bulb',
+          node: 'front',
+          unit_family: 'celsius',
+          unit: '°C',
+          points: [
+            { timestamp: START, average: 24.5, minimum: 24.1, maximum: 24.9, sample_count: 30 },
+          ],
+        },
+      ],
+    })
+    const aligned = alignSeries(bucketed)
+    const index = aligned.x.indexOf(START.getTime())
+    const mean = aligned.series.find(series => series.role === 'mean')
+    const control = aligned.series.find(series => series.source === 'climate')
+
+    // Then: the interval and bucket detail reach the chart consumer.
+    expect(aligned.sensorIntervalSeconds).toBe(600)
+    expect(aligned.nowMs).toBe(NOW.getTime())
+    expect(mean?.minimum?.[index]).toBe(24.1)
+    expect(mean?.maximum?.[index]).toBe(24.9)
+    expect(mean?.sampleCount?.[index]).toBe(30)
+    // Setpoint and other lines never carry bucket detail or a raw marker.
+    expect(control?.sampleCount).toBeUndefined()
+    expect(control?.minimum).toBeUndefined()
+    expect(control?.liveTail).toBeUndefined()
+
+    // A single-sample bucket is raw by R4 and never renders a band.
+    const single = alignSeries({
+      ...bucketed,
+      series: bucketed.series.map(series => ({
+        ...series,
+        points: series.points.map(point => ({ ...point, sample_count: 1 })),
+      })),
+    })
+    const singleMean = single.series.find(series => series.role === 'mean')
+    const singleIndex = single.x.indexOf(START.getTime())
+    expect(singleMean?.sampleCount?.[singleIndex]).toBeNull()
+    expect(singleMean?.minimum?.[singleIndex]).toBeNull()
+    expect(singleMean?.maximum?.[singleIndex]).toBeNull()
+  })
+
+  it('shows recorded and projected climate targets on Monitoring and recorded only on Historical', () => {
     const history = controls([{ time: START, value: 22 }])
-    const heating = history.climate[0]
-    if (heating === undefined) throw new Error('heating fixture is required')
-    heating.name = 'heating'
-    const source = input({ controlHistory: history })
+    const projectedBase = controls([{ time: FUTURE, value: 23 }])
+    const projectedProvenance = {
+      origin: 'projected' as const,
+      quality: 'estimated' as const,
+      is_aggregated: false,
+    }
+    const projection: ControlMonitoringResponse = {
+      ...projectedBase,
+      range: { start: NOW, end: END },
+      climate: projectedBase.climate.map(series => ({
+        ...series,
+        provenance: projectedProvenance,
+        points: series.points.map(point => ({ ...point, provenance: projectedProvenance })),
+      })),
+    }
+    const source = input({ controlHistory: history, projectionHistory: projection })
     source.series.push({
       sensor: 'co2', node: 'main', unit_family: 'ppm', unit: 'ppm',
       points: [{ timestamp: START, average: 620, minimum: 615, maximum: 625, sample_count: 3 }],
@@ -345,14 +398,33 @@ describe('panel alignment', () => {
         throw new Error('room climate and equipment panels are required')
       }
 
+      // Monitoring: recorded + projected effective setpoint targets.
+      const monitoring = createPanelAlignment().align({ ...source, panel: climatePanel })
+      const monitoringTargets = monitoring.series.filter(series => series.source === 'climate')
+      expect(monitoringTargets.length).toBeGreaterThan(0)
+      expect(monitoringTargets.some(series => series.y.includes(22))).toBe(true)
+      expect(monitoringTargets.some(series => series.y.includes(23))).toBe(true)
+
+      // Historical: the same panel without a projection shows recorded only.
+      const historical = createPanelAlignment().align({
+        ...source,
+        projectionHistory: null,
+        panel: climatePanel,
+      })
+      const historicalTargets = historical.series.filter(series => series.source === 'climate')
+      expect(historicalTargets.length).toBeGreaterThan(0)
+      expect(historicalTargets.some(series => series.y.includes(22))).toBe(true)
+      expect(historicalTargets.some(series => series.y.includes(23))).toBe(false)
+
+      // Environmental sensors stay on both readers; equipment panels never
+      // show setpoint targets.
+      expect(monitoring.series.find(series => series.metric === 'dry_bulb')).toBeDefined()
+      expect(historical.series.find(series => series.metric === 'dry_bulb')).toBeDefined()
       const equipment = createPanelAlignment().align({ ...source, panel: equipmentPanel })
-      const climate = createPanelAlignment().align({ ...source, panel: climatePanel })
-      for (const aligned of [equipment, climate]) {
-        expect(aligned.series.some(series => series.source === 'climate')).toBe(false)
-      }
-      // Environmental sensors stay: the denial is scoped to automation targets.
-      expect(climate.series.find(series => series.metric === 'dry_bulb')).toBeDefined()
-      const co2 = equipment.series.find(series => series.source === 'sensor' && series.metric === 'co2' && series.role === 'mean')
+      expect(equipment.series.some(series => series.source === 'climate')).toBe(false)
+      const co2 = equipment.series.find(
+        series => series.source === 'sensor' && series.metric === 'co2' && series.role === 'mean'
+      )
       expect(co2?.family).toBe('co2')
       expect(co2?.y[equipment.x.indexOf(START.getTime())]).toBe(620)
     }
@@ -546,12 +618,20 @@ describe('panel alignment', () => {
     }
     const alignment = createPanelAlignment()
     const source = input({ series: [empty] })
-    expect(alignment.align({ ...source, panel }).series).toHaveLength(0)
+    expect(alignment.align({ ...source, panel }).series.some(item => item.source === 'sensor')).toBe(
+      false
+    )
     const populated = {
       ...empty,
       points: [{ timestamp: START, average: 19, minimum: 18, maximum: 20, sample_count: 1 }],
     }
-    expect(alignment.align({ ...source, series: [populated], panel }).series.length).toBeGreaterThan(0)
-    expect(alignment.align({ ...source, panel }).series).toHaveLength(0)
+    expect(
+      alignment.align({ ...source, series: [populated], panel }).series.some(
+        item => item.source === 'sensor'
+      )
+    ).toBe(true)
+    expect(alignment.align({ ...source, panel }).series.some(item => item.source === 'sensor')).toBe(
+      false
+    )
   })
 })

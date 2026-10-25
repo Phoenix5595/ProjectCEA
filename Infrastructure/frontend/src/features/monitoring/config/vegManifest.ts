@@ -38,9 +38,9 @@ export const vegManifest: MonitoringManifest = {
       kind: 'timeseries',
       id: 'veg-climate',
       title: 'Veg climate conditions',
-      // Room Monitoring/Historical graphs remain environmental sensors plus
-      // light: recorded and projected climate targets are not room chart data.
-      sources: ['sensor'],
+      // Environmental sensors plus effective climate setpoints: Monitoring
+      // adds the projected targets, Historical shows the recorded ones.
+      sources: ['sensor', 'climate'],
       families: ['temperature', 'rh', 'vpd'],
       defaults: { unit: 'celsius', softMin: 15 },
       series: [

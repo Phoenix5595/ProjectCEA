@@ -4,6 +4,7 @@ import type { ClimateTimelineSeries, ControlMonitoringResponse, SensorSeries } f
 import type { TimeseriesPanelSpec } from '../../config'
 import { alignSeriesBase, applyLiveTail } from '../alignSeries'
 import type { AlignInput } from '../alignSeries.types'
+import { LiveTailBuffer } from '../liveTail'
 import { createPanelAlignment } from '../panelAlignment'
 
 const START = new Date('2026-08-02T11:00:00.000Z')
@@ -77,27 +78,49 @@ function input(overrides: Partial<AlignInput> = {}): AlignInput {
 }
 
 describe('live alignment', () => {
-  it('rolls the future horizon when only a sensor tail update advances now', () => {
-    // Given: a projection that extends beyond two live horizons.
+  it('keeps the base grid and reports the advancing wall clock', () => {
+    // Given: a base alignment captured at the current instant.
     const nextNow = new Date(NOW.getTime() + 60_000)
-    const source = input({
-      projectionHistory: controlWithSteps([], new Date(nextNow.getTime() + 10 * 60_000)),
-    })
+    const source = input()
     const alignment = createPanelAlignment()
+    const first = alignment.align({ ...source, panel: CLIMATE_PANEL })
 
-    // When: a sensor-only update advances the current instant.
+    // When: only the wall clock advances.
+    const result = alignment.align({ ...source, panel: CLIMATE_PANEL, now: nextNow })
+
+    // Then: the grid is not re-keyed on now; only nowMs/nowIndex follow it.
+    expect(alignment.counts.baseAlignments).toBe(1)
+    expect(result.x).toEqual(first.x)
+    expect(result.nowMs).toBe(nextNow.getTime())
+    expect(result.nowIndex).toBe(first.x.length - 2)
+  })
+
+  it('appends raw tail points at their own timestamp without rebuilding the base', () => {
+    // Given: a running live alignment and one raw sample in the next bucket.
+    const source = input()
+    const alignment = createPanelAlignment()
     alignment.align({ ...source, panel: CLIMATE_PANEL })
+    const tailAt = new Date(NOW.getTime() + 1_000)
+    const liveTail = new LiveTailBuffer()
+    liveTail.push({ sensor: 'dry_bulb', timestamp: tailAt.getTime(), value: 24.5 })
+
+    // When: the next alignment carries the buffer.
     const result = alignment.align({
       ...source,
       panel: CLIMATE_PANEL,
-      now: nextNow,
-      live: [{ sensor: 'dry_bulb', value: 24.5, timestamp: nextNow }],
+      now: tailAt,
+      liveTail,
     })
+    const mean = result.series.find(
+      series => series.metric === 'dry_bulb' && series.role === 'mean'
+    )
 
-    // Then: every live frame has the same [now-duration, now+duration/9] horizon.
-    expect(result.x[0]).toBe(nextNow.getTime() - LIVE_RANGE.duration)
-    expect(result.x.at(-1)).toBe(nextNow.getTime() + LIVE_RANGE.duration / 9)
-    expect(result.x[result.nowIndex]).toBe(nextNow.getTime())
+    // Then: one tail slot is inserted, marked raw, and the base is reused.
+    expect(alignment.counts.baseAlignments).toBe(1)
+    expect(result.x).toContain(tailAt.getTime())
+    expect(mean?.y[result.nowIndex]).toBe(24.5)
+    expect(mean?.liveTail?.[result.nowIndex]).toBe(true)
+    expect(mean?.sampleCount?.[result.nowIndex]).toBeNull()
   })
 
   it('holds a step setpoint at an inserted sensor-tail timestamp', () => {
@@ -108,7 +131,7 @@ describe('live alignment', () => {
     // When: the shared grid receives a sensor-only tail timestamp.
     const result = applyLiveTail(
       base,
-      [{ sensor: 'dry_bulb', value: 24.5, timestamp: tailNow }],
+      { live: [{ sensor: 'dry_bulb', value: 24.5, timestamp: tailNow }] },
       tailNow
     )
     const target = result.series.find(
@@ -146,7 +169,7 @@ describe('live alignment', () => {
     // When: the sensor update occupies that same timestamp.
     const result = applyLiveTail(
       base,
-      [{ sensor: 'dry_bulb', value: 24.5, timestamp: unavailableNow }],
+      { live: [{ sensor: 'dry_bulb', value: 24.5, timestamp: unavailableNow }] },
       unavailableNow
     )
     const target = result.series.find(

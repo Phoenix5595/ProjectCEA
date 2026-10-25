@@ -16,6 +16,7 @@ import type {
 } from '../../data'
 import { lightSegmentAt, lightValueAt } from '../../data'
 import { isEnvelopeSeries, seriesColor } from '../options/seriesOptions'
+import { formatTorontoClock } from '../options/scales'
 
 export interface TooltipColors {
   bg: string
@@ -97,6 +98,50 @@ function overviewBucketIndex(
   return lo < buckets.length && buckets[lo].start <= instant ? lo : -1
 }
 
+/** Bucket-aligned index for a non-overview cursor (points are bucket starts). */
+function pointIndexAt(xValues: ArrayLike<number>, cursorTime: number): number {
+  let index = -1
+  for (let i = 0; i < xValues.length; i += 1) {
+    const value = xValues[i]
+    if (value === undefined || value > cursorTime) break
+    index = i
+  }
+  return index
+}
+
+/**
+ * R4 tooltip detail: bucket span, sample count and recorded min–max for a
+ * bucketed sensor point, or `raw` for a live raw-tail point. Non-sensor lines
+ * and single-sample buckets carry no detail.
+ */
+function bucketDetail(data: AlignedData, series: AlignedSeries, index: number): string | null {
+  if (series.source !== 'sensor' || index < 0 || index >= data.x.length) return null
+  if (series.liveTail?.[index] === true) return 'raw'
+  const bucket = data.overview?.buckets[index]
+  const interval = data.sensorIntervalSeconds
+  const start = bucket?.start ?? data.x[index]
+  const end =
+    bucket?.end ?? (interval !== null && interval > 1 ? (start ?? NaN) + interval * 1000 : null)
+  const count = series.sampleCount?.[index]
+  const min = series.minimum?.[index]
+  const max = series.maximum?.[index]
+  if (
+    start === undefined ||
+    end === null ||
+    count === null ||
+    count === undefined ||
+    count <= 1 ||
+    min === null ||
+    min === undefined ||
+    max === null ||
+    max === undefined
+  ) {
+    return null
+  }
+  const decimals = series.presentation?.decimals ?? 1
+  return `${formatTorontoClock(start)}–${formatTorontoClock(end)} · ${count} samples · ${min.toFixed(decimals)}–${max.toFixed(decimals)}`
+}
+
 /** Build a uPlot plugin that renders a value/provenance cursor tooltip. */
 export function tooltipPlugin(
   series: AlignedSeries[],
@@ -106,12 +151,12 @@ export function tooltipPlugin(
   let el: HTMLDivElement | null = null
 
   const seenKeys = new Set<SeriesKey>()
-  const overview = getData?.().overview !== undefined
   const meta: TooltipSeries[] = series
     .map((item, index) => ({ key: item.key, index: index + 1 }))
     .filter(item => {
       const candidate = series[item.index - 1]
-      if (candidate === undefined || (!overview && isEnvelopeSeries(candidate)) || seenKeys.has(item.key)) return false
+      if (candidate === undefined || isEnvelopeSeries(candidate) || seenKeys.has(item.key))
+        return false
       seenKeys.add(item.key)
       return true
     })
@@ -162,7 +207,7 @@ export function tooltipPlugin(
           }
           const bucket = buckets[bucketIndex]
           const heading = document.createElement('div')
-          heading.textContent = `UTC bucket: ${new Date(bucket.start).toISOString()} – ${new Date(bucket.end).toISOString()} (end exclusive)`
+          heading.textContent = `Bucket: ${formatTorontoClock(bucket.start)}–${formatTorontoClock(bucket.end)}`
           el.appendChild(heading)
         }
         for (const item of meta) {
@@ -188,6 +233,16 @@ export function tooltipPlugin(
               : segment?.quality ?? current.quality
           }`
           row.appendChild(prov)
+          const rowIndex = buckets !== undefined ? bucketIndex : pointIndexAt(xValues, cursorTime)
+          if (currentData !== undefined) {
+            const detail = bucketDetail(currentData, current, rowIndex)
+            if (detail !== null) {
+              const bucketInfo = document.createElement('span')
+              bucketInfo.className = 'mon-tooltip__bucket'
+              bucketInfo.textContent = ` ${detail}`
+              row.appendChild(bucketInfo)
+            }
+          }
           el.appendChild(row)
         }
         if (el.childNodes.length === 0) {

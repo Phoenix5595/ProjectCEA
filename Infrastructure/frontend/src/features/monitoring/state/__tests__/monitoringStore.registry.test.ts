@@ -273,6 +273,7 @@ describe('monitoring store device registry', () => {
       now: () => end,
     })
     const initial = store.getSnapshot()
+    store.setRangeBudget(500)
     const disconnect = feed.connect(
       {
         getSnapshot: () => store.getSnapshot(),
