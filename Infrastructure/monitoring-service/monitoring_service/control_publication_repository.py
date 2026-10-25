@@ -61,12 +61,19 @@ class ControlPublicationRepository:
         ):
             return _unavailable_publication()
         now = self._clock()
-        if current.valid_until <= now or any(item.valid_until <= now for item in future):
+        if current.valid_until <= now:
+            return _unavailable_publication()
+        # The future timeline is published every few minutes while its first
+        # interval only covers the current minute. Elapsed leading intervals are
+        # history, not staleness: drop them and keep the still-valid forecast,
+        # so the projection is not unavailable for most of each publish cycle.
+        remaining = tuple(item for item in future if item.valid_until > now)
+        if not remaining:
             return _unavailable_publication()
         return ControlPublicationResponse(
             current=CurrentPublicationResponse(quality=Quality.EXACT, value=current),
             projection=ProjectionPublicationResponse(
-                quality=Quality.ESTIMATED, value=future, trajectory=trajectory
+                quality=Quality.ESTIMATED, value=remaining, trajectory=trajectory
             ),
         )
 

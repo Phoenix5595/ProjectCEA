@@ -33,7 +33,12 @@ export function canonicalLightDeviceName(metricOrName: string): string {
 }
 
 
-/** Merge only climate targets; light trajectories retain separate provenance sources. */
+/**
+ * Merge climate targets per metric: the recorded history is the effective
+ * setpoint (`effective_setpoints`) and the projection now carries only the
+ * effective trajectory, so both are one line per target that continues across
+ * now. Light trajectories retain separate provenance sources.
+ */
 export function mergeControlSeries(
   history: ControlMonitoringResponse | null,
   projection: ControlMonitoringResponse | null
@@ -45,9 +50,9 @@ export function mergeControlSeries(
       const metric =
         series.metric ?? series.points[0]?.metric ?? metricFromName(series.name)
       const normalized = normalizeControlSeries(series, metric, 'climate')
-      const trajectoryKind =
-        normalized.trajectoryKind === 'effective' ? 'effective' : 'scheduled'
-      const key = `climate:${metric}:${trajectoryKind}`
+      // Keying by metric alone keeps the aligned series keys unique; a
+      // separate projected series would reuse the recorded line's keys.
+      const key = `climate:${metric}`
       const current = byKey.get(key)
       byKey.set(key, current ? mergeControl(current, normalized) : normalized)
     }

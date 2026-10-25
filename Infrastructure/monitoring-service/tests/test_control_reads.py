@@ -1475,6 +1475,26 @@ async def test_publication_parses_versioned_array_future_timeline() -> None:
 
 
 @pytest.mark.anyio
+async def test_publication_drops_elapsed_leading_intervals_and_stays_estimated() -> None:
+    # Given: the first published interval has elapsed but a later one is still valid.
+    timeline = json.dumps(
+        [
+            json.loads(_future_window_json(7, "2026-08-20T11:00:00Z", "2026-08-20T11:59:00Z")),
+            json.loads(_future_window_json(7, "2026-08-20T11:59:00Z", "2026-08-20T14:00:00Z")),
+        ]
+    )
+    repository = ControlPublicationRepository(FakeRedis([_current(7), timeline]), clock=lambda: NOW)
+
+    # When: monitoring reads between two publications.
+    response = await repository.read("Veg Room")
+
+    # Then: the forecast stays available and starts at the still-valid interval.
+    assert response.projection.quality == "estimated"
+    assert response.projection.value is not None and len(response.projection.value) == 1
+    assert response.projection.value[0].valid_until.isoformat().startswith("2026-08-20T14:00")
+
+
+@pytest.mark.anyio
 async def test_publication_rejects_overlapping_array_timeline_unavailable() -> None:
     timeline = json.dumps(
         [

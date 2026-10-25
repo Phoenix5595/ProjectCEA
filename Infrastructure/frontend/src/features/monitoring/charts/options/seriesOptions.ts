@@ -77,8 +77,9 @@ export function buildSeries(data: AlignedData, getData?: () => AlignedData): uPl
         spanGaps: s.source === 'sensor' && s.preserveGaps !== true,
         points: s.preserveGaps === true ? { show: true, size: 2 } : { show: false },
         stroke: color,
-        // Sensor lines are 1 px (owner decision 2026-10-25); targets keep 2 px.
-        width: s.presentation?.lineWidth ?? (target ? 2 : 1),
+        // Sensor and light lines are 1 px (owner decision 2026-10-25);
+        // climate targets keep 2 px dotted.
+        width: s.presentation?.lineWidth ?? (s.source === 'climate' ? 2 : 1),
       }
       if (s.source === 'light' && s.lightTrajectory !== undefined) {
         series.paths = lightTrajectoryPaths(s.key, getCurrentData)
@@ -88,7 +89,11 @@ export function buildSeries(data: AlignedData, getData?: () => AlignedData): uPl
         series.paths = stepped({ align: 1 })
       }
       if (isEnvelopeSeries(s)) {
+        // Min/max boundaries only shape the band fill. Canvas ignores a zero
+        // lineWidth (it keeps the previous width), so a transparent stroke is
+        // what actually hides the boundary lines.
         series.width = 0
+        series.stroke = 'rgba(0, 0, 0, 0)'
       }
       // Sensor-source series may declare a line pattern (soil: Water content
       // solid, EC dashed, pH dotted, temperature dash-dot) without touching

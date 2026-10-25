@@ -416,10 +416,10 @@ describe('panel alignment', () => {
       expect(historicalTargets.some(series => series.y.includes(22))).toBe(true)
       expect(historicalTargets.some(series => series.y.includes(23))).toBe(false)
 
-      // Environmental sensors stay on both readers; equipment panels never
-      // show setpoint targets.
-      expect(monitoring.series.find(series => series.metric === 'dry_bulb')).toBeDefined()
-      expect(historical.series.find(series => series.metric === 'dry_bulb')).toBeDefined()
+      // The unsuffixed `dry_bulb` stray (not a declared node sensor) never
+      // reaches the climate graph; equipment panels never show setpoints.
+      expect(monitoring.series.find(series => series.metric === 'dry_bulb')).toBeUndefined()
+      expect(historical.series.find(series => series.metric === 'dry_bulb')).toBeUndefined()
       const equipment = createPanelAlignment().align({ ...source, panel: equipmentPanel })
       expect(equipment.series.some(series => series.source === 'climate')).toBe(false)
       const co2 = equipment.series.find(

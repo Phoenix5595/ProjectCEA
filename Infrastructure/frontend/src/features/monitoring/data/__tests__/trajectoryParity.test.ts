@@ -54,7 +54,7 @@ function point(time: Date, value: number, origin: Origin, quality: Quality) {
 }
 
 describe('trajectory parity', () => {
-  it('continues recorded scheduled history into the projected ramp', () => {
+  it('continues recorded history into the projected ramp as one line', () => {
     const history = controlResponse([
       climateSeries([point(START, 22, 'recorded', 'exact'), point(NOW, 23, 'recorded', 'exact')]),
     ])
@@ -87,20 +87,16 @@ describe('trajectory parity', () => {
     }
 
     const aligned = alignSeries(input)
-    const step = aligned.series.find(
-      series => series.metric === 'heating_setpoint' && series.role === 'step'
-    )
-    const ramp = aligned.series.find(
-      series => series.metric === 'heating_setpoint' && series.role === 'linear'
-    )
+    const heating = aligned.series.filter(series => series.metric === 'heating_setpoint')
+    // One line per target: the ramp replaces the held value where it applies.
+    expect(heating.map(series => series.role)).toEqual(['step'])
+    const line = heating[0]
     const startIndex = aligned.x.indexOf(START.getTime())
     const nowIndex = aligned.x.indexOf(NOW.getTime())
     const endIndex = aligned.x.indexOf(END.getTime())
 
-    expect(step?.y[startIndex]).toBe(22)
-    expect(step?.y[nowIndex]).toBe(23)
-    expect(step?.y[endIndex]).toBe(23)
-    expect(ramp?.y[nowIndex]).toBe(23)
-    expect(ramp?.y[endIndex]).toBe(25)
+    expect(line?.y[startIndex]).toBe(22)
+    expect(line?.y[nowIndex]).toBe(23)
+    expect(line?.y[endIndex]).toBe(25)
   })
 })

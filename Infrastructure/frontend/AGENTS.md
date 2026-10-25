@@ -74,11 +74,14 @@ surfaces a pending-identity badge. Registry wire contracts live in
 - Pure-step light trajectories are classified as `step`; use native stepped paths when explicit trajectory topology is unavailable. Keep genuine linear ramps in the canonical trajectory.
 - Equipment-chart regression coverage lives in `tests/monitoring/equipment.spec.ts`; exercise Flower and Veg at 1920x1080 and 1280x1440 using the guarded loopback fixture only.
 
-The main `flower-climate` / `veg-climate` panels omit dry/wet-bulb series only
-when the selected history contains no finite recorded samples. Zero degrees
-is valid; retained sensor names fence live tails until history rebuilds.
-This graph-only filtering does not change API payloads, statistics tables,
-ingestion, control, or archive records.
+The main `flower-climate` / `veg-climate` panels draw only their declared
+dry/wet-bulb sensors: Flower front uses `_f`, Flower back uses `_b`, and Veg
+uses `_v`. These suffixes come from the node's assigned room/cluster placement,
+not its CAN node ID. Undeclared or unsuffixed bulb names are never drawn.
+Declared bulb series are also omitted when the selected history contains no
+finite recorded samples. Zero degrees is valid; retained sensor names fence
+live tails until history rebuilds. This graph-only filtering does not change
+API payloads, statistics tables, ingestion, control, or archive records.
 
 ## Local Commands
 

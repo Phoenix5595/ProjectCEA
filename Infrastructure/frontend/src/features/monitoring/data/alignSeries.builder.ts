@@ -257,23 +257,29 @@ export function buildControlSeries(
   const displayName = presentation?.label ?? cs.name
   const candidates: ControlCandidate[] = []
   if (cs.metric.endsWith('_setpoint')) {
+    // One line per target: held steps everywhere, replaced by the exact
+    // sampled ramp wherever a linear segment covers the slot. Drawing the
+    // step and ramp as two series showed a held value running alongside every
+    // ramp. Recorded bucket extrema keep their envelope so a transient hidden
+    // by a coarse grid stays visible.
+    const linearY =
+      cs.linear.length > 0 ? alignLinear(cs.linear, x, start, end, aggregated) : null
     if (cs.steps.length > 0) {
       const aligned = alignStepsWithBounds(cs.steps, x, start, end, aggregated)
-      const stepSeries = mkSeries({
-        key: seriesKey(source, cs.metric, 'step'),
-        label: cs.name,
-        kind: 'step',
-        metric: cs.metric,
-        role: 'step',
-        family,
-        y: aligned.y,
-        origin: cs.seriesOrigin,
-        quality: cs.seriesQuality,
-        isAggregated: isAgg,
-        presentation,
-      })
       candidates.push({
-        series: stepSeries,
+        series: mkSeries({
+          key: seriesKey(source, cs.metric, 'step'),
+          label: cs.name,
+          kind: 'step',
+          metric: cs.metric,
+          role: 'step',
+          family,
+          y: linearY === null ? aligned.y : aligned.y.map((value, index) => linearY[index] ?? value),
+          origin: cs.seriesOrigin,
+          quality: cs.seriesQuality,
+          isAggregated: isAgg,
+          presentation,
+        }),
         ...(isAgg && hasKnownExtrema(aligned)
           ? {
               envelope: buildEnvelopeSeries({
@@ -290,11 +296,8 @@ export function buildControlSeries(
             }
           : {}),
       })
-    }
-    if (cs.linear.length > 0) {
+    } else if (linearY !== null) {
       candidates.push({
-        // Linear targets are exact sampled ramps, not bucketed scalars, so
-        // they never take an envelope.
         series: mkSeries({
           key: seriesKey(source, cs.metric, 'linear'),
           label: cs.name,
@@ -302,7 +305,7 @@ export function buildControlSeries(
           metric: cs.metric,
           role: 'linear',
           family,
-          y: alignLinear(cs.linear, x, start, end, aggregated),
+          y: linearY,
           origin: cs.seriesOrigin,
           quality: cs.seriesQuality,
           isAggregated: isAgg,
@@ -310,51 +313,49 @@ export function buildControlSeries(
         }),
       })
     }
-    const alignedPoints = alignControlPoints(cs, x, start, end, aggregated)
-    const pointSeries = mkSeries({
-      key: seriesKey(source, cs.metric, 'point'),
-      label: cs.name,
-      kind: 'point',
-      metric: cs.metric,
-      role: 'point',
-      family,
-      y: alignedPoints.y,
-      origin: cs.seriesOrigin,
-      quality: cs.seriesQuality,
-      isAggregated: isAgg,
-      presentation,
-    })
-    // A setpoint series above already merged its samples into steps; the
-    // point fallback is only rendered when no step representation exists,
-    // and only it may then carry the envelope for the same metric.
-    const pointEnvelope =
-      cs.steps.length === 0 && isAgg && hasKnownExtrema(alignedPoints)
-        ? buildEnvelopeSeries({
-            source,
-            metric: cs.metric,
-            kind: 'point',
-            family,
-            label: displayName,
-            aligned: alignedPoints,
-            origin: cs.seriesOrigin,
-            quality: cs.seriesQuality,
-            isAggregated: isAgg,
-          })
-        : undefined
-    candidates.push({
-      series: pointSeries,
-      ...(pointEnvelope === undefined ? {} : { envelope: pointEnvelope }),
-    })
+    // Bare points are only the fallback when a target has no step or ramp.
+    if (candidates.length === 0) {
+      const alignedPoints = alignControlPoints(cs, x, start, end, aggregated)
+      candidates.push({
+        series: mkSeries({
+          key: seriesKey(source, cs.metric, 'point'),
+          label: cs.name,
+          kind: 'point',
+          metric: cs.metric,
+          role: 'point',
+          family,
+          y: alignedPoints.y,
+          origin: cs.seriesOrigin,
+          quality: cs.seriesQuality,
+          isAggregated: isAgg,
+          presentation,
+        }),
+        ...(isAgg && hasKnownExtrema(alignedPoints)
+          ? {
+              envelope: buildEnvelopeSeries({
+                source,
+                metric: cs.metric,
+                kind: 'point',
+                family,
+                label: displayName,
+                aligned: alignedPoints,
+                origin: cs.seriesOrigin,
+                quality: cs.seriesQuality,
+                isAggregated: isAgg,
+              }),
+            }
+          : {}),
+      })
+    }
     const surviving = candidates.filter(candidate =>
       candidate.series.y.some(value => value !== null && Number.isFinite(value))
     )
-    const chosen = cs.trajectoryKind === null ? surviving.slice(0, 1) : surviving
     return {
-      series: chosen.flatMap(candidate => [
+      series: surviving.flatMap(candidate => [
         candidate.series,
         ...(candidate.envelope?.series ?? []),
       ]),
-      bands: chosen.flatMap(candidate => (candidate.envelope ? [candidate.envelope.band] : [])),
+      bands: surviving.flatMap(candidate => (candidate.envelope ? [candidate.envelope.band] : [])),
     }
   }
   const aligned = alignControlPoints(cs, x, start, end, aggregated)

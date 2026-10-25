@@ -29,6 +29,11 @@ It may read TimescaleDB and Redis publication data; it never writes either.
 - Recorded control/tail and relay-timeline row facts expose event times as
   `time`; live-publication and sensor-series time fields retain their existing
   contracts.
+- `ControlPublicationRepository` discards elapsed future intervals and validates
+  the remaining timeline. A leading interval expiring between automation
+  publications must not make a still-valid projection unavailable. Current
+  snapshot freshness, publication version, and remaining future interval
+  validation still apply.
 - Aggregate-backed control and relay-PID reads split at each CAGG materialization
   watermark and use raw source rows at or above it while backfill is incomplete.
 - Sensor series and long-window statistics use the five-minute CAGG only below

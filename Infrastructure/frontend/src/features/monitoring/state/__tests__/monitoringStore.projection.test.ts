@@ -290,11 +290,12 @@ describe('projectionTimeline', () => {
         quality: segment.provenance.quality,
       })) ?? []
     expect(alignLinear(normalized, [midpoint], NOW.getTime(), rampEnd.getTime(), false)[0]).toBe(24)
-    expect(
-      aligned.series.some(
-        series => series.metric === 'heating_setpoint' && series.role === 'linear'
-      )
-    ).toBe(true)
+    const heating = aligned.series.filter(series => series.metric === 'heating_setpoint')
+    expect(heating).toHaveLength(1)
+    const values = heating[0]?.y.filter((value): value is number => value !== null) ?? []
+    // The effective ramp (22 → 26) is drawn; the scheduled twin (18 → 30) is not.
+    expect(values).toContain(22)
+    expect(values.some(value => value === 18 || value === 30)).toBe(false)
   })
 
   it('ignores rich draft trajectories', () => {

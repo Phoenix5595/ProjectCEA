@@ -141,8 +141,15 @@ function filterPanelInput(input: PanelAlignmentInput): BaseAlignInput {
   const { panel } = input
   const bounds = windowBounds(input.range, input.now)
   const climatePanel = panel.id === 'flower-climate' || panel.id === 'veg-climate'
+  const declared = new Set(panel.series.map(spec => spec.name))
   const series = input.series.filter(candidate => {
     if (!accepts(panel, 'sensor', familyForUnit(candidate.unit_family))) return false
+    // Dry/wet bulb lines on the climate graph are only the declared node
+    // sensors (owner rule): the unsuffixed `dry_bulb`/`wet_bulb` single
+    // samples the CAN node emits at restart would otherwise draw a stray line
+    // across the plot.
+    const bulb = /^(?:dry_bulb|wet_bulb)/.test(candidate.sensor)
+    if (climatePanel && bulb && !declared.has(candidate.sensor)) return false
     if (!climatePanel || !/^(?:dry_bulb|wet_bulb)(?:_[fbv])?$/.test(candidate.sensor)) return true
     return candidate.points.some(
       point =>
