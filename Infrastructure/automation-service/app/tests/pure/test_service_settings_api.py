@@ -189,6 +189,62 @@ async def test_put_commits_values_and_version_before_publishing(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_put_nested_safety_limits_commits_and_emits_flat_changes(monkeypatch):
+    limits = {
+        "min_temperature": 10,
+        "max_temperature": 35,
+        "min_humidity": 30,
+        "max_humidity": 90,
+        "min_co2": 400,
+        "max_co2": 2000,
+    }
+    pool = FakePool()
+    pool.values["automation"]["safety_limits"] = dict(limits)
+    event_bus = FakeEventBus(pool.events)
+
+    async def load_settings(_pool, service, **kwargs):
+        return json.loads(json.dumps(pool.values.get(service, {})))
+
+    async def log_config_version(**kwargs):
+        pool.events.append("version")
+
+    async def refresh_service_settings():
+        pool.events.append("refresh")
+
+    monkeypatch.setattr(service_settings.ServiceSettings, "load", load_settings)
+    monkeypatch.setattr(service_settings, "get_event_bus", lambda: event_bus)
+    config = SimpleNamespace(
+        service_settings_fallback=lambda: {},
+        get_control_config=lambda: dict(pool.values["automation"]),
+        refresh_service_settings=refresh_service_settings,
+    )
+
+    response = await service_settings.update_service_settings(
+        "automation",
+        {"safety_limits": {**limits, "max_temperature": 30}},
+        database=SimpleNamespace(
+            pool=pool,
+            config_repo=SimpleNamespace(log_config_version=log_config_version),
+        ),
+        config=config,
+        context=MutationRequestContext(correlation_id=uuid4()),
+        sink=event_bus,
+    )
+
+    assert pool.values["automation"]["safety_limits"]["max_temperature"] == 30
+    assert response["settings"]["safety_limits"]["value"]["max_temperature"] == 30
+    mutation_events = [
+        event
+        for event in event_bus.published
+        if getattr(event, "event_type", None) == "mutation.updated"
+    ]
+    assert len(mutation_events) == 1
+    assert [
+        (change.key, change.before, change.after) for change in mutation_events[0].payload.changes
+    ] == [("safety_limits.max_temperature", 35, 30)]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("service", "updates", "status", "code"),
     [

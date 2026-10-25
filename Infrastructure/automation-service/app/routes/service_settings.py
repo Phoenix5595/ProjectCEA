@@ -206,7 +206,7 @@ async def update_service_settings(
                 operation="update",
                 entity=EntityContext(entity_type="service_setting", entity_id=service),
                 changes=safe_allowlisted_diff(
-                    before={},
+                    before={key: current.get(key) for key in validated},
                     after={key: validated[key] for key in sorted(validated)},
                     allowed_fields=frozenset(validated),
                 ),

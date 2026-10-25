@@ -46,6 +46,8 @@ PID-driven binary relay reasons are attached only to a successful `relay.command
 
 Producers must not emit more than one visible event for a single physical transition. For example, a relay command and the next matching observation share one `correlation_id`; the observation does not create a second `relay.state_changed` row.
 
+Mutation `changes` come from `app/events/mutation_diff.py` `safe_allowlisted_diff(before, after, allowed_fields)`. Each change value is a JSON scalar. Nested mappings are flattened into dotted keys (`safety_limits.max_temperature`, a missing side is `null`); lists/tuples are compared by value and reported as canonical JSON strings. Sensitive-key redaction checks the full dotted key, and note metadata applies when the last segment is `note`/`notes`. Producers pass the persisted values as `before` so the event shows from→to; a diff must never raise after the mutation has committed.
+
 ## Stream bounds and key
 
 Canonical source: [`Infrastructure/shared/redis_keys.py`](../../shared/redis_keys.py).
