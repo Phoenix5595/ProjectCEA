@@ -9,7 +9,7 @@ control/
 ├── control_engine.py              # ControlEngine composition and initialization
 ├── control_engine_observation.py   # Snapshot and photoperiod observation methods
 ├── control_engine_tick.py          # Control-loop tick methods
-├── control_engine_history.py       # History logging and ramp restoration
+├── control_engine_history.py       # Effective-setpoint and automation-state history logging
 ├── scheduler/                       # Time-based projections
 │   ├── __init__.py                  # Scheduler and install_snapshot()
 │   ├── photoperiod.py               # Sun/moon resolution

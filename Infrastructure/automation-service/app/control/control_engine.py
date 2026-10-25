@@ -121,7 +121,6 @@ class ControlEngine(ObservationMixin, TickMixin, HistoryMixin):
         # Initialize SetpointManager AFTER _state is defined
         self.setpoint_manager = SetpointManager(
             database=database,
-            redis_client=database._automation_redis,
             state_manager=self._state,
             event_sink=event_sink,
         )
@@ -130,10 +129,6 @@ class ControlEngine(ObservationMixin, TickMixin, HistoryMixin):
         self.sensor_reader = SensorReader(database, self._state, config)
         self.climate_resolver = ClimatePeriodResolver(scheduler, self.setpoint_manager, self._state)
         self.setpoint_calculator = SetpointCalculator()
-
-        # Ramp restoration will be done asynchronously after Redis is available
-        # See _restore_ramps_on_startup() called from run()
-        self._ramps_restored = False
 
         # This context is published live; history logging uses its separate context below.
         self._automation_context: dict[tuple[str, str, str], dict[str, Any]] = {}

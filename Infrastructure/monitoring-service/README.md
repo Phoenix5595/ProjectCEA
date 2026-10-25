@@ -23,8 +23,10 @@ and Redis; `automation-service` remains the sole control and hardware authority.
 Room photoperiod reads use the canonical device cluster `main`. New
 `photoperiod_transition` rows carry phase indefinitely only inside explicit
 `monitoring_photoperiod_coverage` availability. Startup does not claim coverage
-before its first observation; unclosed restarts conservatively invalidate the
-interval from the last confirmed phase/availability boundary.
+before its first observation; unclosed restarts invalidate the interval from the
+previous run's latest persisted proof of recording: its last phase row, last
+coverage row, or last recorded control tick (`effective_setpoints` `Main` row
+before the new process started).
 
 Legacy `source='photoperiod'` room observations and raw per-light SUN/MOON
 setpoints support only their next 60 seconds, truncated by newer observations.

@@ -24,6 +24,7 @@ Local verification runs the automation pure tests against fakes for database, Re
 
 - Climate setpoints come from `climate_periods` rows keyed by `(location, cluster, mode_id, submode_id)`. Each row has `period_name`, `start_time`, `end_time`, `ramp_minutes`, and target columns.
 - `ClimatePeriodResolver` and `SetpointManager` bridge period-to-period ramps via `ramp_in_duration`.
+- Climate ramps survive restarts the way light ramps do: nothing is persisted. On a room's first evaluation after process start, if the current period's scheduled window `[start_time, start_time + ramp_minutes)` contains now, `SetpointManager` re-derives the ramp from the clock: anchor at the period boundary, source = targets of the cyclic predecessor period of the exact captured profile (rows ordered by start clock, wrapping), same skip thresholds as transitions, no lifecycle event. A ramp re-planned by a mid-window target or profile edit resumes on the scheduled line after a restart.
 - Constant modes with `room_modes.is_constant = true` may use a single period. A period with `start_time == end_time` means 24-hour coverage; prefer `00:00` → `00:00`.
 - The saved projection trajectory emits an `effective` segment series for every climate metric that is currently active: a schedule period with a setpoint for it, including the ramp between periods (owner rule). A metric with no setpoint (for example CO₂ when unset) is reported unavailable, never invented. Monitoring graphs only these effective segments; the `scheduled` trajectory is for the Control timeline. Verified on production 2026-10-25: Flower emitted effective heating, cooling and VPD (heating ramping 25.0 → 24.98 °C) and CO₂ unavailable.
 
@@ -38,6 +39,8 @@ Local verification runs the automation pure tests against fakes for database, Re
 - Relay/dimmer sequencing: intensity > 0 uses relay ON then dimmer set; intensity = 0 uses dimmer 0 then relay OFF.
 - Historical room phase recording is non-blocking and changes-only: one first SUN/MOON observation and real phase changes use `monitoring_room_photoperiod.source = 'photoperiod_transition'`. Time elapsed, profile metadata changes, and same-phase restarts do not create phase heartbeats.
 - Sparse startup, shutdown, control-failure, and lost-record/recovery boundaries are stored separately in `monitoring_photoperiod_coverage`. Failed transactions retain their ordered bounded batch; repeatable-read restart seeding and conditional inserts prevent duplicate phase rows after ambiguous commits.
+- An unclean stop (last coverage fact still `available`) is closed with `unavailable/unclean_restart` stamped at the previous run's latest persisted proof of recording: its last phase row, last coverage row, or its last `effective_setpoints` `Main` row before this process started. No re-baseline phase row is written at resume.
+- Stops are bounded so the `stopped` closure is written: `automation-service.service` runs uvicorn with `--timeout-graceful-shutdown 5`, which cancels still-open requests (notably the `/api/events/stream` SSE) after 5 s and then runs lifespan shutdown, well inside systemd's stop timeout.
 
 ## VPD Control
 

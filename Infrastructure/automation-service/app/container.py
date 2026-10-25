@@ -44,6 +44,7 @@ from app.services.photoperiod_history_logger import (
     PhotoperiodHistoryLogger,
 )
 from app.services.room_schedule_service import RoomScheduleService
+from app.state import get_state_manager
 from shared.infra_logging import get_logger
 from shared.redis_client import close_async, create_async_client
 from shared.redis_keys import OPERATIONAL_EVENTS_STREAM
@@ -337,11 +338,10 @@ class ServiceContainer:
             )
             logger.info("Control engine initialized")
 
-            # Restore ramp state from database (for service restarts)
-            try:
-                await self.control_engine.restore_ramp_state_from_database()
-            except Exception as e:
-                logger.warning(f"Failed to restore ramp state: {e}")
+            # StateManager Redis fallback/dual-write for every get_state_manager() cache.
+            automation_redis = self.database._automation_redis
+            if automation_redis is not None and automation_redis.redis_enabled:
+                get_state_manager().set_redis_client(automation_redis.redis_client)
 
             # Initialize lights (safety levels and restore intensities)
             from app.initialization.lighting import restore_light_intensities, set_safety_levels

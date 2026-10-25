@@ -26,7 +26,6 @@ from app.redis.schema import mode_key
 from app.state._types import CacheEntry
 from app.state.alarms import AlarmMixin
 from app.state.pid import PIDMixin
-from app.state.ramps import RampMixin
 from app.state.redis_client import RedisClientMixin
 from shared.infra_logging import get_logger
 
@@ -53,7 +52,7 @@ logger = get_logger(__name__)
 T = TypeVar("T")
 
 
-class StateManager(SchemaValidationMixin, PIDMixin, RampMixin, AlarmMixin, RedisClientMixin):
+class StateManager(SchemaValidationMixin, PIDMixin, AlarmMixin, RedisClientMixin):
     """In-memory state manager with TTL and Redis fallback.
 
     Provides fast in-memory caching for internal state with:

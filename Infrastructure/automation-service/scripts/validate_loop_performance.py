@@ -224,7 +224,6 @@ async def run_load_test():
         event_policy=event_policy,
         alarm_manager=alarm_manager,
     )
-    engine._ramps_restored = True
 
     monitor = get_performance_monitor()
     monitor.reset()

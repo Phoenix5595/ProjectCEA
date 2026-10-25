@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any, cast
+from datetime import UTC, datetime, time, timedelta
+from typing import TYPE_CHECKING, Any
 
 from app.control.ramp_policy import DEFAULT_RAMP_SKIP_THRESHOLD, RAMP_SKIP_THRESHOLDS
 from app.control.scheduler import LOCAL_TZ
@@ -13,7 +13,6 @@ from shared.infra_logging import LoggingContext, get_logger
 if TYPE_CHECKING:
     from app.database import DatabaseManager
     from app.events.operational_ports import OperationalEventSink
-    from app.redis import AutomationRedisClient
 
 logger = get_logger(__name__)
 
@@ -27,7 +26,6 @@ class RampState:
     duration_minutes: float
     start_time: datetime
     midpoint_emitted: bool
-    restored: bool
 
     def __init__(
         self,
@@ -36,16 +34,13 @@ class RampState:
         target_value: float,
         duration_minutes: float,
         start_time: datetime,
-        *,
-        restored: bool = False,
     ):
         self.setpoint_type = setpoint_type
         self.start_value = start_value
         self.target_value = target_value
         self.duration_minutes = duration_minutes
         self.start_time = start_time
-        self.midpoint_emitted = restored
-        self.restored = restored
+        self.midpoint_emitted = False
 
     @property
     def end_time(self) -> datetime:
@@ -71,17 +66,10 @@ class RampState:
 class RampManager:
     """Manages ramp transitions for setpoint changes."""
 
-    _redis: AutomationRedisClient | None
-
-    def __init__(
-        self,
-        redis_client: AutomationRedisClient | None = None,
-        event_sink: OperationalEventSink | None = None,
-    ) -> None:
+    def __init__(self, event_sink: OperationalEventSink | None = None) -> None:
         """Initialize ramp manager."""
         # Key: (location, cluster, setpoint_type) - ensures room isolation
         self.active_ramps: dict[tuple[str, str, str], RampState] = {}
-        self._redis = redis_client
         self._event_sink = event_sink
 
     def _emit_lifecycle(
@@ -130,86 +118,9 @@ class RampManager:
             )
         )
 
-    def set_redis(self, redis_client: AutomationRedisClient) -> None:
-        """Set Redis client for ramp persistence."""
-        self._redis = redis_client
-
     def _make_key(self, location: str, cluster: str, setpoint_type: str) -> tuple[str, str, str]:
         """Create composite key for room-isolated ramp storage."""
         return (location, cluster, setpoint_type)
-
-    def _persist_ramp(self, location: str, cluster: str, ramp: RampState) -> None:
-        """Persist ramp state to Redis using sync method."""
-        if not self._redis:
-            return
-        try:
-            self._redis.persist_ramp(
-                location,
-                cluster,
-                ramp.setpoint_type,
-                ramp.start_value,
-                ramp.target_value,
-                int(ramp.duration_minutes),
-                ramp.start_time,
-            )
-        except Exception as e:
-            logger.warning(f"Failed to persist ramp: {e}")
-
-    def _clear_persisted_ramp(self, location: str, cluster: str, setpoint_type: str) -> None:
-        """Clear persisted ramp from Redis."""
-        if not self._redis:
-            return
-        try:
-            self._redis.clear_persisted_ramp(location, cluster, setpoint_type)
-        except Exception as e:
-            logger.warning(f"Failed to clear persisted ramp: {e}")
-
-    def restore_ramps_from_redis(self) -> int:
-        """Restore active ramps from Redis on startup. Returns count of restored ramps."""
-        if not self._redis:
-            logger.warning("No Redis client - cannot restore ramps")
-            return 0
-
-        try:
-            ramps = cast("list[dict[str, Any]]", self._redis.get_persisted_ramps())
-            restored = 0
-            now = datetime.now()
-
-            for ramp_data in ramps:
-                try:
-                    location = str(ramp_data["location"])
-                    cluster = str(ramp_data["cluster"])
-                    setpoint_type = str(ramp_data["setpoint_type"])
-                    start_time = cast(datetime, ramp_data["start_time"])
-                    if not isinstance(start_time, datetime):
-                        logger.warning(f"Invalid start_time type for ramp: {type(start_time)}")
-                        continue
-                    duration = float(ramp_data["duration_minutes"])
-
-                    ramp_key = self._make_key(location, cluster, setpoint_type)
-                    self.active_ramps[ramp_key] = RampState(
-                        setpoint_type,
-                        float(ramp_data["start_value"]),
-                        float(ramp_data["target_value"]),
-                        duration,
-                        start_time,
-                        restored=True,
-                    )
-
-                    elapsed = (now - start_time).total_seconds() / 60.0
-                    progress = min(elapsed / duration * 100, 100.0)
-                    logger.info(
-                        f"RAMP RESTORED: {location}/{cluster} {setpoint_type} "
-                        f"at {progress:.1f}% ({elapsed:.1f}/{duration:.0f} min)"
-                    )
-                    restored += 1
-                except (Exception, KeyError) as e:
-                    logger.warning(f"Failed to restore ramp: {e}")
-
-            return restored
-        except Exception as e:
-            logger.error(f"Failed to restore ramps from Redis: {e}")
-            return 0
 
     def start_ramp(
         self,
@@ -275,9 +186,6 @@ class RampManager:
             "ramp.started", ramp, location, cluster, current_time, "period_transition"
         )
 
-        if self._redis:
-            self._persist_ramp(location, cluster, ramp)
-
     def get_ramp_value(
         self,
         location: str,
@@ -322,8 +230,6 @@ class RampManager:
             self._emit_lifecycle(
                 "ramp.completed", ramp, location, cluster, current_time, "target_reached"
             )
-            if self._redis:
-                self._clear_persisted_ramp(location, cluster, setpoint_type)
 
         return nominal_value, None
 
@@ -347,22 +253,6 @@ class RampManager:
                 current_time or datetime.now(tz=UTC),
                 "cancelled",
             )
-            if self._redis:
-                self._clear_persisted_ramp(location, cluster, setpoint_type)
-
-    def get_active_ramps(self) -> dict[tuple[str, str, str], dict[str, Any]]:
-        """Get information about all active ramps."""
-        return {
-            ramp_key: {
-                "setpoint_type": ramp.setpoint_type,
-                "start_value": ramp.start_value,
-                "target_value": ramp.target_value,
-                "duration_minutes": ramp.duration_minutes,
-                "start_time": ramp.start_time.isoformat(),
-                "end_time": ramp.end_time.isoformat(),
-            }
-            for ramp_key, ramp in self.active_ramps.items()
-        }
 
     def current_ramp_values(
         self, location: str, cluster: str, current_time: datetime
@@ -439,13 +329,6 @@ class RampManager:
                 f"in {remaining_minutes:.1f}min remaining"
             )
 
-    def clear_all_ramps(self) -> None:
-        """Clear all active ramps - used on service startup."""
-        if self.active_ramps:
-            ramp_types = list(self.active_ramps.keys())
-            self.active_ramps.clear()
-            logger.info(f"RAMPS CLEARED: {ramp_types}")
-
     def clear_ramps_for_room(self, location: str, cluster: str) -> None:
         """Clear all active ramps for a specific room - used on mode change."""
         setpoint_types = ["heating", "cooling", "humidity", "co2", "vpd"]
@@ -466,7 +349,7 @@ class RampManager:
         if cleared:
             logger.info(f"RAMPS CLEARED for {location}/{cluster}: {cleared}")
 
-    def restore_ramp(
+    def resume_ramp(
         self,
         location: str,
         cluster: str,
@@ -477,16 +360,18 @@ class RampManager:
         start_time: datetime,
         current_time: datetime,
     ) -> None:
-        ramp = RampState(
-            setpoint_type,
-            start_value,
-            target_value,
-            duration_minutes,
-            start_time,
-            restored=True,
-        )
-        if not ramp.is_complete(current_time):
-            self.active_ramps[self._make_key(location, cluster, setpoint_type)] = ramp
+        """Re-derive a scheduled ramp that began before this process from the clock.
+
+        Emits no lifecycle event (the ramp started in an earlier run) and persists
+        nothing; a complete ramp is not stored.
+        """
+        ramp = RampState(setpoint_type, start_value, target_value, duration_minutes, start_time)
+        if ramp.is_complete(current_time):
+            return
+        ramp.midpoint_emitted = (
+            current_time - start_time
+        ).total_seconds() / 60.0 / duration_minutes >= 0.5
+        self.active_ramps[self._make_key(location, cluster, setpoint_type)] = ramp
 
 
 class SetpointManager:
@@ -495,7 +380,6 @@ class SetpointManager:
     def __init__(
         self,
         database: DatabaseManager | None = None,  # DatabaseManager for querying climate periods
-        redis_client: AutomationRedisClient | None = None,
         state_manager=None,  # StateManager (optional)
         event_sink: OperationalEventSink | None = None,
     ):
@@ -503,12 +387,11 @@ class SetpointManager:
 
         Args:
             database: DatabaseManager for querying climate_periods
-            redis_client: Redis client for ramp persistence
             state_manager: StateManager (optional)
+            event_sink: Optional operational-event sink for ramp lifecycle events
         """
         self.database: DatabaseManager | None = database
-        self._redis = redis_client
-        self.ramp_manager = RampManager(redis_client, event_sink)
+        self.ramp_manager = RampManager(event_sink)
         self._state = state_manager  # type: ignore
         # Captured-profile ramp retarget authority per room.
         self._profile_identity: dict[tuple[str, str], Any] = {}
@@ -560,14 +443,11 @@ class SetpointManager:
                 and prior_identity != climate_identity
             )
             targets_changed = prior_nominal is not None and prior_nominal != nominal_values
-            restored_contradiction = self._restored_ramp_contradiction(
-                location, cluster, nominal_values, current_time
-            )
 
             # Check for period transitions that require ramping
             period_changed = self._detect_mode_change(current_period, previous_period)
 
-            if period_changed or identity_changed or targets_changed or restored_contradiction:
+            if period_changed or identity_changed or targets_changed:
                 # CRITICAL: Clear ALL stale ramps when the authority changes to
                 # prevent sawtoothing. Snapshot the live interpolated values
                 # first so the replacement ramps resume from where the
@@ -592,6 +472,22 @@ class SetpointManager:
                     )
                 else:
                     self._apply_nominal_values(result, nominal_values)
+            elif (
+                prior_nominal is None
+                and ramp_in_duration > 0
+                and not self.ramp_manager.has_active_ramps(location, cluster)
+            ):
+                # First evaluation of this room since process start: like light ramps,
+                # re-derive an in-progress scheduled ramp from the clock.
+                await self._resume_scheduled_ramps(
+                    location,
+                    cluster,
+                    nominal_values,
+                    ramp_in_duration,
+                    current_time,
+                    result,
+                    setpoint_data,
+                )
             elif self.ramp_manager.has_active_ramps(location, cluster):
                 # Continue applying active ramps (no period change, but ramps still in progress)
                 self._apply_ramp_values(location, cluster, result, nominal_values, current_time)
@@ -651,34 +547,6 @@ class SetpointManager:
         if previous_period is None:
             return False
         return current_period != previous_period
-
-    def _restored_ramp_contradiction(
-        self,
-        location: str,
-        cluster: str,
-        nominal_values: Mapping[str, float | None],
-        current_time: datetime,
-    ) -> bool:
-        """True when a restored ramp targets a nominal that has since changed.
-
-        A restored ramp whose target contradicts the current nominal must
-        retarget instead of continuing toward the stale target.
-        """
-        for setpoint_type, nominal_value in nominal_values.items():
-            if nominal_value is None:
-                continue
-            ramp = self.ramp_manager.active_ramps.get(
-                self.ramp_manager._make_key(location, cluster, setpoint_type)
-            )
-            if (
-                ramp is None
-                or not getattr(ramp, "restored", False)
-                or ramp.is_complete(current_time)
-            ):
-                continue
-            if ramp.target_value != nominal_value:
-                return True
-        return False
 
     async def _handle_mode_transition_ramp(
         self,
@@ -818,6 +686,111 @@ class SetpointManager:
             anchor = current_time
         return anchor
 
+    async def _resume_scheduled_ramps(
+        self,
+        location: str,
+        cluster: str,
+        nominal_values: Mapping[str, float | None],
+        ramp_in_duration: float,
+        current_time: datetime,
+        result: dict[str, Any],
+        setpoint_data: Mapping[str, Any],
+    ) -> None:
+        """Resume the current period's scheduled ramp at its clock position.
+
+        Like light ramps, the position comes from the scheduled boundary and the
+        cyclic predecessor period's targets; nothing is carried over from an
+        earlier run. Outside the ramp window the nominal values apply.
+        """
+        period_start_time = setpoint_data.get("period_start_time")
+        if not period_start_time:
+            self._apply_nominal_values(result, nominal_values)
+            return
+        anchor = self._scheduled_boundary(current_time, period_start_time)
+        deadline = anchor + timedelta(minutes=ramp_in_duration)
+        if current_time >= deadline:
+            self._apply_nominal_values(result, nominal_values)
+            return
+
+        sources = await self._scheduled_ramp_sources(location, cluster, setpoint_data)
+        resumed: list[str] = []
+        for setpoint_type in ("heating", "cooling", "humidity", "co2", "vpd"):
+            target = nominal_values[setpoint_type]
+            source = sources.get(setpoint_type)
+            if target is None or source is None:
+                continue
+            threshold = RAMP_SKIP_THRESHOLDS.get(setpoint_type, DEFAULT_RAMP_SKIP_THRESHOLD)
+            if abs(target - source) < threshold:
+                continue
+            self.ramp_manager.resume_ramp(
+                location,
+                cluster,
+                setpoint_type,
+                source,
+                target,
+                ramp_in_duration,
+                anchor,
+                current_time,
+            )
+            resumed.append(setpoint_type)
+        if resumed:
+            logger.info(
+                f"RAMP RESUMED: {location}/{cluster} {resumed} from {anchor.isoformat()} "
+                f"over {ramp_in_duration}min"
+            )
+        self._apply_ramp_values(location, cluster, result, nominal_values, current_time)
+
+    async def _scheduled_ramp_sources(
+        self, location: str, cluster: str, setpoint_data: Mapping[str, Any]
+    ) -> dict[str, float | None]:
+        """Targets of the period that hands off to the current one.
+
+        Same cyclic predecessor rule as the published trajectory: rows of the
+        exact captured profile ordered by start clock, previous row, wrapping. A
+        single-period profile is its own predecessor (no ramp).
+        """
+        identity = setpoint_data.get("climate_identity")
+        if self.database is None or not isinstance(identity, tuple | list) or len(identity) != 5:
+            return {}
+        mode_id, submode_id, _, start_hhmm, _ = identity
+        if mode_id is None:
+            return {}
+        rows = await self.database.climate_periods_repo.get_periods(
+            location, cluster, mode_id, submode_id
+        )
+        ordered = sorted(
+            (
+                (minute, row)
+                for row in rows
+                if (minute := self._start_minute(row.get("start_time"))) is not None
+            ),
+            key=lambda item: item[0],
+        )
+        current_minute = self._start_minute(start_hhmm)
+        for index, (minute, _row) in enumerate(ordered):
+            if minute != current_minute:
+                continue
+            prev = ordered[index - 1][1]
+            return {
+                "heating": _as_float(prev.get("heating_setpoint")),
+                "cooling": _as_float(prev.get("cooling_setpoint")),
+                "humidity": None,  # VPD cascade derives humidity
+                "co2": _as_float(prev.get("co2_setpoint")),
+                "vpd": _as_float(prev.get("vpd_setpoint")),
+            }
+        return {}
+
+    @staticmethod
+    def _start_minute(value: object) -> int | None:
+        """Minute of day of a ``time`` or ``HH:MM[:SS]`` start, else ``None``."""
+        if isinstance(value, time):
+            return value.hour * 60 + value.minute
+        try:
+            hour_text, minute_text = str(value).split(":")[:2]
+            return int(hour_text) * 60 + int(minute_text)
+        except (ValueError, TypeError):
+            return None
+
     async def _calculate_ramp_start_values(
         self,
         location: str,
@@ -955,37 +928,9 @@ class SetpointManager:
         result["effective_co2_setpoint"] = nominal_values["co2"]
         result["effective_vpd_setpoint"] = nominal_values["vpd"]
 
-    def get_ramp_state(self) -> dict[tuple[str, str, str], dict[str, Any]]:
-        """Get current ramp state for persistence."""
-        return self.ramp_manager.get_active_ramps()
 
-    def restore_ramp_state(
-        self, ramp_data: dict[tuple[str, str, str], dict[str, Any]], current_time: datetime
-    ) -> None:
-        """Restore ramp state from persisted data."""
-        for ramp_key, ramp_info in ramp_data.items():
-            try:
-                start_value = ramp_info["start_value"]
-                target_value = ramp_info["target_value"]
-                duration_minutes = ramp_info["duration_minutes"]
-                start_time = datetime.fromisoformat(ramp_info["start_time"])
-
-                # Recreate ramp state
-                ramp_state = RampState(
-                    ramp_key[2],
-                    start_value,
-                    target_value,
-                    duration_minutes,
-                    start_time,
-                    restored=True,
-                )
-
-                # Only restore if not complete
-                if not ramp_state.is_complete(current_time):
-                    self.ramp_manager.active_ramps[ramp_key] = ramp_state
-                    logger.info(f"Restored ramp state for {ramp_key}")
-                else:
-                    logger.debug(f"Skipping completed ramp restore for {ramp_key}")
-
-            except (KeyError, ValueError) as e:
-                logger.warning(f"Failed to restore ramp state for {ramp_key}: {e}")
+def _as_float(value: object) -> float | None:
+    """Numeric column value as ``float``; anything else (including ``bool``) is ``None``."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    return float(value)

@@ -55,9 +55,6 @@ class TickMixin:
         """Run one tick against the snapshot reference captured at entry."""
         self._tick_effective_setpoints.clear()
         self._photoperiod_phases.clear()
-        if not self._ramps_restored:
-            await self._restore_ramps_on_startup()
-            self._ramps_restored = True
 
         # Expire manual overrides before processing devices
         try:

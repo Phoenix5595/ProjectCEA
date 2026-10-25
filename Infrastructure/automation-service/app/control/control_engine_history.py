@@ -1,4 +1,4 @@
-"""Control history and ramp-restoration methods."""
+"""Control history logging methods."""
 
 from __future__ import annotations
 
@@ -14,64 +14,6 @@ logger = get_logger("app.control.control_engine")
 
 
 class HistoryMixin:
-    async def _restore_ramps_on_startup(self) -> None:
-        """Restore active ramps from StateManager (Redis-backed) on startup."""
-        try:
-            # Set Redis client for StateManager if available
-            redis_client = self.database._automation_redis
-            if redis_client and redis_client.redis_enabled:
-                self._state.set_redis_client(redis_client.redis_client)
-                # Also sync RampManager's redis for backward compatibility
-                self.setpoint_manager.ramp_manager.set_redis(redis_client)
-
-            # Restore ramps via StateManager (which handles Redis fallback)
-            persisted_ramps = await self._state.get_persisted_ramps()
-            if persisted_ramps:
-                from datetime import datetime
-
-                now = datetime.now()
-                restored = 0
-                for ramp_data in persisted_ramps:
-                    try:
-                        location = ramp_data.get("location")
-                        cluster = ramp_data.get("cluster")
-                        setpoint_type = ramp_data.get("setpoint_type")
-                        start_time = ramp_data.get("start_time")
-                        duration = ramp_data.get("duration_minutes", 0)
-                        start_value = ramp_data.get("start_value")
-                        target_value = ramp_data.get("target_value")
-
-                        if location and cluster and setpoint_type and start_time:
-                            # Check if ramp is still active
-                            from datetime import timedelta
-
-                            end_time = start_time + timedelta(minutes=int(duration))
-                            if now < end_time:
-                                self.setpoint_manager.ramp_manager.start_ramp(
-                                    location,
-                                    cluster,
-                                    setpoint_type,
-                                    float(start_value or 0),
-                                    float(target_value or 0),
-                                    float(duration),
-                                    start_time,
-                                )
-                                restored += 1
-                    except Exception as ramp_err:
-                        logger.warning(f"Failed to restore ramp {ramp_data}: {ramp_err}")
-
-                if restored > 0:
-                    logger.info(
-                        f"Control engine startup: restored {restored} active ramp(s) via StateManager"
-                    )
-                else:
-                    logger.info("Control engine startup: no active ramps to restore")
-            else:
-                logger.info("Control engine startup: no persisted ramps found")
-        except Exception as e:
-            logger.error(f"Failed to restore ramps on startup: {e}")
-            self.setpoint_manager.ramp_manager.clear_all_ramps()
-
     async def _log_effective_setpoints(
         self,
         location: str,
@@ -214,13 +156,3 @@ class HistoryMixin:
                 )
                 continue
             self._automation_state_pending.consume(len(batch))
-
-    async def restore_ramp_state_from_database(self) -> None:
-        """Handle ramp state on service startup.
-
-        Light ramp state is time-based and resumes automatically by recalculating
-        intensity from elapsed time since schedule start. Climate ramps (setpoints)
-        are restored from Redis if available to ensure continuity of environmental
-        transitions.
-        """
-        await self._restore_ramps_on_startup()

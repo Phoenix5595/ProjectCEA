@@ -167,7 +167,6 @@ def _engine(
 ) -> tuple[ControlEngine, FakeDeviceProcessor]:
     engine = ControlEngine.__new__(ControlEngine)
     processor = FakeDeviceProcessor()
-    engine._ramps_restored = True
     engine._profiling_enabled = False
     engine._config_cache = FakeConfigCache()
     engine.config = FakeConfig()

@@ -27,7 +27,10 @@ Environment=POSTGRES_USER=cea_user
 # bootstrap before the file is materialised).
 EnvironmentFile=-/opt/projectcea/shared/env/postgres.env
 EnvironmentFile=-/opt/projectcea/shared/env/api_key.env
-ExecStart=/opt/projectcea/current/Infrastructure/automation-service/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8001
+# --timeout-graceful-shutdown: after 5 s uvicorn cancels still-open requests (the
+# /api/events/stream SSE loop) and then runs lifespan shutdown (photoperiod
+# `stopped` closure, DB close), so a held dashboard stream never forces SIGKILL.
+ExecStart=/opt/projectcea/current/Infrastructure/automation-service/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --timeout-graceful-shutdown 5
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal

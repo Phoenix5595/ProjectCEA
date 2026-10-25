@@ -19,7 +19,6 @@ Usage:
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import redis
@@ -51,7 +50,6 @@ class AutomationRedisClient:
     - Heartbeats
     - PID parameter cache
     - Light intensity
-    - Ramp state
     - Schedule state
 
     Usage:
@@ -370,70 +368,6 @@ class AutomationRedisClient:
     ) -> bool:
         """Write PID parameters to Redis cache."""
         return self.ops.write_pid_parameters(device_type, kp, ki, kd, source, updated_at)
-
-    # ========================================================================
-    # Ramps - delegate to ops.ramps
-    # ========================================================================
-
-    def write_ramp_state(
-        self,
-        location: str,
-        cluster: str,
-        setpoint_type: str,
-        current_effective_setpoint: float,
-        ramp_start_timestamp: datetime,
-        ramp_duration: int,
-        target_setpoint: float,
-    ) -> bool:
-        """Write ramp state to Redis."""
-        return self.ops.write_ramp_state(
-            location,
-            cluster,
-            setpoint_type,
-            current_effective_setpoint,
-            ramp_start_timestamp,
-            ramp_duration,
-            target_setpoint,
-        )
-
-    def read_ramp_state(
-        self, location: str, cluster: str, setpoint_type: str
-    ) -> dict[str, Any] | None:
-        """Read ramp state from Redis."""
-        return self.ops.read_ramp_state(location, cluster, setpoint_type)
-
-    def clear_ramp_state(self, location: str, cluster: str, setpoint_type: str) -> bool:
-        """Clear ramp state from Redis."""
-        return self.ops.clear_ramp_state(location, cluster, setpoint_type)
-
-    def persist_ramp(
-        self,
-        location: str,
-        cluster: str,
-        setpoint_type: str,
-        start_value: float,
-        target_value: float,
-        duration_minutes: int,
-        start_time: datetime,
-    ) -> bool:
-        """Persist ramp state for recovery after restart."""
-        return self.ops.persist_ramp(
-            location,
-            cluster,
-            setpoint_type,
-            start_value,
-            target_value,
-            duration_minutes,
-            start_time,
-        )
-
-    def get_persisted_ramps(self) -> list[dict[str, Any]]:
-        """Get all persisted ramps for restoration."""
-        return self.ops.get_persisted_ramps()
-
-    def clear_persisted_ramp(self, location: str, cluster: str, setpoint_type: str) -> bool:
-        """Clear a persisted ramp after completion."""
-        return self.ops.clear_persisted_ramp(location, cluster, setpoint_type)
 
     # ========================================================================
     # Streams - delegate to ops.streams

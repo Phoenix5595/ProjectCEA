@@ -49,6 +49,10 @@ class _StateConnection(_Connection):
         self.queries.append(query)
         return self.responses.pop(0)
 
+    async def fetchval(self, query: str, *_: Any) -> None:
+        self.queries.append(query)
+        return None
+
 
 @pytest.mark.asyncio
 async def test_photoperiod_store_reads_renamed_time_columns() -> None:

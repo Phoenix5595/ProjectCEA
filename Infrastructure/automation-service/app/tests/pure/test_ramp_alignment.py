@@ -7,21 +7,29 @@ period boundary rather than the tick that observed the change.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 from typing import Any
 
 import pytest
 
-from app.control.setpoint_manager import RampState, SetpointManager
+from app.control.setpoint_manager import SetpointManager
 from app.control.scheduler import LOCAL_TZ
 
 
 class FakePeriodsRepo:
     def __init__(self, periods: list[dict[str, Any]]) -> None:
         self.periods = periods
+        self.calls: list[tuple[str, str, int | None, int | None]] = []
 
-    async def get_periods(self, location: str, cluster: str) -> list[dict[str, Any]]:
+    async def get_periods(
+        self,
+        location: str,
+        cluster: str,
+        mode_id: int | None = None,
+        submode_id: int | None = None,
+    ) -> list[dict[str, Any]]:
+        self.calls.append((location, cluster, mode_id, submode_id))
         return self.periods
 
 
@@ -228,24 +236,127 @@ async def test_boundary_before_midnight_wraps_to_the_previous_day() -> None:
     assert not manager.ramp_manager.has_active_ramps("Veg Room", "main")
 
 
+class RecordingSink:
+    def __init__(self) -> None:
+        self.events: list[Any] = []
+
+    def emit_nowait(self, event: Any) -> None:
+        self.events.append(event)
+
+
+def _period(
+    name: str,
+    start: time,
+    end: time,
+    heating: float,
+    ramp: int,
+    *,
+    cooling: float | None = None,
+    vpd: float | None = None,
+) -> dict[str, Any]:
+    return {
+        "period_name": name,
+        "start_time": start,
+        "end_time": end,
+        "ramp_minutes": ramp,
+        "heating_setpoint": heating,
+        "cooling_setpoint": cooling,
+        "vpd_setpoint": vpd,
+        "co2_setpoint": None,
+    }
+
+
+FLOWER_PROFILE = [
+    _period("Jour", time(0, 0), time(10, 0), 25.0, 0, cooling=27.0, vpd=1.1),
+    _period("Nuit", time(10, 0), time(16, 0), 24.0, 60, cooling=27.0, vpd=1.1),
+    _period("Jour2", time(16, 0), time(0, 0), 25.0, 60, cooling=27.0, vpd=1.1),
+]
+
+NUIT_DATA: dict[str, Any] = {
+    "heating_setpoint": 24.0,
+    "cooling_setpoint": 27.0,
+    "vpd": 1.1,
+    "ramp_in_duration": 60,
+    "period_start_time": "10:00",
+    "climate_identity": (1, None, "Nuit", "10:00", "16:00"),
+}
+
+
+def _fresh_manager(
+    rows: list[dict[str, Any]],
+) -> tuple[SetpointManager, FakeDatabase, RecordingSink]:
+    database = FakeDatabase(rows)
+    sink = RecordingSink()
+    return SetpointManager(database=database, event_sink=sink), database, sink
+
+
 @pytest.mark.asyncio
-async def test_restored_ramp_retargets_even_a_small_nominal_correction() -> None:
-    manager = _manager()
-    started = datetime(2026, 9, 20, 9, 0, tzinfo=LOCAL_TZ)
-    now = started + timedelta(minutes=15)
-    manager.ramp_manager.active_ramps[("Veg Room", "main", "heating")] = RampState(
-        "heating", 20.0, 24.0, 30.0, started, restored=True
-    )
+async def test_first_evaluation_inside_the_ramp_window_resumes_the_scheduled_ramp() -> None:
+    # Given: a process that starts 16.5 min into the 10:00 Nuit ramp (25 -> 24 over 60 min).
+    manager, database, sink = _fresh_manager(FLOWER_PROFILE)
+    now = datetime(2026, 10, 25, 10, 16, 30, tzinfo=LOCAL_TZ)
+
+    # When: the room is evaluated for the first time, with no previous period known.
     result = await manager.compute_effective_setpoints(
-        "Veg Room", "main", now, "Day",
+        "Flower Room", "main", now, "Nuit", NUIT_DATA
+    )
+
+    # Then: the effective value sits on the scheduled line from the predecessor's target.
+    assert result["effective_heating_setpoint"] == pytest.approx(24.725)
+    assert result["ramp_progress_heating"] == pytest.approx(0.275)
+    assert result["effective_cooling_setpoint"] == 27.0
+    assert result["effective_vpd_setpoint"] == 1.1
+    ramp = manager.ramp_manager.active_ramps[("Flower Room", "main", "heating")]
+    assert ramp.start_time == datetime(2026, 10, 25, 10, 0, tzinfo=LOCAL_TZ)
+    assert ramp.end_time == datetime(2026, 10, 25, 11, 0, tzinfo=LOCAL_TZ)
+    assert sink.events == []
+    assert database.climate_periods_repo.calls == [("Flower Room", "main", 1, None)]
+
+
+@pytest.mark.asyncio
+async def test_first_evaluation_after_the_ramp_window_holds_nominal() -> None:
+    # Given: a process that starts after the Nuit ramp window closed at 11:00.
+    manager, _database, _sink = _fresh_manager(FLOWER_PROFILE)
+
+    # When: the room is evaluated for the first time.
+    result = await manager.compute_effective_setpoints(
+        "Flower Room",
+        "main",
+        datetime(2026, 10, 25, 11, 5, tzinfo=LOCAL_TZ),
+        "Nuit",
+        NUIT_DATA,
+    )
+
+    # Then: the nominal target holds and no ramp is resumed.
+    assert result["effective_heating_setpoint"] == 24.0
+    assert result["ramp_progress_heating"] is None
+    assert not manager.ramp_manager.has_active_ramps("Flower Room", "main")
+
+
+@pytest.mark.asyncio
+async def test_first_period_of_the_day_resumes_from_the_last_period() -> None:
+    # Given: P1 starts the day at 00:00, so its predecessor wraps to P3 (heating 22).
+    manager, _database, _sink = _fresh_manager(
+        [
+            _period("P1", time(0, 0), time(9, 0), 25.0, 30),
+            _period("P2", time(9, 0), time(16, 0), 23.0, 60),
+            _period("P3", time(16, 0), time(0, 0), 22.0, 30),
+        ]
+    )
+
+    # When: the process starts halfway through P1's 30-minute ramp.
+    result = await manager.compute_effective_setpoints(
+        "Veg Room",
+        "main",
+        datetime(2026, 10, 26, 0, 15, tzinfo=LOCAL_TZ),
+        "P1",
         {
-            "heating_setpoint": 24.05,
+            "heating_setpoint": 25.0,
             "ramp_in_duration": 30,
-            "period_start_time": "09:00",
-            "climate_identity": (1, None, "Day", "09:00", "18:00"),
+            "period_start_time": "00:00",
+            "climate_identity": (1, None, "P1", "00:00", "09:00"),
         },
     )
-    ramp = manager.ramp_manager.active_ramps[("Veg Room", "main", "heating")]
-    assert result["effective_heating_setpoint"] == pytest.approx(22.0)
-    assert ramp.target_value == 24.05
-    assert ramp.end_time == started + timedelta(minutes=30)
+
+    # Then: heating is halfway from P3's 22 to P1's 25.
+    assert result["effective_heating_setpoint"] == pytest.approx(23.5)

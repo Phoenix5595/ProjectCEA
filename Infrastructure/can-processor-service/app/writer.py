@@ -64,7 +64,7 @@ class DBWriteItem:
     raw_data: str
     sensors: list[tuple[str, float, str]]
     timestamp: object  # datetime
-    assignment: SensorAssignment | None = None
+    assignment: SensorAssignment
 
 
 class DataWriter:
@@ -492,7 +492,7 @@ class DataWriter:
         raw_data,
         sensors,
         timestamp,
-        assignment: SensorAssignment | None = None,
+        assignment: SensorAssignment,
     ) -> bool:
         item = DBWriteItem(
             decoded=decoded,
@@ -601,7 +601,7 @@ class DataWriter:
             timestamp: Timestamp for database
             timestamp_ms: Timestamp in milliseconds for Redis
             assignment: cached registry assignment snapshot for the frame's
-                node; ``None`` marks the entry unassigned
+                node; ``None`` writes the stream entry only (marked unassigned)
 
         Returns:
             Dictionary with 'stream', 'db' and 'redis' keys indicating success
@@ -611,14 +611,15 @@ class DataWriter:
         # Write to Redis Stream first (every decodable frame enters the stream)
         result["stream"] = self.write_to_stream(msg, decoded, raw_data, assignment)
 
-        result["db"] = self.queue_db_write(decoded, raw_data, sensors, timestamp, assignment)
+        # No room position (also every node before the first assignment load): no
+        # canonical channel name exists, so nothing reaches TimescaleDB or live state.
+        if assignment is None:
+            return result
 
-        # Topology-qualified Redis live state only for assigned nodes.
-        # Unassigned nodes omit only falsely located live state.
-        if assignment is not None:
-            result["redis"] = self.write_to_redis_state(
-                assignment.room, assignment.cluster, sensors, timestamp_ms
-            )
+        result["db"] = self.queue_db_write(decoded, raw_data, sensors, timestamp, assignment)
+        result["redis"] = self.write_to_redis_state(
+            assignment.room, assignment.cluster, sensors, timestamp_ms
+        )
 
         return result
 

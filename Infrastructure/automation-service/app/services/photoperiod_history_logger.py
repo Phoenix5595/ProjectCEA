@@ -107,6 +107,20 @@ FROM monitoring_photoperiod_coverage
 ORDER BY location, cluster, "time" DESC, id DESC
 """
 
+# The climate row the same per-room control tick writes with the phase offer's
+# ``current_time``; rows flush in 5 s batches, so this is at most the real last tick.
+_LAST_CONTROL_TICK_SQL: Final = """
+SELECT "time"
+FROM effective_setpoints
+WHERE location = $1
+  AND cluster = $2
+  AND device_name = 'Main'
+  AND "time" > $3
+  AND "time" < $4
+ORDER BY "time" DESC
+LIMIT 1
+"""
+
 
 @dataclass(frozen=True, slots=True)
 class PhotoperiodObservation:
@@ -144,6 +158,8 @@ class PhotoperiodRecorderState:
     coverage_state: CoverageState | None
     coverage_observed_at: datetime | None
     runtime_snapshot_version: RuntimeSnapshotVersion
+    # Latest control tick of the previous run after its last phase/coverage fact.
+    last_control_at: datetime | None = None
 
 
 PhotoperiodHistoryRow: TypeAlias = PhotoperiodObservation | PhotoperiodCoverageObservation
@@ -184,8 +200,11 @@ class PhotoperiodHistoryStore(Protocol):
 class DatabasePhotoperiodHistoryStore:
     """Append rows through the initialized automation database pool, idempotently."""
 
-    def __init__(self, pool: asyncpg.Pool) -> None:
+    def __init__(self, pool: asyncpg.Pool, *, started_at: datetime | None = None) -> None:
         self._pool = pool
+        # Constructed before the control loop starts, so this run's own ticks are
+        # never read as evidence of the previous run.
+        self._started_at = started_at if started_at is not None else datetime.now(tz=UTC)
 
     async def append(self, rows: tuple[PhotoperiodHistoryRow, ...]) -> None:
         """Insert an already-bounded batch in one transaction and never duplicate facts.
@@ -224,11 +243,13 @@ class DatabasePhotoperiodHistoryStore:
                 )
 
     async def read_state(self) -> tuple[PhotoperiodRecorderState, ...]:
-        """Read both latest-row queries inside one repeatable-read transaction.
+        """Read latest-row facts and prior-run tick evidence in one repeatable-read transaction.
 
         Old ``source='photoperiod'`` rows are never read here: they were samples from
         the incomplete Sleep/Drying-only producer and must not seed new transition
-        continuity.
+        continuity. For a room whose last coverage fact is ``available`` (the previous
+        run may have stopped uncleanly), the latest control tick after its last
+        phase/coverage fact and before this process started is read as well.
         """
         async with (
             self._pool.acquire() as connection,
@@ -236,8 +257,19 @@ class DatabasePhotoperiodHistoryStore:
         ):
             phase_rows = await connection.fetch(_PHASE_STATE_SQL)
             coverage_rows = await connection.fetch(_COVERAGE_STATE_SQL)
-        phases = {(row["location"], row["cluster"]): row for row in phase_rows}
-        coverage = {(row["location"], row["cluster"]): row for row in coverage_rows}
+            phases = {(row["location"], row["cluster"]): row for row in phase_rows}
+            coverage = {(row["location"], row["cluster"]): row for row in coverage_rows}
+            last_control: dict[tuple[str, str], datetime | None] = {}
+            for room_key, coverage_row in coverage.items():
+                if coverage_row["state"] != "available":
+                    continue
+                lower = coverage_row["time"]
+                phase_row = phases.get(room_key)
+                if phase_row is not None and phase_row["time"] > lower:
+                    lower = phase_row["time"]
+                last_control[room_key] = await connection.fetchval(
+                    _LAST_CONTROL_TICK_SQL, room_key[0], room_key[1], lower, self._started_at
+                )
         states: list[PhotoperiodRecorderState] = []
         for room_key in sorted(set(phases) | set(coverage)):
             phase_row = phases.get(room_key)
@@ -264,6 +296,7 @@ class DatabasePhotoperiodHistoryStore:
                     runtime_snapshot_version=RuntimeSnapshotVersion(
                         int(version_row["runtime_snapshot_version"])
                     ),
+                    last_control_at=last_control.get(room_key),
                 )
             )
         return tuple(states)
@@ -278,6 +311,7 @@ class _RoomState:
     seed_version: RuntimeSnapshotVersion | None = None
     coverage_state: CoverageState | None = None
     coverage_observed_at: datetime | None = None
+    last_control_at: datetime | None = None
     version: RuntimeSnapshotVersion | None = None
     latest_phase: Phase | None = None
     latest_phase_at: datetime | None = None
@@ -540,6 +574,7 @@ class PhotoperiodHistoryLogger(PhotoperiodObservationSink, PhotoperiodLoggerHeal
                 state.coverage_state = record.coverage_state
                 state.coverage_observed_at = record.coverage_observed_at
                 state.unclosed_prior_run = record.coverage_state == "available"
+            state.last_control_at = record.last_control_at
             state.seed_version = record.runtime_snapshot_version
             state.version = record.runtime_snapshot_version
         buffered_sequence = [
@@ -738,12 +773,17 @@ class PhotoperiodHistoryLogger(PhotoperiodObservationSink, PhotoperiodLoggerHeal
         return tuple(rows)
 
     def _restart_boundary(self, state: _RoomState) -> datetime:
-        """Return the later of the last persisted phase and coverage timestamps."""
-        boundary = state.coverage_observed_at
-        if state.last_phase_at is not None and (boundary is None or state.last_phase_at > boundary):
-            boundary = state.last_phase_at
-        assert boundary is not None
-        return boundary
+        """The latest persisted proof that the previous run was recording.
+
+        Its last phase row, last coverage row, or last recorded control tick.
+        """
+        candidates = [
+            moment
+            for moment in (state.coverage_observed_at, state.last_phase_at, state.last_control_at)
+            if moment is not None
+        ]
+        assert candidates
+        return max(candidates)
 
     def _process_unavailable(
         self, row: PhotoperiodCoverageObservation, *, replay: bool = False

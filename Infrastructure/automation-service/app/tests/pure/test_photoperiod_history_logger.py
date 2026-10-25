@@ -25,6 +25,7 @@ from app.schemas.monitoring_models import (
 from app.services.photoperiod_history_logger import (
     BACKOFF_INTERVAL,
     QUEUE_CAPACITY,
+    DatabasePhotoperiodHistoryStore,
     PhotoperiodCoverageObservation,
     PhotoperiodHistoryLogger,
     PhotoperiodHistoryRow,
@@ -101,6 +102,7 @@ def recorder_state(
     version: int = 3,
     location: str = ROOM,
     cluster: str = CLUSTER,
+    last_control_at: float | None = None,
 ) -> PhotoperiodRecorderState:
     return PhotoperiodRecorderState(
         location=location,
@@ -112,6 +114,9 @@ def recorder_state(
             None if coverage_state is None else T0 + timedelta(seconds=coverage_at or 0.0)
         ),
         runtime_snapshot_version=RuntimeSnapshotVersion(version),
+        last_control_at=(
+            None if last_control_at is None else T0 + timedelta(seconds=last_control_at)
+        ),
     )
 
 
@@ -282,6 +287,115 @@ async def test_seeded_same_phase_restart_writes_no_phase_duplicate() -> None:
         observation(121, phase=Phase.MOON),
         coverage_row(0, "unavailable", "stopped"),
     ]
+
+
+@pytest.mark.asyncio
+async def test_unclean_restart_invalidates_from_the_previous_runs_last_control_tick() -> None:
+    # Given: the previous run left the room available and kept ticking until T0+16h.
+    store = FakeStore(records=(recorder_state(phase=Phase.SUN, last_control_at=16 * 3600),))
+    logger = _start_test_logger(store)
+
+    # When: the new run's first same-phase offer arrives 8 s later.
+    logger.enqueue_final_phase(observation(16 * 3600 + 8))
+    await logger.start()
+    await await_seeded(logger)
+    await logger.flush_once()
+    await logger.stop()
+
+    # Then: the unknown gap starts at the last control tick, not the last phase row.
+    assert store.flat_rows() == [
+        coverage_row(16 * 3600, "unavailable", "unclean_restart"),
+        coverage_row(16 * 3600 + 8, "available", "started"),
+        coverage_row(0, "unavailable", "stopped"),
+    ]
+
+
+class _NoopTransaction:
+    async def __aenter__(self) -> None:
+        return None
+
+    async def __aexit__(self, *_exc: object) -> None:
+        return None
+
+
+class _StateReadConnection:
+    def __init__(self, phase_rows: list[dict[str, Any]], coverage_rows: list[dict[str, Any]]):
+        self.phase_rows = phase_rows
+        self.coverage_rows = coverage_rows
+        self.fetchval_calls: list[tuple[Any, ...]] = []
+
+    def transaction(self, **_kwargs: object) -> _NoopTransaction:
+        return _NoopTransaction()
+
+    async def fetch(self, query: str) -> list[dict[str, Any]]:
+        return self.phase_rows if "monitoring_room_photoperiod" in query else self.coverage_rows
+
+    async def fetchval(self, _query: str, *args: Any) -> datetime:
+        self.fetchval_calls.append(args)
+        return T0 + timedelta(hours=16)
+
+
+class _StateReadPool:
+    def __init__(self, connection: _StateReadConnection) -> None:
+        self.connection = connection
+
+    def acquire(self) -> _StateReadPool:
+        return self
+
+    async def __aenter__(self) -> _StateReadConnection:
+        return self.connection
+
+    async def __aexit__(self, *_exc: object) -> None:
+        return None
+
+
+@pytest.mark.asyncio
+async def test_database_state_read_bounds_the_control_tick_to_the_previous_run() -> None:
+    connection = _StateReadConnection(
+        phase_rows=[
+            {
+                "location": FLOWER,
+                "cluster": CLUSTER,
+                "phase": "SUN",
+                "time": T0,
+                "runtime_snapshot_version": 8,
+            },
+            {
+                "location": ROOM,
+                "cluster": CLUSTER,
+                "phase": "MOON",
+                "time": T0,
+                "runtime_snapshot_version": 8,
+            },
+        ],
+        coverage_rows=[
+            {
+                "location": FLOWER,
+                "cluster": CLUSTER,
+                "state": "available",
+                "time": T0 - timedelta(days=3),
+                "runtime_snapshot_version": 8,
+            },
+            {
+                "location": ROOM,
+                "cluster": CLUSTER,
+                "state": "unavailable",
+                "time": T0,
+                "runtime_snapshot_version": 8,
+            },
+        ],
+    )
+    started_at = T0 + timedelta(hours=16, seconds=8)
+    store = DatabasePhotoperiodHistoryStore(
+        _StateReadPool(connection),  # type: ignore[arg-type]
+        started_at=started_at,
+    )
+
+    states = {state.location: state for state in await store.read_state()}
+
+    assert connection.fetchval_calls == [(FLOWER, CLUSTER, T0, started_at)]
+    assert states[FLOWER].last_control_at == T0 + timedelta(hours=16)
+    assert states[ROOM].last_control_at is None
 
 
 @pytest.mark.asyncio
@@ -792,7 +906,6 @@ def _engine_with(
     engine.relay_board_state_manager = None
     engine.alarm_manager = None
     engine._profiling_enabled = False
-    engine._ramps_restored = True
     engine._automation_context = {}
     engine._automation_log_context = {}
     engine._last_logged = {}

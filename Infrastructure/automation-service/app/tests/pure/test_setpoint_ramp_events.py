@@ -37,8 +37,8 @@ def test_setpoint_ramp_emits_start_skipped_midpoint_and_completion_once() -> Non
     assert sink.events[0].payload.duration_seconds == 600
 
 
-def test_setpoint_ramp_replacement_cancellation_and_restore_do_not_replay_phases() -> None:
-    # Given: an active ramp, then a restored ramp already beyond its midpoint.
+def test_setpoint_ramp_replacement_cancellation_and_resume_do_not_replay_phases() -> None:
+    # Given: an active ramp, then a resumed ramp already beyond its midpoint.
     sink = RecordingSink()
     manager = RampManager(event_sink=sink)
     started_at = datetime(2026, 9, 1, tzinfo=UTC)
@@ -47,7 +47,7 @@ def test_setpoint_ramp_replacement_cancellation_and_restore_do_not_replay_phases
         "Veg Room", "main", "co2", 420.0, 900.0, 10.0, started_at + timedelta(minutes=2)
     )
     manager.cancel_ramp("Veg Room", "main", "co2", started_at + timedelta(minutes=3))
-    manager.restore_ramp(
+    manager.resume_ramp(
         "Veg Room",
         "main",
         "heating",
@@ -58,10 +58,10 @@ def test_setpoint_ramp_replacement_cancellation_and_restore_do_not_replay_phases
         started_at + timedelta(minutes=7),
     )
 
-    # When: the restored ramp completes.
+    # When: the resumed ramp completes.
     manager.get_ramp_value("Veg Room", "main", "heating", 30.0, started_at + timedelta(minutes=10))
 
-    # Then: replacement/cancellation are visible, restoration emits completion only.
+    # Then: replacement/cancellation are visible, resumption emits completion only.
     assert [event.event_type for event in sink.events] == [
         "ramp.started",
         "ramp.interrupted",

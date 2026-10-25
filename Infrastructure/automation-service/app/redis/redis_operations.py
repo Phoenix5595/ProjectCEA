@@ -14,7 +14,6 @@ Usage:
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 # Import all mixins (relative imports for same package)
@@ -24,7 +23,6 @@ from app.redis.heartbeat import HeartbeatMixin  # noqa: E402, PLC0415
 from app.redis.lighting import LightingMixin  # noqa: E402, PLC0415
 from app.redis.modes import ModesMixin  # noqa: E402, PLC0415
 from app.redis.pid import PIDMixin  # noqa: E402, PLC0415
-from app.redis.ramps import RampsMixin  # noqa: E402, PLC0415
 from app.redis.setpoints import SetpointsMixin  # noqa: E402, PLC0415
 from app.redis.streams import StreamsMixin  # noqa: E402, PLC0415
 from shared.infra_logging import get_logger
@@ -67,7 +65,6 @@ class RedisOperations:
         self.lighting = LightingMixin()
         self.modes = ModesMixin()
         self.pid = PIDMixin()
-        self.ramps = RampsMixin()
         self.setpoints = SetpointsMixin()
         self.streams = StreamsMixin()
 
@@ -79,7 +76,6 @@ class RedisOperations:
             self.lighting,
             self.modes,
             self.pid,
-            self.ramps,
             self.setpoints,
             self.streams,
         ]:
@@ -301,70 +297,6 @@ class RedisOperations:
     ) -> bool:
         """Write PID parameters to Redis cache."""
         return self.pid.write_pid_parameters(device_type, kp, ki, kd, source, updated_at)
-
-    # ========================================================================
-    # Ramps - delegate to RampsMixin
-    # ========================================================================
-
-    def write_ramp_state(
-        self,
-        location: str,
-        cluster: str,
-        setpoint_type: str,
-        current_effective_setpoint: float,
-        ramp_start_timestamp: datetime,
-        ramp_duration: int,
-        target_setpoint: float,
-    ) -> bool:
-        """Write ramp state to Redis."""
-        return self.ramps.write_ramp_state(
-            location,
-            cluster,
-            setpoint_type,
-            current_effective_setpoint,
-            ramp_start_timestamp,
-            ramp_duration,
-            target_setpoint,
-        )
-
-    def read_ramp_state(
-        self, location: str, cluster: str, setpoint_type: str
-    ) -> dict[str, Any] | None:
-        """Read ramp state from Redis."""
-        return self.ramps.read_ramp_state(location, cluster, setpoint_type)
-
-    def clear_ramp_state(self, location: str, cluster: str, setpoint_type: str) -> bool:
-        """Clear ramp state from Redis."""
-        return self.ramps.clear_ramp_state(location, cluster, setpoint_type)
-
-    def persist_ramp(
-        self,
-        location: str,
-        cluster: str,
-        setpoint_type: str,
-        start_value: float,
-        target_value: float,
-        duration_minutes: int,
-        start_time: datetime,
-    ) -> bool:
-        """Persist ramp state for recovery after restart."""
-        return self.ramps.persist_ramp(
-            location,
-            cluster,
-            setpoint_type,
-            start_value,
-            target_value,
-            duration_minutes,
-            start_time,
-        )
-
-    def get_persisted_ramps(self) -> list[dict[str, Any]]:
-        """Get all persisted ramps for restoration."""
-        return self.ramps.get_persisted_ramps()
-
-    def clear_persisted_ramp(self, location: str, cluster: str, setpoint_type: str) -> bool:
-        """Clear a persisted ramp after completion."""
-        return self.ramps.clear_persisted_ramp(location, cluster, setpoint_type)
 
     # ========================================================================
     # Streams - delegate to StreamsMixin

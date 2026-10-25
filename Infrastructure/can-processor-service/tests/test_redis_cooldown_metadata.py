@@ -155,6 +155,30 @@ class RedisCooldownTests(unittest.TestCase):
             connect.assert_not_called()
             warning.assert_called_once_with("Redis unavailable; retrying every 5s")
 
+    def test_unassigned_frame_reaches_only_the_stream(self) -> None:
+        writer = DataWriter(db_config={}, redis_url="redis://127.0.0.1:6379")
+        writer.redis_enabled = True
+        stream_client = FakeStreamClient()
+        state_client = FakeStateClient()
+        writer.redis_client = stream_client  # type: ignore[assignment]
+        writer.redis_state_client = state_client  # type: ignore[assignment]
+
+        result = writer.write(
+            SimpleNamespace(data=(0x06,), arbitration_id=0x101, dlc=1),
+            {"node_id": 1},
+            "06",
+            [("dry_bulb", 17.62, "°C")],
+            datetime(2026, 10, 25, tzinfo=UTC),
+            1_792_900_000_000,
+            None,
+        )
+
+        self.assertEqual(result, {"stream": True, "db": False, "redis": False})
+        self.assertEqual(writer._batch_queue.stats()["queued"], 0)
+        self.assertEqual(len(stream_client.entries), 1)
+        self.assertEqual(stream_client.entries[0][1][b"assigned"], b"false")
+        self.assertEqual(state_client._pipeline.commands, [])
+
 
 class MetadataDrainTests(unittest.TestCase):
     def test_drain_upserts_each_node_once_in_first_seen_order(self) -> None:

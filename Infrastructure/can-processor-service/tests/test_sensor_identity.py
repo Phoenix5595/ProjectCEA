@@ -5,7 +5,7 @@ from typing import Any
 import unittest
 from unittest.mock import patch
 
-from app.sensor_registry import ABSENCE
+from app.sensor_registry import ABSENCE, SensorAssignment
 from app.writer import DataWriter, DBWriteItem
 from shared.sensor_identity import SENSOR_IDENTITY_LOCK_NAMESPACE
 
@@ -52,7 +52,7 @@ class FakeDbCursor:
         elif "FROM sensor_registry" in query:
             self.rows = [(10,)]
         elif "FROM sensor WHERE device_id" in query:
-            self.rows = [(50, "dry_bulb")]
+            self.rows = [(50, "dry_bulb_b")]
         else:
             self.rows = []
 
@@ -116,8 +116,9 @@ class SensorIdentityWriterTests(unittest.TestCase):
         item = DBWriteItem(
             decoded={"node_id": 1},
             raw_data="",
-            sensors=[("dry_bulb", 22.0, "°C")],
+            sensors=[("dry_bulb_b", 22.0, "°C")],
             timestamp=timestamp,
+            assignment=SensorAssignment(10, 1, "Flower Room", "back"),
         )
 
         with patch("app.writer.psycopg2.extras.execute_batch") as execute_batch:

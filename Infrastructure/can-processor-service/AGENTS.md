@@ -28,6 +28,8 @@ Use `front`, `back`, and `main` in Redis and Postgres. Do not revive legacy `clu
 | Redis stream | `sensor:raw` | Recent history buffer for automation |
 | TimescaleDB | `measurement` | Historical time series |
 
+Only frames of a node with a room position (a cached registry assignment) reach Redis state and `measurement`, under canonical location-suffixed channel names. Frames of an unplaced node, including every node before the metadata worker's first assignment load, enter `sensor:raw` only, marked `assigned=false`; no bare `dry_bulb`/`wet_bulb`/`rh`/`vpd` channel or measurement row is written. Bare names appear only in the console display.
+
 ## Batching
 
 DB writes are queued in `shared.db_batch_writer.BatchQueue` and flushed on whichever comes first:

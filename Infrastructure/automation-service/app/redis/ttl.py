@@ -23,7 +23,7 @@ class TTLCategory(Enum):
 # TTL values in seconds per category. Use None for CRITICAL to denote no expiration.
 TTL_SECONDS: dict[TTLCategory, int | None] = {
     TTLCategory.CRITICAL: None,  # No TTL (no automatic expiration)
-    TTLCategory.RUNTIME: 60,  # Runtime data (setpoints, ramps, etc.)
+    TTLCategory.RUNTIME: 60,  # Runtime data (setpoints, etc.)
     TTLCategory.TRANSIENT: 10,  # Transient data (sensor values, etc.)
     TTLCategory.CACHED: 300,  # Cached data (schedules, PID params, etc.)
 }
@@ -36,7 +36,6 @@ KEY_TYPE_CATEGORY_MAP: dict[str, TTLCategory] = {
     "failsafe": TTLCategory.CRITICAL,
     # Runtime control data
     "setpoint": TTLCategory.RUNTIME,
-    "ramps": TTLCategory.RUNTIME,
     # Transient sensor data
     "sensor_value": TTLCategory.TRANSIENT,
     # Add common sensor keys if needed in the future

@@ -12,9 +12,6 @@ NEW_KEY_PATTERNS: list[str] = [
     "cea:effective_setpoint:{location}:{cluster}:{name}",
     # Schedule state
     "cea:schedule:{location}:{cluster}:state",
-    # Ramp state
-    "cea:ramp:{location}:{cluster}:{setpoint_type}",
-    "cea:ramp_persist:{location}:{cluster}:{setpoint_type}",
     # Alarms
     "cea:alarm:{location}:{cluster}:{alarm_name}",
     # PID
@@ -85,14 +82,6 @@ def alarm_prefix(location: str, cluster: str) -> str:
 
 def schedule_key(location: str, cluster: str) -> str:
     return build_key("schedule", location, cluster, "state")
-
-
-def ramp_key(location: str, cluster: str, setpoint_type: str) -> str:
-    return build_key("ramp", location, cluster, setpoint_type)
-
-
-def ramp_persist_key(location: str, cluster: str, setpoint_type: str) -> str:
-    return build_key("ramp_persist", location, cluster, setpoint_type)
 
 
 def alarm_key(location: str, cluster: str, alarm_name: str) -> str:
@@ -174,8 +163,6 @@ __all__ = [
     "light_state_key",
     "automation_state_key",
     "schedule_key",
-    "ramp_key",
-    "ramp_persist_key",
     "alarm_key",
     "alarm_prefix",
     "pid_key",
