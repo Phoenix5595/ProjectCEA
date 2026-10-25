@@ -28,7 +28,7 @@ interface DraftHardware {
   i2c_address: string
   active_low: boolean
   require_mcp: boolean
-  dfr0971_boards: Array<{ board_id: number; i2c_address: string; name: string }>
+  dfr0971_boards: Array<{ board_id: number; i2c_address: string }>
 }
 
 interface DraftSafetyLimits {
@@ -126,7 +126,6 @@ function configToDraft(config: SystemConfigResponse, settings: SettingsResponse)
       dfr0971_boards: (config.hardware.dfr0971_boards ?? []).map((board: DfrBoardConfig) => ({
         board_id: board.board_id,
         i2c_address: String(board.i2c_address),
-        name: board.name,
       })),
     },
     safety_limits: {
@@ -207,16 +206,14 @@ function buildConfigUpdateRequest(
     draft.hardware.dfr0971_boards.some((board, index) => {
       const originalBoard = originalBoards[index]
       if (!originalBoard) return true
-      return (
-        numChanged(board.i2c_address, originalBoard.i2c_address) ||
-        board.name !== originalBoard.name
-      )
+      return numChanged(board.i2c_address, originalBoard.i2c_address)
     })
   if (boardsChanged) {
+    // Board names are edited only in DfrBoardsPanel; the API still requires the stored name.
     hardware.dfr0971_boards = draft.hardware.dfr0971_boards.map(board => ({
       board_id: board.board_id,
       i2c_address: parseFloat(board.i2c_address),
-      name: board.name,
+      name: originalBoards.find(b => b.board_id === board.board_id)?.name ?? '',
     }))
   }
 
@@ -791,17 +788,6 @@ export default function SystemSettingsPanel() {
                 }}
                 className="w-24 rounded border border-border-default bg-surface-secondary px-2 py-1 text-sm text-text-default"
                 data-testid={`board_${board.board_id}_address`}
-              />
-              <input
-                type="text"
-                value={board.name}
-                onChange={e => {
-                  const next = structuredClone(draft)
-                  next.hardware.dfr0971_boards[index].name = e.target.value
-                  setDraft(next)
-                }}
-                className="flex-1 rounded border border-border-default bg-surface-secondary px-2 py-1 text-sm text-text-default"
-                data-testid={`board_${board.board_id}_name`}
               />
             </div>
           ))}
