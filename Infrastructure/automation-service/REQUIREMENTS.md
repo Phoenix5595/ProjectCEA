@@ -40,7 +40,7 @@ Local verification runs the automation pure tests against fakes for database, Re
 - Historical room phase recording is non-blocking and changes-only: one first SUN/MOON observation and real phase changes use `monitoring_room_photoperiod.source = 'photoperiod_transition'`. Time elapsed, profile metadata changes, and same-phase restarts do not create phase heartbeats.
 - Sparse startup, shutdown, control-failure, and lost-record/recovery boundaries are stored separately in `monitoring_photoperiod_coverage`. Failed transactions retain their ordered bounded batch; repeatable-read restart seeding and conditional inserts prevent duplicate phase rows after ambiguous commits.
 - An unclean stop (last coverage fact still `available`) is closed with `unavailable/unclean_restart` stamped at the previous run's latest persisted proof of recording: its last phase row, last coverage row, or its last `effective_setpoints` `Main` row before this process started. No re-baseline phase row is written at resume.
-- Stops are bounded so the `stopped` closure is written: `automation-service.service` runs uvicorn with `--timeout-graceful-shutdown 5`, which cancels still-open requests (notably the `/api/events/stream` SSE) after 5 s and then runs lifespan shutdown, well inside systemd's stop timeout.
+- Stops are bounded so the `stopped` closure is written: uvicorn runs with `--timeout-graceful-shutdown 5`, which cancels still-open requests (notably the `/api/events/stream` SSE) after 5 s and then runs lifespan shutdown, well inside systemd's stop timeout. The flag must appear in both `automation-service.service` and `systemd-overrides/automation-service.service.d/override.conf`; the drop-in resets `ExecStart=`, so its line is the effective one.
 
 ## VPD Control
 
