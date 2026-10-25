@@ -74,7 +74,6 @@ export const vegManifest: MonitoringManifest = {
           axisPlacement: 'auto',
           decimals: 2,
           color: '#2f7fe0',
-          lineWidth: 3,
         },
         // Effective climate setpoints (restored from before dcf21246): one
         // distinct dotted colour per target so heating, cooling and VPD differ.

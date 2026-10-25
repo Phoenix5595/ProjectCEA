@@ -72,6 +72,9 @@ Required tokens are listed in `src/features/monitoring/designTokens.ts` (`REQUIR
   | VPD | `vpd_setpoint` / `VPD Setpoint` | `#c0dd55` lime | dotted, 2 px, step |
 
   Commit `dcf21246` removed these specs together with the climate source, which left all three targets on the single fallback token; they were restored on 2026-10-25. Removing or merging a target spec is a design regression.
+- Monitoring graphs only the **effective** setpoint trajectory (recorded `effective_setpoints` history plus the projection's `trajectory_kind: 'effective'` segments), because it is the target the automation follows with its ramps computed by the system. The projection's scheduled climate trajectory is never drawn on Monitoring; it belongs to the Control timeline. Each target is therefore one line per metric, named `Heating Setpoint` / `Cooling Setpoint` / `VPD Setpoint` so it takes the colour above. Light intensity projection handling is unchanged.
+- Sensor lines are 1 px (owner decision 2026-10-25), VPD included (it used to be 3 px, which read as a thick line next to its min–max band). Setpoint targets stay 2 px dotted; light intensity lines are unchanged.
+- Chart hover tooltips show each series' label and value (with unit) and, for bucketed sensor points, the bucket span, sample count and min–max. They never show origin/quality provenance text such as `recorded/exact`; that detail lives only in the dev-only data table.
 - Sun/moon fills are `rgba(251, 191, 36, 0.09)` / `rgba(129, 140, 248, 0.09)` on monitoring graphs; bucketed sensor min–max bands are drawn over them at 15 % of the series colour.
 - A visible "now" divider separates recorded history from projection.
 

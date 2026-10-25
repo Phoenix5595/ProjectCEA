@@ -159,7 +159,7 @@ describe('projectionTimeline', () => {
     expect(cooling?.y[projectedIndex]).toBeNull()
   })
 
-  it('preserves saved rich ramps, trajectory kinds, and unavailable gaps', () => {
+  it('graphs only the effective climate trajectory with its ramps and unavailable gaps', () => {
     const rampEnd = new Date('2026-08-02T14:00:00.000Z')
     const result = projectionTimeline({
       quality: 'estimated',
@@ -176,12 +176,31 @@ describe('projectionTimeline', () => {
         warnings: [{ code: 'sample', detail: 'fixture warning' }],
         segments: [
           {
+            // The scheduled twin must never reach the Monitoring graph.
             shape: 'linear',
             start: NOW,
             end: FUTURE,
             metric: 'heating',
             unit: 'C',
             trajectory_kind: 'scheduled',
+            quality: 'estimated',
+            source: {
+              mode: 'DAY',
+              submode: null,
+              period: { period_id: 'day', label: 'Day' },
+              config_revision: '8f8c3db',
+              draft_revision: null,
+            },
+            start_value: 18,
+            end_value: 30,
+          },
+          {
+            shape: 'linear',
+            start: NOW,
+            end: FUTURE,
+            metric: 'heating',
+            unit: 'C',
+            trajectory_kind: 'effective',
             quality: 'estimated',
             source: {
               mode: 'DAY',
@@ -233,17 +252,21 @@ describe('projectionTimeline', () => {
       },
     })
 
-    expect(result.history?.climate).toHaveLength(2)
-    const scheduled = result.history?.climate.find(series => series.trajectory_kind === 'scheduled')
-    expect(scheduled?.linear[0]?.start_value).toBe(22)
-    expect(scheduled?.warnings[0]?.code).toBe('sample')
+    expect(result.history?.climate).toHaveLength(1)
+    const effective = result.history?.climate[0]
+    expect(effective).toMatchObject({
+      name: 'Heating Setpoint',
+      metric: 'heating_setpoint',
+      trajectory_kind: 'effective',
+    })
+    expect(effective?.linear.map(segment => segment.start_value)).toEqual([22])
+    expect(effective?.warnings[0]?.code).toBe('sample')
     expect(result.history?.lights).toHaveLength(1)
     expect(result.history?.lights[0]).toMatchObject({
       name: 'light_f_1',
       metric: 'light_f_1',
       trajectory_kind: 'effective',
     })
-    const effective = result.history?.climate.find(series => series.trajectory_kind === 'effective')
     expect(effective?.steps[0]?.value).toBeNull()
 
     const aligned = alignSeries({
@@ -256,7 +279,7 @@ describe('projectionTimeline', () => {
       now: NOW,
     })
     const midpoint = new Date('2026-08-02T12:15:00.000Z').getTime()
-    const ramp = result.history?.climate.find(series => series.trajectory_kind === 'scheduled')
+    const ramp = effective
     const normalized =
       ramp?.linear.map(segment => ({
         start: segment.start.getTime(),

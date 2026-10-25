@@ -25,6 +25,7 @@ Local verification runs the automation pure tests against fakes for database, Re
 - Climate setpoints come from `climate_periods` rows keyed by `(location, cluster, mode_id, submode_id)`. Each row has `period_name`, `start_time`, `end_time`, `ramp_minutes`, and target columns.
 - `ClimatePeriodResolver` and `SetpointManager` bridge period-to-period ramps via `ramp_in_duration`.
 - Constant modes with `room_modes.is_constant = true` may use a single period. A period with `start_time == end_time` means 24-hour coverage; prefer `00:00` → `00:00`.
+- The saved projection trajectory emits an `effective` segment series for every climate metric that is currently active: a schedule period with a setpoint for it, including the ramp between periods (owner rule). A metric with no setpoint (for example CO₂ when unset) is reported unavailable, never invented. Monitoring graphs only these effective segments; the `scheduled` trajectory is for the Control timeline. Verified on production 2026-10-25: Flower emitted effective heating, cooling and VPD (heating ramping 25.0 → 24.98 °C) and CO₂ unavailable.
 
 ## Lights
 

@@ -130,15 +130,21 @@ export function richProjectionTimeline(trajectory: RichTrajectoryEnvelope): Proj
         lights.get(key) ?? richLightSeries(deviceName, segment.trajectory_kind, warnings)
       appendRichSegment(series, segment)
       lights.set(key, series)
-    } else {
-      const key = `${segment.metric}:${segment.trajectory_kind}`
-      const name = `${displayMetric(segment.metric)} (${segment.trajectory_kind})`
-      const series =
-        climate.get(key) ??
-        richClimateSeries(richMetric(segment.metric), name, segment.trajectory_kind, warnings)
-      appendRichSegment(series, segment)
-      climate.set(key, series)
     }
+  }
+  // Climate graphs show only the effective trajectory: it is the target the
+  // automation actually follows, with its ramps computed by the system. The
+  // scheduled trajectory belongs to the Control timeline. Read the raw
+  // segments here because the light dedupe above may drop an effective
+  // segment that equals its scheduled twin.
+  for (const segment of trajectory.segments) {
+    if (segment.metric.startsWith('light') || segment.trajectory_kind !== 'effective') continue
+    const metric = richMetric(segment.metric)
+    const series =
+      climate.get(metric) ??
+      richClimateSeries(metric, climateDisplayName(metric), segment.trajectory_kind, warnings)
+    appendRichSegment(series, segment)
+    climate.set(metric, series)
   }
   const validUntil = trajectory.window.end
   for (const series of [...climate.values(), ...lights.values()]) {
@@ -288,7 +294,10 @@ function assertNever(value: never): never {
   throw new Error(`Unexpected trajectory segment: ${JSON.stringify(value)}`)
 }
 
-function displayMetric(metric: string): string {
+function climateDisplayName(metric: string): string {
+  for (const definition of CLIMATE_SERIES.values()) {
+    if (definition.metric === metric) return definition.name
+  }
   return metric.replace(/_/g, ' ').replace(/\b\w/g, (letter: string) => letter.toUpperCase())
 }
 

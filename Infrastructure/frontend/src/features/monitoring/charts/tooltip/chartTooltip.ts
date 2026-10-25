@@ -2,8 +2,10 @@
  * Cursor tooltip plugin.
  *
  * Renders a floating tooltip near the cursor listing each visible series'
- * value, unit, origin, and quality at the hovered x index. The tooltip element
- * is created on `ready`, updated on `setCursor`, and removed on `destroy`.
+ * label and value (with unit) at the hovered x, plus the bucket span for
+ * bucketed sensor points. Origin/quality provenance is not shown (owner rule).
+ * The tooltip element is created on `ready`, updated on `setCursor`, and
+ * removed on `destroy`.
  */
 import uPlot from 'uplot'
 
@@ -14,7 +16,7 @@ import type {
   SeriesKind,
   SeriesPresentation,
 } from '../../data'
-import { lightSegmentAt, lightValueAt } from '../../data'
+import { lightValueAt } from '../../data'
 import { isEnvelopeSeries, seriesColor } from '../options/seriesOptions'
 import { formatTorontoClock } from '../options/scales'
 
@@ -142,7 +144,7 @@ function bucketDetail(data: AlignedData, series: AlignedSeries, index: number): 
   return `${formatTorontoClock(start)}–${formatTorontoClock(end)} · ${count} samples · ${min.toFixed(decimals)}–${max.toFixed(decimals)}`
 }
 
-/** Build a uPlot plugin that renders a value/provenance cursor tooltip. */
+/** Build a uPlot plugin that renders a label/value cursor tooltip. */
 export function tooltipPlugin(
   series: AlignedSeries[],
   colors: TooltipColors,
@@ -213,8 +215,6 @@ export function tooltipPlugin(
         for (const item of meta) {
           const current = currentSeries.find(candidate => candidate.key === item.key)
           if (current === undefined || u.series[item.index]?.show === false) continue
-          const segment = buckets !== undefined || current.lightTrajectory === undefined
-            ? undefined : lightSegmentAt(current.lightTrajectory, cursorTime)
           const value = buckets !== undefined
             ? finiteValue(current.y[bucketIndex])
             : current.lightTrajectory === undefined
@@ -227,12 +227,6 @@ export function tooltipPlugin(
           row.appendChild(swatch)
           const text = formatTooltipValue(value, current.presentation, current.unit)
           row.appendChild(document.createTextNode(text))
-          const prov = document.createElement('em')
-          prov.textContent = ` ${segment?.origin ?? current.origin}/${
-            buckets !== undefined && value === null ? 'unavailable'
-              : segment?.quality ?? current.quality
-          }`
-          row.appendChild(prov)
           const rowIndex = buckets !== undefined ? bucketIndex : pointIndexAt(xValues, cursorTime)
           if (currentData !== undefined) {
             const detail = bucketDetail(currentData, current, rowIndex)

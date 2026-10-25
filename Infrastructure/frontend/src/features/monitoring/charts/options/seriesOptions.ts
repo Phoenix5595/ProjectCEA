@@ -77,7 +77,8 @@ export function buildSeries(data: AlignedData, getData?: () => AlignedData): uPl
         spanGaps: s.source === 'sensor' && s.preserveGaps !== true,
         points: s.preserveGaps === true ? { show: true, size: 2 } : { show: false },
         stroke: color,
-        width: s.presentation?.lineWidth ?? (target ? 2 : 1.5),
+        // Sensor lines are 1 px (owner decision 2026-10-25); targets keep 2 px.
+        width: s.presentation?.lineWidth ?? (target ? 2 : 1),
       }
       if (s.source === 'light' && s.lightTrajectory !== undefined) {
         series.paths = lightTrajectoryPaths(s.key, getCurrentData)

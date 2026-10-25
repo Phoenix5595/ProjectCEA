@@ -178,18 +178,20 @@ describe('monitoring/editor projection parity', () => {
     expect(projection.history).not.toBeNull()
     const monitoring = monitoringSeries(projection.history)
 
-    const monitorKeys = [
+    const editorKeys: `${string}:${'scheduled' | 'effective'}`[] = [
       'co2_setpoint:scheduled',
       'cooling_setpoint:scheduled',
       'heating_setpoint:effective',
       'heating_setpoint:scheduled',
       'vpd_setpoint:scheduled',
     ]
+    // Monitoring graphs only the effective trajectory; the editor keeps both.
+    const monitorKeys = editorKeys.filter(key => key.endsWith(':effective'))
     expect([...monitoring.keys()].sort()).toEqual([...monitorKeys].sort())
-    expect([...editorSeries.keys].sort()).toEqual([...monitorKeys].sort())
+    expect([...editorSeries.keys].sort()).toEqual([...editorKeys].sort())
 
     const mismatches: string[] = []
-    for (const key of [...editorSeries.series.keys()].sort()) {
+    for (const key of monitorKeys) {
       const cs = monitoring.get(key)
       if (!cs) {
         mismatches.push(`${key}: monitoring has no series`)

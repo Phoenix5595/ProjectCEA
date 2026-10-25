@@ -108,12 +108,12 @@ describe('light trajectory tooltip', () => {
     cursor(plot)
     const rows = [...root.querySelectorAll('.mon-tooltip > div')].map(row => row.textContent)
     expect(rows).toEqual([
-      'Chilled Front - Intensity 0.0 % recorded/exact',
-      'Apache - Intensity 0.0 % recorded/exact',
+      'Chilled Front - Intensity 0.0 %',
+      'Apache - Intensity 0.0 %',
     ])
   })
 
-  it('reads current step, ramp, gap, label, and provenance after a feed update', () => {
+  it('reads current step, ramp, gap and label after a feed update, without provenance text', () => {
     const key = seriesKey('light', 'light_f_1', 'linear')
     const segments: readonly LightTrajectorySegment[] = [
       {
@@ -199,9 +199,10 @@ describe('light trajectory tooltip', () => {
       return root.querySelector('.mon-tooltip')?.textContent ?? ''
     }
 
-    expect(at(5)).toContain('Chilled Front QA - Intensity 40 % recorded/exact')
-    expect(at(15)).toContain('Chilled Front QA - Intensity 60 % projected/estimated')
-    expect(at(25)).toContain('Chilled Front QA - Intensity — projected/unavailable')
+    expect(at(5)).toContain('Chilled Front QA - Intensity 40 %')
+    expect(at(15)).toContain('Chilled Front QA - Intensity 60 %')
+    expect(at(25)).toContain('Chilled Front QA - Intensity —')
+    expect(at(15)).not.toMatch(/recorded|projected|exact|estimated|unavailable/)
   })
 })
 
@@ -273,7 +274,8 @@ describe('overview bucket tooltip', () => {
     expect(tooltip.textContent).toContain(torontoClock.format(new Date(boundaries[2])))
     instant = boundaries[2]
     onCursor(plot)
-    expect(tooltip.textContent).toContain('unavailable')
+    expect(tooltip.textContent).toContain('—')
+    expect(tooltip.textContent).not.toContain('unavailable')
     expect(tooltip.textContent).not.toContain('90 %')
     instant = boundaries[3]
     onCursor(plot)

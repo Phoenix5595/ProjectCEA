@@ -367,28 +367,28 @@ async function equipmentHistoryScenario(
     const historyEnd = Date.parse((await historyResponse.json()).range.end)
     await hoverAt(
       page, equipment, historyStart + (historyEnd - historyStart) * 0.30,
-      `${displayName(room, budgetedName, '')} - Intensity 0.0 % recorded/exact`
+      `${displayName(room, budgetedName, '')} - Intensity 0.0 %`
     )
     await expect(tooltipRows.filter({ hasText: `${displayName(room, budgetedName, '')} - Intensity` })).toHaveCount(1)
     await hoverAt(
       page, equipment, historyStart + (historyEnd - historyStart) * 0.41,
-      `${displayName(room, budgetedName, '')} - Intensity 10.0 % recorded/exact`
+      `${displayName(room, budgetedName, '')} - Intensity 10.0 %`
     )
     await expect(tooltipRows.filter({ hasText: `${displayName(room, budgetedName, '')} - Intensity` })).toHaveCount(1)
 
     const projectionStart = Date.parse(projection.trajectory.window.start)
-    await hoverAt(page, equipment, projectionStart + 30_000, `${displayName(room, budgetedName, '')} - Intensity 40.0 % projected/estimated`)
+    await hoverAt(page, equipment, projectionStart + 30_000, `${displayName(room, budgetedName, '')} - Intensity 40.0 %`)
     const rampMidpoint = projectionStart + 108_000
     const rampCursor = await hoverAt(page, equipment, rampMidpoint, cursorTime => {
       const fraction = (cursorTime - (projectionStart + 72_000)) / 72_000
-      return `${displayName(room, budgetedName, '')} - Intensity ${(40 + 40 * fraction).toFixed(1)} % projected/estimated`
+      return `${displayName(room, budgetedName, '')} - Intensity ${(40 + 40 * fraction).toFixed(1)} %`
     })
     expect(Math.abs(rampCursor - rampMidpoint)).toBeLessThan(15_000)
     await hoverAt(
       page,
       equipment,
       projectionStart + 252_000,
-      `${displayName(room, budgetedName, '')} - Intensity — projected/unavailable`
+      `${displayName(room, budgetedName, '')} - Intensity —`
     )
 
     await climate.getByRole('button', { name: 'View data as table' }).click()
@@ -449,14 +449,14 @@ for (const room of ROOMS) {
       await equipment.scrollIntoViewIfNeeded()
       await hoverAt(page, equipment, now - 45 * 60_000, cursorTime => {
         const value = 10 + (cursorTime - (now - 55 * 60_000)) / (20 * 60_000) * 30
-        return `${primary} ${value.toFixed(1)} % recorded/exact`
+        return `${primary} ${value.toFixed(1)} %`
       })
-      await hoverAt(page, equipment, now - 15.5 * 60_000, `${primary} — recorded/unavailable`)
+      await hoverAt(page, equipment, now - 15.5 * 60_000, `${primary} —`)
       await hoverAt(page, equipment, now + duration / 36, cursorTime => {
         const value = cursorTime <= now + 60 * 60_000
           ? 70 + (cursorTime - now) / (60 * 60_000) * 20
           : cursorTime < now + 120 * 60_000 ? 90 : 0
-        return `${primary} ${value.toFixed(1)} % projected/estimated`
+        return `${primary} ${value.toFixed(1)} %`
       })
       await page.mouse.move(0, 0)
       await expect.poll(async () =>
