@@ -179,3 +179,17 @@ def test_clipped_pid_raw_span_keeps_a_valid_predecessor_only_device():
     assert point.average == 20.0
     assert point.minimum == 20.0
     assert point.maximum == 20.0
+
+
+def test_overview_budget_cap_is_four_thousand_points() -> None:
+    # Given: a six-month overview window and the raised point budget.
+    start = datetime(2026, 6, 1, 4, tzinfo=UTC)
+    end = datetime(2026, 12, 1, 5, tzinfo=UTC)
+
+    # When: the exact cap and one point above it are requested.
+    bucket = choose_history_bucket(start, end, 4000)
+    with pytest.raises(MonitoringValidationError, match="4000"):
+        choose_history_bucket(start, end, 4001)
+
+    # Then: the cap is enforced while the ladder still fits the range.
+    assert len(history_bucket_bounds(start, end, bucket)) <= 4000

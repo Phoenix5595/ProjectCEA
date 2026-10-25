@@ -19,6 +19,7 @@ from monitoring_service.relay_timeline_repository import RelayTimelineRepository
 from monitoring_service.main import create_app
 from monitoring_service.relay_timeline import (
     RELAY_1MIN_PID_LOAD_SQL,
+    RELAY_5MIN_PID_LOAD_SQL,
     RELAY_CHANNEL_ANCHORS_SQL,
     RELAY_HEARTBEAT_HISTORY_SQL,
     RELAY_RAW_PID_LOAD_SQL,
@@ -890,6 +891,16 @@ async def test_route_rejects_naive_and_out_of_bounds_ranges_and_limits() -> None
     assert too_short.status_code == 400
     assert too_large.status_code == 400
     assert too_long.status_code == 400
+
+
+def test_pid_load_statements_materialize_assignment_intervals() -> None:
+    # Given: every PID load statement that expands relay assignments per sample
+    statements = (RELAY_RAW_PID_LOAD_SQL, RELAY_1MIN_PID_LOAD_SQL, RELAY_5MIN_PID_LOAD_SQL)
+
+    # Then: the assignment interval CTE is evaluated once instead of per LATERAL row
+    for statement in statements:
+        assert "relay_assignment_intervals AS MATERIALIZED (" in statement
+        assert "relay_assignment_intervals AS (\n" not in statement
 
 
 def test_raw_pid_downsampling_keeps_extrema_and_null_gap_edges() -> None:

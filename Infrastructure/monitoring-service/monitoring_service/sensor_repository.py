@@ -26,6 +26,7 @@ from monitoring_service.sensor_models import (
     resolve_interval_seconds,
     resolve_room_metadata,
     source_bucket_seconds,
+    tier_for_interval,
 )
 from monitoring_service.cagg_watermarks import CaggWatermarkCache, watermark_sql
 from monitoring_service.query_observation import request_observation
@@ -98,10 +99,18 @@ class SensorMonitoringRepository:
         )
 
     async def series(
-        self, room: str, monitoring_range: MonitoringRange, max_points: int | None = None
+        self,
+        room: str,
+        monitoring_range: MonitoringRange,
+        max_points: int | None = None,
+        interval_seconds: int | None = None,
     ) -> tuple[Tier, tuple[SensorSeries, ...]]:
         metadata = resolve_room_metadata(room)
-        tier = resolve_tier(monitoring_range.duration, max_points)
+        tier = (
+            tier_for_interval(interval_seconds)
+            if interval_seconds is not None
+            else resolve_tier(monitoring_range.duration, max_points)
+        )
         node_mapping = node_mapping_args(room, metadata.nodes)
         async with (
             request_observation(tier=tier.value),
@@ -115,7 +124,9 @@ class SensorMonitoringRepository:
                 else await self._require_cagg_coverage(tier, monitoring_range)
             )
             interval = (
-                None
+                timedelta(seconds=interval_seconds)
+                if interval_seconds is not None
+                else None
                 if max_points is None
                 else timedelta(
                     seconds=resolve_interval_seconds(

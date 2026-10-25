@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
+from functools import partial
 from typing import Protocol, final
 
+import anyio
 import asyncpg
 
 from monitoring_service.cagg_watermarks import CaggWatermarkCache, watermark_sql
@@ -108,10 +110,12 @@ class ControlHistoryRepository:
     ) -> ControlHistoryEnvelope:
         """Return the selected timelines for the window.
 
-        ``all`` reads climate, light, device, PID, and photoperiod facts; the
-        ``lights`` scope reads only recorded light intensity and its
-        photoperiod metadata, leaving the climate, device and PID timelines
-        empty instead of querying unavailable automation sources.
+        ``all`` reads climate, light, device, PID, and photoperiod facts;
+        ``room`` keeps climate, light and photoperiod facts without the
+        device/PID automation state; ``climate`` keeps climate setpoints and
+        photoperiod facts; ``photoperiod`` reads only committed phase/coverage
+        facts. Light-free scopes never read the light family or its derived
+        phase witnesses.
         """
         sources = select_control_history_sources(history_range, max_points, scope)
         try:
@@ -123,13 +127,12 @@ class ControlHistoryRepository:
                     history_range.end,
                     (
                         "effective_setpoints",
+                        *(("automation_state",) if sources.state_sql is not None else ()),
                         "monitoring_room_photoperiod",
                         "monitoring_photoperiod_coverage",
                     )
-                    if scope == "lights"
+                    if sources.setpoints_sql is not None or sources.light_sql is not None
                     else (
-                        "effective_setpoints",
-                        "automation_state",
                         "monitoring_room_photoperiod",
                         "monitoring_photoperiod_coverage",
                     ),
@@ -156,9 +159,11 @@ class ControlHistoryRepository:
                             history_range.start,
                             history_range.end,
                         )
-                light_rows = await self._database.fetch(
-                    sources.light_sql, location, history_range.start, history_range.end
-                )
+                light_rows: Sequence[Mapping[str, object] | asyncpg.Record] = ()
+                if sources.light_sql is not None:
+                    light_rows = await self._database.fetch(
+                        sources.light_sql, location, history_range.start, history_range.end
+                    )
                 if sources.state_sql is not None:
                     if sources.state_relation is None:
                         state_rows = await self._database.fetch(
@@ -184,26 +189,37 @@ class ControlHistoryRepository:
                 photoperiod_coverage_rows = await self._database.fetch(
                     PHOTOPERIOD_COVERAGE_SQL, location, history_range.start, history_range.end
                 )
-                photoperiod_light_predecessors = await self._database.fetch(
-                    PHOTOPERIOD_LIGHT_PREDECESSORS_SQL, location, history_range.start
-                )
-                return build_control_history_envelope(
-                    history_range,
-                    setpoint_rows,
-                    light_rows,
-                    state_rows,
-                    photoperiod_rows,
-                    sources.setpoints_are_aggregated,
-                    max_points,
+                photoperiod_light_predecessors: Sequence[Mapping[str, object] | asyncpg.Record] = ()
+                if sources.light_sql is not None:
+                    photoperiod_light_predecessors = await self._database.fetch(
+                        PHOTOPERIOD_LIGHT_PREDECESSORS_SQL, location, history_range.start
+                    )
+                interval_seconds = (
                     None
-                    if scope == "lights"
+                    if scope == "photoperiod"
                     else derive_interval_seconds(
                         history_range.end - history_range.start,
                         sources.source_interval_seconds,
                         max_points,
-                    ),
-                    photoperiod_coverage_rows=photoperiod_coverage_rows,
-                    photoperiod_light_predecessors=photoperiod_light_predecessors,
+                    )
+                )
+                # The envelope build (and its inner budget pass) is CPU-bound
+                # pydantic work that can take ~18 s for a 7-day room; run it off
+                # the event loop so live polls and other requests keep flowing.
+                return await anyio.to_thread.run_sync(
+                    partial(
+                        build_control_history_envelope,
+                        history_range,
+                        setpoint_rows,
+                        light_rows,
+                        state_rows,
+                        photoperiod_rows,
+                        sources.setpoints_are_aggregated,
+                        max_points,
+                        interval_seconds,
+                        photoperiod_coverage_rows=photoperiod_coverage_rows,
+                        photoperiod_light_predecessors=photoperiod_light_predecessors,
+                    )
                 )
         except MonitoringUnavailableError:
             raise

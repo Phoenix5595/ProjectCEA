@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Protocol
+from math import ceil
+from typing import Annotated, Protocol
 
 from fastapi import APIRouter, Depends, Query
 from monitoring_service.history_overview_models import (
@@ -17,6 +18,7 @@ from monitoring_service.sensor_models import (
     MonitoringRange,
     MonitoringResponse,
     MonitoringValidationError,
+    NICE_INTERVAL_SECONDS,
     SensorSeries,
     SensorStatistics,
     Tier,
@@ -31,7 +33,11 @@ router = APIRouter(tags=["sensor-monitoring"])
 
 class SensorReads(Protocol):
     async def series(
-        self, room: str, monitoring_range: MonitoringRange, max_points: int | None = None
+        self,
+        room: str,
+        monitoring_range: MonitoringRange,
+        max_points: int | None = None,
+        interval_seconds: int | None = None,
     ) -> tuple[Tier, tuple[SensorSeries, ...]]: ...
     async def statistics(
         self, room: str, monitoring_range: MonitoringRange
@@ -48,6 +54,23 @@ def _range(start: str | None, end: str | None) -> MonitoringRange:
     if start is None or end is None:
         raise MonitoringValidationError("start and end must be supplied together")
     return MonitoringRange.from_absolute(start, end)
+
+
+def _requested_interval_seconds(
+    interval_seconds: int | None,
+    monitoring_range: MonitoringRange,
+    max_points: int | None,
+) -> int | None:
+    """Validate an explicitly requested bucket interval under the point budget."""
+    if interval_seconds is None:
+        return None
+    if (
+        max_points is None
+        or interval_seconds not in NICE_INTERVAL_SECONDS
+        or ceil(monitoring_range.duration.total_seconds() / interval_seconds) > max_points
+    ):
+        raise MonitoringValidationError("invalid_interval_seconds")
+    return interval_seconds
 
 
 def get_sensor_reads() -> SensorReads:
@@ -67,7 +90,7 @@ async def overview_read(
     location: str,
     start: str | None = Query(default=None),
     end: str | None = Query(default=None),
-    max_points: int = Query(default=600, ge=10, le=1000),
+    max_points: int = Query(default=600, ge=10, le=4000),
     reads: SensorReads = Depends(get_sensor_reads),
 ) -> HistoryOverviewSensorResponse:
     history_range = HistoryOverviewRange.from_absolute(start, end)
@@ -80,10 +103,16 @@ async def range_read(
     start: str | None = Query(default=None),
     end: str | None = Query(default=None),
     max_points: int | None = Query(default=None, ge=10, le=100_000),
+    interval_seconds: Annotated[int | None, Query(ge=1)] = None,
     reads: SensorReads = Depends(get_sensor_reads),
 ) -> MonitoringResponse:
     monitoring_range = _range(start, end)
-    tier, series = await reads.series(location, monitoring_range, max_points)
+    requested_interval_seconds = _requested_interval_seconds(
+        interval_seconds, monitoring_range, max_points
+    )
+    tier, series = await reads.series(
+        location, monitoring_range, max_points, requested_interval_seconds
+    )
     return MonitoringResponse(
         metadata=MonitoringMetadata(
             generated_at=datetime.now(UTC),
@@ -91,10 +120,15 @@ async def range_read(
             range=monitoring_range,
             room=resolve_room_metadata(location),
             requested_max_points=max_points,
-            interval_seconds=derive_interval_seconds(
-                monitoring_range.duration,
-                source_bucket_seconds(tier),
-                max_points,
+            requested_interval_seconds=requested_interval_seconds,
+            interval_seconds=(
+                requested_interval_seconds
+                if requested_interval_seconds is not None
+                else derive_interval_seconds(
+                    monitoring_range.duration,
+                    source_bucket_seconds(tier),
+                    max_points,
+                )
             ),
         ),
         series=series,

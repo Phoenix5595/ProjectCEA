@@ -12,6 +12,7 @@ import pytest
 from monitoring_service.control_models import (
     ControlHistoryEnvelope,
     ControlHistoryRange,
+    ControlOverviewScope,
     ControlPublicationResponse,
     ControlReadScope,
 )
@@ -33,6 +34,7 @@ from monitoring_service.sensor_models import (
     UnitFamily,
     derive_interval_seconds,
     resolve_room_metadata,
+    tier_for_interval,
 )
 from monitoring_service.sensor_repository import SensorMonitoringRepository
 from monitoring_service.sensor_routes import get_sensor_reads
@@ -43,11 +45,16 @@ NOW = datetime(2026, 8, 24, 14, tzinfo=UTC)
 @final
 class FakeSensorReads:
     async def series(
-        self, room: str, monitoring_range: MonitoringRange, max_points: int | None = None
+        self,
+        room: str,
+        monitoring_range: MonitoringRange,
+        max_points: int | None = None,
+        interval_seconds: int | None = None,
     ) -> tuple[Tier, tuple[SensorSeries, ...]]:
         del room, monitoring_range, max_points
+        tier = Tier.RAW if interval_seconds is None else tier_for_interval(interval_seconds)
         return (
-            Tier.RAW,
+            tier,
             (
                 SensorSeries(
                     sensor="dry_bulb",
@@ -90,7 +97,19 @@ class FakeSensorReads:
     async def overview(
         self, room: str, history_range: HistoryOverviewRange, max_points: int = 600
     ) -> HistoryOverviewSensorResponse:
-        raise AssertionError("sensor overview is outside this contract test")
+        del room
+        return HistoryOverviewSensorResponse(
+            metadata=HistoryOverviewMetadata(
+                generated_at=NOW,
+                range=history_range,
+                room=resolve_room_metadata("Veg Room"),
+                requested_max_points=max_points,
+                bucket=choose_history_bucket(history_range.start, history_range.end, max_points),
+                source_coverage="ready",
+            ),
+            series=(),
+            statistics=(),
+        )
 
 
 @final
@@ -117,7 +136,7 @@ class FakeControlReads:
         location: str,
         history_range: HistoryOverviewRange,
         max_points: int = 600,
-        scope: ControlReadScope = "all",
+        scope: ControlOverviewScope = "all",
     ) -> HistoryOverviewControlResponse:
         del location, scope
         return HistoryOverviewControlResponse(
@@ -211,10 +230,94 @@ async def test_no_budget_preserves_legacy_fields_and_returns_none_metadata(app) 
     assert response.status_code == 200
     payload = response.json()
     assert payload["metadata"]["requested_max_points"] is None
+    assert payload["metadata"]["requested_interval_seconds"] is None
     assert payload["metadata"]["interval_seconds"] is None
     assert payload["series"][0]["point_count"] == 1
     assert payload["series"][0]["sample_count_total"] == 3
     assert payload["statistics"][0]["stddev_quality"] == "exact"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "path",
+    (
+        "/api/sensors/monitoring/overview/Veg%20Room",
+        "/api/monitoring/control/Veg%20Room/overview",
+    ),
+)
+async def test_overview_accepts_the_four_thousand_point_budget(app, path: str) -> None:
+    # Given: the bounded overview readers and a valid all-history window.
+    params = {"start": "2026-08-01T00:00:00Z", "end": "2026-08-24T14:00:00Z"}
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        # When: the exact cap and one point above it are requested.
+        accepted = await client.get(path, params={**params, "max_points": 4000})
+        rejected = await client.get(path, params={**params, "max_points": 4001})
+
+        # Then: 4000 is echoed and 4001 is a monitoring client error.
+        assert accepted.status_code == 200
+        assert accepted.json()["metadata"]["requested_max_points"] == 4000
+        assert rejected.status_code == 400
+
+
+@pytest.mark.anyio
+async def test_interval_seconds_is_validated_against_the_point_budget(app) -> None:
+    # Given: a one-hour sensor range with a manageable point budget.
+    params = {"start": "2026-08-24T13:00:00Z", "end": "2026-08-24T14:00:00Z"}
+    path = "/api/sensors/monitoring/range/Veg%20Room"
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        # When: the interval is valid, off-ladder, unbudgeted, or too dense.
+        accepted = await client.get(
+            path, params={**params, "max_points": 60, "interval_seconds": 120}
+        )
+        off_ladder = await client.get(
+            path, params={**params, "max_points": 60, "interval_seconds": 7}
+        )
+        unbudgeted = await client.get(path, params={**params, "interval_seconds": 60})
+        too_dense = await client.get(
+            path, params={**params, "max_points": 10, "interval_seconds": 1}
+        )
+
+    # Then: only the valid request is served and echoes the applied interval.
+    assert accepted.status_code == 200
+    metadata = accepted.json()["metadata"]
+    assert metadata["requested_max_points"] == 60
+    assert metadata["requested_interval_seconds"] == 120
+    assert metadata["interval_seconds"] == 120
+    assert metadata["tier"] == "1min"
+    for response in (off_ladder, unbudgeted, too_dense):
+        assert response.status_code == 400
+        assert response.json() == {"detail": "invalid_interval_seconds"}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("interval_seconds", "expected_tier"),
+    ((30, "raw"), (60, "1min"), (300, "5min"), (600, "5min")),
+)
+async def test_requested_interval_selects_the_storage_tier(
+    app, interval_seconds: int, expected_tier: str
+) -> None:
+    # Given: a one-hour range with a budget large enough for every ladder interval.
+    params = {
+        "start": "2026-08-24T13:00:00Z",
+        "end": "2026-08-24T14:00:00Z",
+        "max_points": 1000,
+        "interval_seconds": interval_seconds,
+    }
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        # When: the requested interval is applied.
+        response = await client.get("/api/sensors/monitoring/range/Veg%20Room", params=params)
+
+    # Then: the response tier is the interval-selected tier, not a duration-derived one.
+    assert response.status_code == 200
+    assert response.json()["metadata"]["tier"] == expected_tier
+    assert response.json()["metadata"]["requested_interval_seconds"] == interval_seconds
 
 
 def test_interval_derivation_snaps_to_the_nice_ladder() -> None:

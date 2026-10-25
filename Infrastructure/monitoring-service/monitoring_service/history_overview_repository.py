@@ -21,7 +21,7 @@ from typing import Final, Protocol, final
 
 import asyncpg
 
-from monitoring_service.control_models import ControlReadScope
+from monitoring_service.control_models import ControlOverviewScope
 from monitoring_service.history_buckets import (
     FixedHistoryBucket,
     choose_history_bucket,
@@ -152,7 +152,7 @@ class HistoryOverviewRepository:
         location: str,
         history_range: HistoryOverviewRange,
         max_points: int = 600,
-        scope: ControlReadScope = "all",
+        scope: ControlOverviewScope = "all",
     ) -> HistoryOverviewControlResponse:
         """Read bounded control summaries plus recorded relay lane durations.
 

@@ -12,6 +12,7 @@ from fastapi.routing import APIRoute
 from monitoring_service.control_models import (
     ControlHistoryRange,
     ControlHistoryEnvelope,
+    ControlOverviewScope,
     ControlPublicationResponse,
     ControlReadScope,
     CurrentPublicationResponse,
@@ -249,7 +250,7 @@ class FakeControlReads:
     def __init__(self, publication_values: list[str | None] | None = None) -> None:
         self._publication_values = publication_values or [_current(7), _future_timeline()]
         self.history_scopes: list[ControlReadScope] = []
-        self.overview_scopes: list[ControlReadScope] = []
+        self.overview_scopes: list[ControlOverviewScope] = []
 
     async def history(
         self,
@@ -267,7 +268,7 @@ class FakeControlReads:
         location: str,
         history_range: HistoryOverviewRange,
         max_points: int = 600,
-        scope: ControlReadScope = "all",
+        scope: ControlOverviewScope = "all",
     ) -> HistoryOverviewControlResponse:
         del location
         self.overview_scopes.append(scope)
@@ -542,79 +543,253 @@ async def test_history_canonicalizes_each_light_by_device_and_timestamp() -> Non
     assert len(response.lights[1].points) == 1
 
 
-def test_lights_scope_selection_excludes_climate_and_automation_sources() -> None:
-    # Given: every budgeted and unbudgeted range selection under a lights scope.
-    selections = (
-        (ControlHistoryRange(start=NOW, end=NOW + timedelta(minutes=70)), 1000),
-        (ControlHistoryRange(start=NOW, end=NOW + timedelta(days=7)), 1000),
-        (ControlHistoryRange(start=NOW, end=NOW + timedelta(hours=1)), None),
-    )
+_SELECTION_WINDOWS: tuple[tuple[ControlHistoryRange, int | None], ...] = (
+    (ControlHistoryRange(start=NOW, end=NOW + timedelta(minutes=70)), 1000),
+    (ControlHistoryRange(start=NOW, end=NOW + timedelta(days=7)), 1000),
+    (ControlHistoryRange(start=NOW, end=NOW + timedelta(hours=1)), None),
+)
 
-    # When: sources are selected for each window.
+
+@pytest.mark.parametrize("scope", ("all", "room", "climate", "photoperiod"))
+def test_scope_selection_keeps_only_its_own_families(scope: ControlReadScope) -> None:
+    # Given: every supported history scope over budgeted and unbudgeted windows.
     sources = [
-        select_control_history_sources(history_range, max_points, "lights")
-        for history_range, max_points in selections
+        select_control_history_sources(history_range, max_points, scope)
+        for history_range, max_points in _SELECTION_WINDOWS
     ]
 
-    # Then: only the raw light source stays selected, never a climate or automation ladder.
+    # When/Then: each scope selects exactly its documented source families.
+    if scope == "photoperiod":
+        assert all(source.setpoints_sql is None for source in sources)
+        assert all(source.light_sql is None for source in sources)
+        assert all(source.state_sql is None for source in sources)
+        return
+    if scope == "climate":
+        assert all(source.setpoints_sql is not None for source in sources)
+        assert all(source.light_sql is None for source in sources)
+        assert all(source.state_sql is None for source in sources)
+        return
+    if scope == "room":
+        assert all(source.setpoints_sql is not None for source in sources)
+        assert all(source.light_sql == _LIGHT_SETPOINTS_SQL for source in sources)
+        assert all(source.state_sql is None for source in sources)
+        return
+    assert all(source.setpoints_sql is not None for source in sources)
     assert all(source.light_sql == _LIGHT_SETPOINTS_SQL for source in sources)
-    assert all(source.setpoints_sql is None for source in sources)
-    assert all(source.state_sql is None for source in sources)
-    assert all(source.setpoints_are_aggregated is False for source in sources)
+    assert all(source.state_sql is not None for source in sources)
+
+
+def test_room_and_climate_scopes_share_the_tiered_climate_ladder() -> None:
+    # Given: identical windows read under all, room, and climate scopes.
+    for history_range, max_points in _SELECTION_WINDOWS:
+        # When: sources are selected per scope.
+        full = select_control_history_sources(history_range, max_points, "all")
+        room = select_control_history_sources(history_range, max_points, "room")
+        climate = select_control_history_sources(history_range, max_points, "climate")
+
+        # Then: climate setpoints keep the existing tier and provenance decisions.
+        assert (room.setpoints_sql, room.setpoints_are_aggregated) == (
+            full.setpoints_sql,
+            full.setpoints_are_aggregated,
+        )
+        assert (climate.setpoints_sql, climate.setpoints_are_aggregated) == (
+            full.setpoints_sql,
+            full.setpoints_are_aggregated,
+        )
+        assert room.source_interval_seconds == full.source_interval_seconds
+        assert climate.source_interval_seconds == full.source_interval_seconds
+
+
+def test_lights_is_not_a_history_scope_any_more() -> None:
+    # Given: the removed light-only history vocabulary.
+    history_range = ControlHistoryRange(start=NOW, end=NOW + timedelta(hours=1))
+
+    # When/Then: selection rejects it instead of silently reading another scope.
+    with pytest.raises(ValueError):
+        select_control_history_sources(history_range, 1000, "lights")  # type: ignore[arg-type]
+
+
+def _setpoint_history_row(
+    timestamp: datetime,
+) -> dict[str, str | float | datetime | None]:
+    row: dict[str, str | float | datetime | None] = {
+        "time": timestamp,
+        "mode": "day",
+        "effective_heating_setpoint": 22.0,
+        "nominal_heating_setpoint": 21.0,
+        "ramp_progress_heating": None,
+        "is_aggregated": False,
+    }
+    for metric in ("cooling", "humidity", "co2", "vpd"):
+        row[f"effective_{metric}_setpoint"] = None
+        row[f"nominal_{metric}_setpoint"] = None
+        row[f"ramp_progress_{metric}"] = None
+    return row
 
 
 @final
-class MissingAutomationSourcesDatabase:
-    """Serves recorded light facts and fails climate/automation-state reads."""
+class ScopeDatabase:
+    """Serves only the source families the requested scope is allowed to read."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, setpoints: bool, lights: bool, state: bool) -> None:
+        self._setpoints = setpoints
+        self._lights = lights
+        self._state = state
         self.queries: list[str] = []
 
     async def fetch(
         self, query: str, *arguments: str | int | float | datetime
-    ) -> list[dict[str, str | float | datetime | None]]:
+    ) -> list[dict[str, str | float | int | datetime | None]]:
         self.queries.append(query)
-        if "monitoring_photoperiod_coverage" in query or "monitoring_room_photoperiod" in query:
-            return await FakeDatabase().fetch(query, *arguments)
+        if "monitoring_photoperiod_coverage" in query:
+            return [
+                {
+                    "id": 7,
+                    "time": NOW - timedelta(minutes=10),
+                    "location": "Veg Room",
+                    "cluster": "main",
+                    "state": "available",
+                    "reason": "initial",
+                    "runtime_snapshot_version": 2,
+                }
+            ]
+        if "monitoring_room_photoperiod" in query:
+            return [
+                {
+                    "id": 6,
+                    "time": NOW - timedelta(minutes=10),
+                    "location": "Veg Room",
+                    "cluster": "main",
+                    "phase": "SUN",
+                    "mode_id": 3,
+                    "submode_id": None,
+                    "runtime_snapshot_version": 2,
+                    "source": "photoperiod_transition",
+                }
+            ]
+        if "monitoring_automation_state" in query:
+            assert self._state, "scope must not read automation state"
+            return [
+                {
+                    "bucket": NOW - timedelta(seconds=5),
+                    "device_name": "light_f_1",
+                    "device_state_last": 1.0,
+                    "device_mode_last": "auto",
+                    "control_reason_last": "schedule",
+                    "pid_output_last": None,
+                    "duty_cycle_percent_last": 40.0,
+                    "pid_output_min": None,
+                    "pid_output_max": None,
+                    "duty_cycle_percent_min": 30.0,
+                    "duty_cycle_percent_max": 55.0,
+                    "is_aggregated": True,
+                }
+            ]
         if "effective_light_intensity" in query:
+            assert self._lights, "scope must not read recorded light facts"
             if len(arguments) == 2:
                 return []
             return [_light_history_row(NOW - timedelta(seconds=5), "light_f_1", "day", 42.0)]
-        raise RuntimeError("climate or automation-state read model is unavailable")
+        if "effective_heating_setpoint" in query:
+            assert self._setpoints, "scope must not read climate setpoints"
+            return [_setpoint_history_row(NOW - timedelta(seconds=5))]
+        raise AssertionError(f"unexpected control history query: {query[:80]}")
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("max_points", (None, 1000))
-async def test_lights_scope_history_succeeds_without_automation_sources(
+async def test_room_scope_reads_climate_lights_and_photoperiod_without_devices(
     max_points: int | None,
 ) -> None:
-    # Given: a room whose climate and automation read models are unavailable while
-    # the light-family photoperiod coverage and predecessor reads still answer.
-    database = MissingAutomationSourcesDatabase()
-    repository = ControlHistoryRepository(database)
-    history_range = ControlHistoryRange(start=NOW - timedelta(minutes=5), end=NOW)
+    # Given: a room source that fails if automation state is touched.
+    database = ScopeDatabase(setpoints=True, lights=True, state=False)
 
-    # When: the lights scope reads the recorded window.
-    response = await repository.read("Veg Room", history_range, max_points, "lights")
+    # When: the room scope reads the recorded window.
+    response = await ControlHistoryRepository(database).read(
+        "Veg Room",
+        ControlHistoryRange(start=NOW - timedelta(minutes=5), end=NOW),
+        max_points,
+        "room",
+    )
 
-    # Then: recorded light intensity and photoperiod facts stay truthful while
-    # every non-light timeline is empty rather than fabricated.
-    assert response.runtime_snapshot_version == 2
+    # Then: climate setpoints, recorded lights, and photoperiod are present while
+    # device/PID automation state stays empty and unqueried.
+    assert [series.name for series in response.climate] == ["heating_setpoint"]
     assert [series.name for series in response.lights] == ["light_f_1"]
-    light = response.lights[0]
-    recorded_values = [point.value for point in light.points] or [
-        step.value for step in light.steps
-    ]
-    assert recorded_values == [42.0]
     assert response.photoperiod[0].phase == "SUN"
-    assert response.climate == ()
     assert response.devices == ()
     assert response.pid == ()
+    assert not any("monitoring_automation_state" in query for query in database.queries)
+
+
+@pytest.mark.anyio
+async def test_climate_scope_reads_setpoints_and_photoperiod_without_lights() -> None:
+    # Given: a climate source that fails if the light family or state is touched.
+    database = ScopeDatabase(setpoints=True, lights=False, state=False)
+
+    # When: the climate scope reads the recorded window.
+    response = await ControlHistoryRepository(database).read(
+        "Veg Room",
+        ControlHistoryRange(start=NOW - timedelta(minutes=5), end=NOW),
+        1000,
+        "climate",
+    )
+
+    # Then: climate setpoints and committed photoperiod remain, lights and state do not.
+    assert [series.name for series in response.climate] == ["heating_setpoint"]
+    assert response.lights == ()
+    assert response.devices == ()
+    assert response.pid == ()
+    assert response.photoperiod[0].phase == "SUN"
+    assert not any("effective_light_intensity" in query for query in database.queries)
+    assert not any("monitoring_automation_state" in query for query in database.queries)
+
+
+@pytest.mark.anyio
+async def test_photoperiod_scope_reads_only_committed_phase_and_coverage() -> None:
+    # Given: a source that fails if climate, light, or automation state is touched.
+    database = ScopeDatabase(setpoints=False, lights=False, state=False)
+
+    # When: the photoperiod scope reads the recorded window.
+    response = await ControlHistoryRepository(database).read(
+        "Veg Room",
+        ControlHistoryRange(start=NOW - timedelta(minutes=5), end=NOW),
+        1000,
+        "photoperiod",
+    )
+
+    # Then: only the committed phase stream answers, with no light-derived witnesses.
+    assert response.climate == ()
+    assert response.lights == ()
+    assert response.devices == ()
+    assert response.pid == ()
+    assert response.photoperiod[0].phase == "SUN"
+    assert response.interval_seconds is None
+    assert any("monitoring_room_photoperiod" in query for query in database.queries)
+    assert any("monitoring_photoperiod_coverage" in query for query in database.queries)
+    assert not any("effective_setpoints" in query for query in database.queries)
+    assert not any("monitoring_automation_state" in query for query in database.queries)
+
+
+@final
+class UnavailableStateDatabase(ScopeDatabase):
+    """Fails only the automation-state family to prove the all-scope gate."""
+
+    def __init__(self) -> None:
+        super().__init__(setpoints=True, lights=True, state=True)
+
+    async def fetch(
+        self, query: str, *arguments: str | int | float | datetime
+    ) -> list[dict[str, str | float | int | datetime | None]]:
+        if "monitoring_automation_state" in query:
+            self.queries.append(query)
+            raise RuntimeError("automation-state read model is unavailable")
+        return await super().fetch(query, *arguments)
 
 
 @pytest.mark.anyio
 async def test_all_scope_history_fails_when_its_automation_state_source_fails() -> None:
-    repository = ControlHistoryRepository(MissingAutomationSourcesDatabase())
+    repository = ControlHistoryRepository(UnavailableStateDatabase())
     app = create_app(control_reads=RepositoryControlReads(repository))
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -627,49 +802,117 @@ async def test_all_scope_history_fails_when_its_automation_state_source_fails() 
 
 
 @pytest.mark.anyio
-async def test_control_scope_query_selects_lights_and_defaults_to_all() -> None:
+async def test_history_and_tail_accept_room_climate_and_photoperiod_scopes() -> None:
     # Given: control reads that record every scope they receive.
     reads = FakeControlReads()
     app = create_app(control_reads=reads)
-    history_params = {
-        "start": "2026-08-20T11:00:00Z",
-        "end": "2026-08-20T12:00:00Z",
-        "max_points": 600,
-    }
+    params = {"start": "2026-08-20T11:00:00Z", "end": "2026-08-20T12:00:00Z"}
 
-    # When: history and overview are requested with and without a scope.
+    # When: history and tail request each new scope.
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
-        lights_history = await client.get(
-            "/api/monitoring/control/Veg%20Room/history",
-            params={**history_params, "scope": "lights"},
-        )
-        default_history = await client.get(
-            "/api/monitoring/control/Veg%20Room/history", params=history_params
-        )
-        lights_overview = await client.get(
-            "/api/monitoring/control/Veg%20Room/overview",
-            params={**history_params, "scope": "lights"},
-        )
-        default_overview = await client.get(
-            "/api/monitoring/control/Veg%20Room/overview", params=history_params
+        history = [
+            await client.get(
+                "/api/monitoring/control/Veg%20Room/history",
+                params={**params, "scope": scope},
+            )
+            for scope in ("room", "climate", "photoperiod")
+        ]
+        tail = await client.get(
+            "/api/monitoring/control/Veg%20Room/tail",
+            params={**params, "scope": "room"},
         )
 
-    # Then: the requested scope reaches the read service and omission stays the full scope.
-    assert [
-        response.status_code
-        for response in (lights_history, default_history, lights_overview, default_overview)
-    ] == [200, 200, 200, 200]
-    assert reads.history_scopes == ["lights", "all"]
-    assert reads.overview_scopes == ["lights", "all"]
-    lights_payload = lights_history.json()
-    assert lights_payload["climate"] == []
-    assert lights_payload["devices"] == []
-    assert lights_payload["pid"] == []
-    overview_payload = lights_overview.json()
-    assert overview_payload["requested_pid"] == []
-    assert overview_payload["relays"] == []
+    # Then: each scope reaches the read service unchanged.
+    assert [response.status_code for response in (*history, tail)] == [200, 200, 200, 200]
+    assert reads.history_scopes == ["room", "climate", "photoperiod", "room"]
+
+
+@pytest.mark.anyio
+async def test_lights_scope_is_rejected_on_history_and_tail_but_kept_on_overview() -> None:
+    # Given: control reads whose overview still owns the light-only vocabulary.
+    reads = FakeControlReads()
+    app = create_app(control_reads=reads)
+    params = {"start": "2026-08-20T11:00:00Z", "end": "2026-08-20T12:00:00Z"}
+
+    # When: lights is requested on every control read route.
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        history = await client.get(
+            "/api/monitoring/control/Veg%20Room/history",
+            params={**params, "scope": "lights"},
+        )
+        tail = await client.get(
+            "/api/monitoring/control/Veg%20Room/tail",
+            params={**params, "scope": "lights"},
+        )
+        overview = await client.get(
+            "/api/monitoring/control/Veg%20Room/overview",
+            params={**params, "scope": "lights"},
+        )
+        overview_room = await client.get(
+            "/api/monitoring/control/Veg%20Room/overview",
+            params={**params, "scope": "room"},
+        )
+
+    # Then: detailed reads reject lights while the bounded overview still accepts it.
+    assert history.status_code == tail.status_code == 400
+    assert "scope" in history.json()["detail"]
+    assert overview.status_code == 200
+    assert overview_room.status_code == 400
+    assert reads.history_scopes == []
+    assert reads.overview_scopes == ["lights"]
+
+
+@pytest.mark.anyio
+async def test_history_and_tail_enforce_per_scope_range_limits() -> None:
+    # Given: one reference end and windows at, beyond, and far beyond the limits.
+    end = datetime(2026, 9, 1, tzinfo=UTC)
+    reads = FakeControlReads()
+    app = create_app(control_reads=reads)
+
+    def window(days: int, seconds: int = 0) -> dict[str, str]:
+        return {
+            "start": (end - timedelta(days=days, seconds=seconds)).isoformat(),
+            "end": end.isoformat(),
+        }
+
+    # When: detailed scopes cross their maxima and sparse scopes stay inside theirs.
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        over_seven_all = await client.get(
+            "/api/monitoring/control/Veg%20Room/history",
+            params={**window(7, 1), "scope": "all"},
+        )
+        over_seven_room = await client.get(
+            "/api/monitoring/control/Veg%20Room/tail",
+            params={**window(7, 1), "scope": "room"},
+        )
+        eight_day_climate = await client.get(
+            "/api/monitoring/control/Veg%20Room/history",
+            params={**window(8), "scope": "climate"},
+        )
+        four_hundred_day_photoperiod = await client.get(
+            "/api/monitoring/control/Veg%20Room/history",
+            params={**window(400), "scope": "photoperiod"},
+        )
+        over_four_hundred_climate = await client.get(
+            "/api/monitoring/control/Veg%20Room/history",
+            params={**window(401), "scope": "climate"},
+        )
+
+    # Then: all/room are capped at seven days, climate/photoperiod at four hundred.
+    assert over_seven_all.status_code == 400
+    assert over_seven_all.json() == {"detail": "range_too_long"}
+    assert over_seven_room.status_code == 400
+    assert over_seven_room.json() == {"detail": "range_too_long"}
+    assert eight_day_climate.status_code == 200
+    assert four_hundred_day_photoperiod.status_code == 200
+    assert over_four_hundred_climate.status_code == 400
+    assert over_four_hundred_climate.json() == {"detail": "range_too_long"}
 
 
 @pytest.mark.anyio

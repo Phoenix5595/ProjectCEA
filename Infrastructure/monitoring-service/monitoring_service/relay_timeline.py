@@ -288,7 +288,7 @@ WITH relay_assignment_predecessors AS (
           ROW(previous_device_id, previous_device_name, previous_device_type,
               previous_location, previous_cluster)
        OR reason IN ('stale', 'recovered', 'recording_gap', 'assignment_changed')
-), relay_assignment_intervals AS (
+), relay_assignment_intervals AS MATERIALIZED (
     SELECT *, LEAD(observed_at) OVER (
         PARTITION BY channel ORDER BY observed_at, observation_id
     ) AS next_observed_at

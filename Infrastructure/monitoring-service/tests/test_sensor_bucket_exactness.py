@@ -7,7 +7,7 @@ import asyncpg
 import pytest
 
 from monitoring_service.sensor_intervals import NICE_INTERVAL_SECONDS
-from monitoring_service.sensor_models import MonitoringRange, resolve_interval_seconds
+from monitoring_service.sensor_models import MonitoringRange, Tier, resolve_interval_seconds
 from monitoring_service.sensor_repository import SensorMonitoringRepository
 from monitoring_service.sensor_sql import RAW_BUCKETED_SERIES_SQL, TIERED_BUCKETED_STATEMENTS
 
@@ -210,3 +210,25 @@ def test_budgeted_cagg_groups_by_the_bound_bucket_expression(tier: str) -> None:
     assert (
         "GROUP BY node_patterns.node, time_bucket($8::interval, c.bucket, $6::timestamptz)" in query
     )
+
+
+@pytest.mark.anyio
+async def test_requested_interval_selects_its_tier_and_is_bound_as_an_interval() -> None:
+    # Given: a one-hour request that explicitly asks for ten-minute buckets.
+    start = datetime(2026, 8, 24, 13, tzinfo=UTC)
+    database = EnvelopeDatabase((), start)
+    monitoring_range = MonitoringRange(start=start, end=start + timedelta(hours=1))
+
+    # When: the interval is passed through the repository with a fitting budget.
+    tier, series = await SensorMonitoringRepository(database, UnusedRedis()).series(
+        "Veg Room", monitoring_range, max_points=1000, interval_seconds=600
+    )
+
+    # Then: the five-minute tier is selected and the interval binds the SQL, not a literal.
+    assert tier is Tier.FIVE_MINUTES
+    assert series == ()
+    query, arguments = next(
+        call for call in database.calls if call[0] == TIERED_BUCKETED_STATEMENTS["5min"]
+    )
+    assert arguments[7] == timedelta(seconds=600)
+    assert "600" not in query

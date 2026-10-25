@@ -12,6 +12,7 @@ from monitoring_service.control_history_repository import (
 from monitoring_service.control_models import (
     ControlHistoryEnvelope,
     ControlHistoryRange,
+    ControlOverviewScope,
     ControlPublicationResponse,
     ControlReadScope,
     RelayTimelineRange,
@@ -49,7 +50,7 @@ class RuntimeControlReads:
         location: str,
         history_range: HistoryOverviewRange,
         max_points: int = 600,
-        scope: ControlReadScope = "all",
+        scope: ControlOverviewScope = "all",
     ) -> HistoryOverviewControlResponse:
         """Resolve only the owned database for fixed historical summaries."""
         database = self._resources.database

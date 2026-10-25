@@ -35,9 +35,11 @@ comes from retained facts, not today's device registry or timing configuration.
 
 History and tail share the same half-open read path, including predecessor
 evidence and an explicit state anchor at the requested start. Point budgets
-never remove phase, provenance, or UNKNOWN boundaries. Monitoring performs no
-backfill or writes, and missing required coverage schema is an unavailable read,
-not permission to extrapolate today's schedule.
+never remove phase, provenance, or UNKNOWN boundaries. The `climate` and
+`photoperiod` scopes never read the light family or its derived phase
+witnesses, so their `photoperiod` output is recorded phase/coverage authority
+only. Monitoring performs no backfill or writes, and missing required coverage
+schema is an unavailable read, not permission to extrapolate today's schedule.
 
 The coverage schema is defined by `../database/monitoring_read_models.sql`.
 Applying it to production requires separate owner authorization before rollout;
@@ -51,12 +53,22 @@ the implementation's schema and writer/HTTP smoke run only in the guarded
   `GET /api/monitoring/control/{location}/overview` merge recorded sufficient
   statistics with exact clipped edges. Graph buckets are the finest fitting
   whole-hour width from 1–12 hours; intersecting edge buckets count against
-  `max_points` (10–1000, generic default 600). An unfit budget returns 400,
+  `max_points` (10–4000, generic default 600). An unfit budget returns 400,
   never a wider bucket or whole-history raw fallback.
-- Room Monitoring/Historical uses `scope=lights` on control history, tail and
-  overview reads. This reads light intensity and its photoperiod evidence,
-  leaving climate-target, device and PID groups empty. Default `all` remains
-  available for Automation and generic consumers.
+- Detailed control history/tail reads use `scope` `all | room | climate |
+  photoperiod`. `room` (Room Monitoring/Historical ≤ 7 days) keeps climate
+  setpoints, recorded lights and photoperiod while leaving device/PID groups
+  empty. `climate` keeps climate setpoints and photoperiod, `photoperiod`
+  keeps committed phase/coverage facts only, and `all` remains the complete
+  automation-facing scope. The overview reader keeps its own `all | lights`
+  scope; `lights` is no longer a history/tail value.
+- History/tail ranges are capped at 7 days for `all`/`room` and 400 days for
+  `climate`/`photoperiod`; longer ranges return 400 `range_too_long`.
+- `GET /api/sensors/monitoring/range/{location}` accepts optional
+  `interval_seconds` with `max_points`. It must be a nice ladder interval that
+  fits the budget (`ceil(range / interval) <= max_points`), otherwise 400
+  `invalid_interval_seconds`; a valid value selects the raw/1-minute/5-minute
+  tier by interval and is echoed in response metadata.
 - Coverage, native invalidations/watermarks and rebuild faults gate the actual
   sources used by the request. Missing, dirty or unverified source history
   returns 503; `/ready` alone is not Historical readiness proof.

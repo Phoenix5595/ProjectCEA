@@ -13,8 +13,11 @@ from monitoring_service.history_overview_models import (
 )
 
 from monitoring_service.control_models import (
+    CONTROL_CLIMATE_HISTORY_MAXIMUM,
+    CONTROL_HISTORY_MAXIMUM,
     ControlHistoryRange,
     ControlHistoryEnvelope,
+    ControlOverviewScope,
     ControlPublicationResponse,
     ControlReadScope,
     CurrentPublicationResponse,
@@ -28,7 +31,8 @@ from monitoring_service.relay_timeline import (
 )
 from monitoring_service.sensor_models import MonitoringValidationError, resolve_room_metadata
 
-_CONTROL_SCOPES: Final = ("all", "lights")
+_CONTROL_HISTORY_SCOPES: Final = ("all", "room", "climate", "photoperiod")
+_CONTROL_OVERVIEW_SCOPES: Final = ("all", "lights")
 
 
 class ControlReadService(Protocol):
@@ -57,7 +61,7 @@ class ControlReadService(Protocol):
         location: str,
         history_range: HistoryOverviewRange,
         max_points: int = 600,
-        scope: ControlReadScope = "all",
+        scope: ControlOverviewScope = "all",
     ) -> HistoryOverviewControlResponse: ...
 
 
@@ -72,10 +76,10 @@ def register_control_routes(app: FastAPI, reads: ControlReadService) -> None:
         location: str,
         start: str | None = Query(default=None),
         end: str | None = Query(default=None),
-        max_points: int = Query(default=600, ge=10, le=1000),
+        max_points: int = Query(default=600, ge=10, le=4000),
         scope: str = Query(default="all"),
     ) -> HistoryOverviewControlResponse:
-        control_scope = _control_scope(scope)
+        control_scope = _overview_scope(scope)
         history_range = HistoryOverviewRange.from_absolute(start, end)
         history_range.require_control_minimum()
         try:
@@ -96,8 +100,9 @@ def register_control_routes(app: FastAPI, reads: ControlReadService) -> None:
     ) -> ControlHistoryEnvelope:
         """Return recorded control facts from the read-only database."""
         try:
-            control_scope = _control_scope(scope)
+            control_scope = _history_scope(scope)
             history_range = _history_range(start, end)
+            _require_history_scope_range(control_scope, history_range)
             return await reads.history(location, history_range, max_points, control_scope)
         except (ConnectionError, OSError, RuntimeError):
             raise HTTPException(
@@ -170,11 +175,29 @@ def register_control_routes(app: FastAPI, reads: ControlReadService) -> None:
             ) from None
 
 
-def _control_scope(scope: str) -> ControlReadScope:
-    """Validate the recorded-control scope through the monitoring 400 contract."""
-    if scope not in _CONTROL_SCOPES:
-        raise MonitoringValidationError("scope must be 'all' or 'lights'")
+def _history_scope(scope: str) -> ControlReadScope:
+    """Validate the recorded-control history/tail scope through the 400 contract."""
+    if scope not in _CONTROL_HISTORY_SCOPES:
+        raise MonitoringValidationError("scope must be 'all', 'room', 'climate' or 'photoperiod'")
     return cast(ControlReadScope, scope)
+
+
+def _overview_scope(scope: str) -> ControlOverviewScope:
+    """Validate the bounded-overview scope through the monitoring 400 contract."""
+    if scope not in _CONTROL_OVERVIEW_SCOPES:
+        raise MonitoringValidationError("scope must be 'all' or 'lights'")
+    return cast(ControlOverviewScope, scope)
+
+
+def _require_history_scope_range(
+    scope: ControlReadScope, history_range: ControlHistoryRange
+) -> None:
+    """Reject detailed history/tail windows beyond the per-scope maximum."""
+    maximum = (
+        CONTROL_HISTORY_MAXIMUM if scope in ("all", "room") else CONTROL_CLIMATE_HISTORY_MAXIMUM
+    )
+    if history_range.end - history_range.start > maximum:
+        raise MonitoringValidationError("range_too_long")
 
 
 def _history_range(start: datetime | None, end: datetime | None) -> ControlHistoryRange:

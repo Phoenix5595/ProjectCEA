@@ -289,57 +289,62 @@ async def test_control_tail_rejects_inverted_windows_as_client_error() -> None:
 
 
 @final
-class LightTailDatabase:
-    """Serves recorded light facts and refuses any other control source."""
+class PhotoperiodOnlyTailDatabase:
+    """Serves committed photoperiod facts and refuses any other control source."""
 
     async def fetch(
         self, query: str, *_: str | int | float | datetime
-    ) -> list[dict[str, str | float | datetime | None]]:
-        if "effective_light_intensity" in query:
+    ) -> list[dict[str, str | int | float | datetime | None]]:
+        if "monitoring_room_photoperiod" in query:
             return [
                 {
-                    "time": datetime(2026, 8, 20, 11, 30, tzinfo=UTC),
-                    "mode": "day",
-                    "device_name": "light_f_1",
-                    "effective_light_intensity": 65.0,
-                    "nominal_light_intensity": 65.0,
-                    "ramp_progress_light": None,
+                    "time": datetime(2026, 8, 20, 10, 30, tzinfo=UTC),
+                    "phase": "SUN",
+                    "mode_id": 3,
+                    "submode_id": None,
+                    "runtime_snapshot_version": 2,
+                    "source": "photoperiod_transition",
                 }
             ]
-        if "monitoring_room_photoperiod" in query:
-            return []
         if "monitoring_photoperiod_coverage" in query:
-            return []
-        if "FROM effective_setpoints" in query:
-            return []  # the 60-second light predecessor window is empty
-        raise AssertionError("a lights-only tail must not query climate or automation sources")
+            return [
+                {
+                    "time": datetime(2026, 8, 20, 10, 5, tzinfo=UTC),
+                    "state": "available",
+                    "reason": "initial",
+                    "runtime_snapshot_version": 2,
+                }
+            ]
+        raise AssertionError("a photoperiod-only tail must not query any other source")
 
 
 @pytest.mark.anyio
-async def test_control_tail_serves_a_lights_scope_without_querying_other_sources() -> None:
-    # Given: a live poller source that serves only recorded light facts.
-    database = LightTailDatabase()
+async def test_control_tail_serves_a_photoperiod_scope_without_querying_other_sources() -> None:
+    # Given: a live poller source that serves only committed photoperiod facts.
+    database = PhotoperiodOnlyTailDatabase()
     reads = FakeControlReads(database)
     app = create_app(control_reads=reads)
 
-    # When: the tail is requested with a lights scope.
+    # When: the tail is requested with a photoperiod scope.
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
-        lights = await client.get(
+        photoperiod = await client.get(
             "/api/monitoring/control/Veg%20Room/tail",
             params={
                 "start": "2026-08-20T11:00:00Z",
                 "end": "2026-08-20T12:00:00Z",
-                "scope": "lights",
+                "scope": "photoperiod",
             },
         )
 
-    # Then: the poller receives truthful light facts while every non-light series stays empty.
-    assert lights.status_code == 200
-    assert reads.scopes == ["lights"]
-    lights_payload = lights.json()
-    assert lights_payload["climate"] == []
-    assert lights_payload["devices"] == []
-    assert lights_payload["pid"] == []
-    assert [series["name"] for series in lights_payload["lights"]] == ["light_f_1"]
+    # Then: the poller receives committed phases while every other series stays empty.
+    assert photoperiod.status_code == 200
+    assert reads.scopes == ["photoperiod"]
+    payload = photoperiod.json()
+    assert payload["climate"] == []
+    assert payload["lights"] == []
+    assert payload["devices"] == []
+    assert payload["pid"] == []
+    assert [point["phase"] for point in payload["photoperiod"]] == ["SUN"]
+    assert payload["interval_seconds"] is None

@@ -194,13 +194,14 @@ ORDER BY "time"
 class ControlHistorySources:
     """Read-only sources selected for a control history request.
 
-    ``setpoints_sql`` and ``state_sql`` are ``None`` when the requested scope
-    excludes climate and automation-state facts; the light source always stays
-    the raw per-device recorded setpoint rows.
+    ``setpoints_sql``, ``light_sql`` and ``state_sql`` are ``None`` when the
+    requested scope excludes climate, light or automation-state facts
+    respectively. ``climate`` and ``photoperiod`` scopes therefore never read
+    the light family or its derived phase witnesses.
     """
 
     setpoints_sql: str | None
-    light_sql: str
+    light_sql: str | None
     state_sql: str | None
     setpoints_are_aggregated: bool
     source_interval_seconds: int
@@ -208,60 +209,68 @@ class ControlHistorySources:
     state_relation: str | None = None
 
 
+def _select_setpoint_source(
+    history_range: ControlHistoryRange, max_points: int | None
+) -> tuple[str, bool, int, str | None]:
+    """Choose the existing climate setpoint ladder for a ranged read."""
+    if max_points is None:
+        return _RAW_SETPOINTS_SQL, False, 60, None
+    duration = history_range.end - history_range.start
+    if duration >= timedelta(days=1):
+        return _SETPOINTS_5MIN_SQL, True, 300, "monitoring_effective_setpoints_5min"
+    if duration >= timedelta(hours=2):
+        return _SETPOINTS_1MIN_SQL, True, 60, "monitoring_effective_setpoints_1min"
+    return _RAW_SETPOINTS_SQL, False, 60, None
+
+
+def _select_state_source() -> tuple[str, str]:
+    """Choose the existing automation-state ladder for a ranged read."""
+    return _STATE_1MIN_SQL, "monitoring_automation_state_1min"
+
+
 def select_control_history_sources(
     history_range: ControlHistoryRange,
     max_points: int | None,
     scope: ControlReadScope = "all",
 ) -> ControlHistorySources:
-    """Choose existing control read models; unbudgeted reads retain their legacy sources.
+    """Choose existing control read models for the requested history scope.
 
-    A ``lights`` scope selects only the raw per-device light source: the
-    climate and automation-state ladders are never queried. Recorded effective
-    light intensities remain readable when those derived models are unavailable;
-    they are setpoints, not independently measured dimmer feedback. The default
-    ``all`` scope retains the existing climate and automation-state ladders.
+    ``all`` retains the existing climate, automation-state, light and
+    photoperiod ladders. ``room`` keeps the tiered climate source plus the raw
+    per-device light source and photoperiod facts, but never reads device/PID
+    automation state. ``climate`` keeps the tiered climate source plus
+    photoperiod facts and light-free phase history. ``photoperiod`` reads only
+    the committed phase and coverage streams, with no light witnesses.
 
     Lights always read the raw per-device setpoint source because
     range-dependent aggregate selection is what erased recorded ramp semantics
     through the CAGG null nominal/ramp fields.
     """
-    if scope == "lights":
-        return ControlHistorySources(None, _LIGHT_SETPOINTS_SQL, None, False, 60)
-    if max_points is None:
+    if scope == "photoperiod":
+        return ControlHistorySources(None, None, None, False, 60)
+    setpoints_sql, aggregated, source_interval_seconds, setpoints_relation = (
+        _select_setpoint_source(history_range, max_points)
+    )
+    if scope in ("room", "climate"):
         return ControlHistorySources(
-            _RAW_SETPOINTS_SQL,
-            _LIGHT_SETPOINTS_SQL,
-            _STATE_1MIN_SQL,
-            False,
-            60,
-            state_relation="monitoring_automation_state_1min",
+            setpoints_sql,
+            _LIGHT_SETPOINTS_SQL if scope == "room" else None,
+            None,
+            aggregated,
+            source_interval_seconds,
+            setpoints_relation=setpoints_relation,
         )
-    duration = history_range.end - history_range.start
-    if duration >= timedelta(days=1):
-        return ControlHistorySources(
-            _SETPOINTS_5MIN_SQL,
-            _LIGHT_SETPOINTS_SQL,
-            _STATE_5MIN_SQL,
-            True,
-            300,
-            setpoints_relation="monitoring_effective_setpoints_5min",
-            state_relation="monitoring_automation_state_5min",
-        )
-    if duration >= timedelta(hours=2):
-        return ControlHistorySources(
-            _SETPOINTS_1MIN_SQL,
-            _LIGHT_SETPOINTS_SQL,
-            _STATE_1MIN_SQL,
-            True,
-            60,
-            setpoints_relation="monitoring_effective_setpoints_1min",
-            state_relation="monitoring_automation_state_1min",
-        )
+    if scope != "all":
+        raise ValueError(f"unknown control history scope: {scope}")
+    state_sql, state_relation = _select_state_source()
+    if max_points is not None and history_range.end - history_range.start >= timedelta(days=1):
+        state_sql, state_relation = _STATE_5MIN_SQL, "monitoring_automation_state_5min"
     return ControlHistorySources(
-        _RAW_SETPOINTS_SQL,
+        setpoints_sql,
         _LIGHT_SETPOINTS_SQL,
-        _STATE_1MIN_SQL,
-        False,
-        60,
-        state_relation="monitoring_automation_state_1min",
+        state_sql,
+        aggregated,
+        source_interval_seconds,
+        setpoints_relation=setpoints_relation,
+        state_relation=state_relation,
     )

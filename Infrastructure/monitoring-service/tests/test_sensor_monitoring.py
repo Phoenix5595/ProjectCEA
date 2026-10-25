@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime, timedelta
 from typing import TypedDict
 
@@ -183,6 +184,36 @@ def test_tiered_series_sql_checks_parent_invalidations_and_reads_raw_fallback() 
     )
     assert "FROM measurement" in query
     assert "raw.bucket > $8" in query
+    # And: the shared source rows are evaluated once instead of once per room node
+    assert ", source_rows AS MATERIALIZED (" in query
+
+
+def test_every_tiered_statement_bounds_raw_rows_at_the_usable_bucket() -> None:
+    # Given: every generated statement that unions aggregate rows with a raw fallback
+    from monitoring_service.sensor_sql import (
+        STATISTICS_CAGG_SQL,
+        TIERED_BUCKETED_STATEMENTS,
+        TIERED_STATEMENTS,
+    )
+
+    cases = (
+        (TIERED_STATEMENTS["5min"], "5 minutes", "$8"),
+        (TIERED_STATEMENTS["1min"], "1 minute", "$8"),
+        (TIERED_BUCKETED_STATEMENTS["5min"], "5 minutes", "$9"),
+        (TIERED_BUCKETED_STATEMENTS["1min"], "1 minute", "$9"),
+        (STATISTICS_CAGG_SQL, "5 minutes", "$8"),
+    )
+
+    for query, width, frontier in cases:
+        # Then: raw rows start at the later of the range start and the usable frontier
+        assert ", source_rows AS MATERIALIZED (" in query
+        assert f"time_bucket(INTERVAL '{width}', $6::timestamptz)" in query
+        assert f"LEAST({frontier}, COALESCE((" in query
+        assert f"< $7::timestamptz + INTERVAL '{width}'" in query
+        assert "SELECT min(overlapping.invalidation_start)" in query
+        # And: the floor is fully parameterized, with no literal instant in it
+        floor = query.split('measurement."time" >=')[1].split("$7::timestamptz + INTERVAL")[0]
+        assert re.search(r"\d{4}-\d{2}-\d{2}", floor) is None
 
 
 @pytest.fixture

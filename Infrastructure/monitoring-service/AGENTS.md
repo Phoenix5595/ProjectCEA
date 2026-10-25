@@ -34,6 +34,54 @@ It may read TimescaleDB and Redis publication data; it never writes either.
 - Sensor series and long-window statistics use the five-minute CAGG only below
   the minimum watermark of its five-minute/one-minute chain and replace
   above-frontier or parent-invalidated buckets with exact raw rows.
+- Keep `source_rows` and `relay_assignment_intervals` declared `MATERIALIZED`.
+  Without it PostgreSQL inlines the tiered union under the sensor/node-pattern
+  join and re-runs it per room node, and re-executes the relay assignment CTE
+  per LATERAL aggregate row (a 7-day sensor or relay read then exceeds the 8 s
+  statement deadline).
+- The raw fallback of every tiered sensor statement starts at
+  `GREATEST(time_bucket(<interval>, start), time_bucket(<interval>,
+  LEAST(frontier, <earliest invalidation overlapping the range>)))`. Keep that
+  floor parameter-bound: it is what stops a fully materialized 7-day range from
+  aggregating raw rows it can never use.
+- CPU-bound envelope builds (control history `build_control_history_envelope`,
+  including its budget pass) run through `anyio.to_thread.run_sync`; keep new
+  whole-window builds off the event loop, since one 7-day room build costs
+  seconds of pure Python and stalls every concurrent read.
+
+### Graph read contracts
+
+- Point budgets (R1): sensor range/statistics and control history/tail accept
+  `max_points` from 10 to 100000; the UI caps each displayed line at 4000 points
+  and at one point per CSS pixel. Sensor and control overview readers accept
+  10 to 4000 points and keep their whole-hour bucket ladder.
+- `GET /api/sensors/monitoring/range/{location}` accepts optional
+  `interval_seconds` only together with `max_points`. It must be one of
+  `NICE_INTERVAL_SECONDS` and satisfy
+  `ceil(range_seconds / interval_seconds) <= max_points`; otherwise the route
+  answers 400 `{"detail": "invalid_interval_seconds"}`. A valid value selects the
+  tier through `sensor_models.tier_for_interval` (below 60 s raw, below 300 s
+  1-minute, otherwise 5-minute), replaces the derived read interval, and is
+  echoed as `metadata.requested_interval_seconds` and `metadata.interval_seconds`.
+- Control history/tail `scope` values (R2), always serializing every envelope
+  field with empty tuples where out of scope:
+  - `all`: climate setpoints, recorded lights, devices, PID, photoperiod.
+  - `room`: climate setpoints, recorded lights, photoperiod; devices/PID empty
+    and their automation-state source is not queried.
+  - `climate`: climate setpoints and photoperiod; lights, devices and PID empty.
+  - `photoperiod`: committed phase/coverage facts only; every other timeline
+    empty, and no light family or light-derived phase witnesses are read (R5).
+- History/tail range limits: `all` and `room` at most 7 days; `climate` and
+  `photoperiod` at most 400 days. Longer ranges answer 400
+  `{"detail": "range_too_long"}`. The overview reader keeps its own contract:
+  scopes `all | lights`, a 5-minute minimum, no upper range limit, and the
+  10–4000 point budget.
+- `scope=lights` is no longer a history/tail value and is rejected with the same
+  400 used for unknown scopes; only the bounded overview still accepts it.
+- `interval_seconds` is null on unbudgeted history/tail reads and on the
+  photoperiod-only scope; it is the applied read bucket for other budgeted
+  scopes.
+
 - Keep package imports direct (`monitoring_service.*`), not sibling-service or
   `sys.path` imports.
 

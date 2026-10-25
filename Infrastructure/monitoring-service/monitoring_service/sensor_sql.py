@@ -81,7 +81,14 @@ def _source_rows_cte(
     *,
     include_squares: bool = False,
 ) -> str:
-    """Build exact CAGG/raw contributions, excluding pending chain invalidations."""
+    """Build exact CAGG/raw contributions, excluding pending chain invalidations.
+
+    ``source_rows`` is materialized so PostgreSQL evaluates the CAGG and raw
+    contributions once instead of re-running them for every sensor/node-pattern
+    row. The raw contribution also starts at the earliest bucket that can be
+    used, so a fully materialized range never scans raw rows beyond the
+    frontier (or beyond the first bucket whose invalidation is still pending).
+    """
     chain_sql = ", ".join(f"'{name}'" for name in chain)
 
     def pending(bucket: str) -> str:
@@ -94,6 +101,29 @@ def _source_rows_cte(
               AND pending.invalidation_end >= {bucket}
         )"""
 
+    # Invalidation rows overlapping the requested buckets; a pending row can
+    # reach one bucket past the range end, hence the ``$7 + width`` upper bound.
+    pending_start_in_range = f"""(
+            SELECT min(overlapping.invalidation_start)
+            FROM monitoring_cagg_watermark overlapping
+            WHERE overlapping.cagg_name IN ({chain_sql})
+              AND overlapping.invalidation_source IS NOT NULL
+              AND overlapping.invalidation_start
+                  < $7::timestamptz + INTERVAL '{width}'
+              AND overlapping.invalidation_end
+                  >= time_bucket(INTERVAL '{width}', $6::timestamptz)
+        )"""
+
+    # Lowest raw row time worth reading: the range start bucket, or the bucket
+    # holding the frontier / the earliest pending invalidation, whichever is later.
+    raw_floor = f"""GREATEST(
+              time_bucket(INTERVAL '{width}', $6::timestamptz),
+              time_bucket(
+                  INTERVAL '{width}',
+                  LEAST({frontier}, COALESCE({pending_start_in_range}, {frontier}))
+              )
+          )"""
+
     cagg_squares = ", c.value_sum_squares" if include_squares else ""
     raw_squares = (
         ", sum(measurement.value::NUMERIC * measurement.value::NUMERIC) AS value_sum_squares"
@@ -102,7 +132,7 @@ def _source_rows_cte(
     )
     raw_result_squares = ", raw.value_sum_squares" if include_squares else ""
     return f"""
-, source_rows AS (
+, source_rows AS MATERIALIZED (
     SELECT c.bucket, c.sensor_id, c.sample_count, c.value_sum,
            c.min_value, c.max_value{cagg_squares}
     FROM {relation} c
@@ -121,7 +151,7 @@ def _source_rows_cte(
                max(measurement.value::NUMERIC) AS max_value
                {raw_squares}
         FROM measurement
-        WHERE measurement.time >= time_bucket(INTERVAL '{width}', $6::timestamptz)
+        WHERE measurement."time" >= {raw_floor}
           AND measurement.time < time_bucket(INTERVAL '{width}', $7::timestamptz)
                                   + INTERVAL '{width}'
         GROUP BY 1, 2

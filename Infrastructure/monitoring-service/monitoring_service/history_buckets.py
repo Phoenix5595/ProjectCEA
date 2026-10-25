@@ -12,7 +12,7 @@ from monitoring_service.sensor_models import (
 )
 
 MIN_REQUESTED_POINTS: Final = 10
-MAX_REQUESTED_POINTS: Final = 1000
+MAX_REQUESTED_POINTS: Final = 4000
 
 # Overview display buckets span every whole-hour width from one to twelve
 # hours; the picker never widens past the twelve-hour cap.
@@ -53,10 +53,10 @@ def validate_history_budget(max_points: int) -> int:
     """Return the budget when it fits the overview point budget, else 400."""
     if not isinstance(max_points, int) or isinstance(max_points, bool):
         raise MonitoringValidationError(
-            "requested_max_points must be an integer between 10 and 1000"
+            "requested_max_points must be an integer between 10 and 4000"
         )
     if not MIN_REQUESTED_POINTS <= max_points <= MAX_REQUESTED_POINTS:
-        raise MonitoringValidationError("requested_max_points must be between 10 and 1000")
+        raise MonitoringValidationError("requested_max_points must be between 10 and 4000")
     return max_points
 
 

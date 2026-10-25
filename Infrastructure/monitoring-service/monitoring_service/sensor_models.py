@@ -180,6 +180,15 @@ def source_bucket_seconds(tier: Tier) -> int:
             return 300
 
 
+def tier_for_interval(interval_seconds: int) -> Tier:
+    """Return the storage tier whose source resolution can honor the interval."""
+    if interval_seconds < 60:
+        return Tier.RAW
+    if interval_seconds < 300:
+        return Tier.ONE_MINUTE
+    return Tier.FIVE_MINUTES
+
+
 def resolve_interval_seconds(
     duration_seconds: int, max_points: int, source_bucket_seconds: int
 ) -> int:
@@ -302,6 +311,7 @@ class MonitoringMetadata(FrozenMonitoringModel):
     range: MonitoringRange
     room: RoomMetadata
     requested_max_points: int | None = None
+    requested_interval_seconds: int | None = None
     interval_seconds: int | None = None
 
     @field_validator("generated_at")
@@ -311,7 +321,11 @@ class MonitoringMetadata(FrozenMonitoringModel):
 
     @model_validator(mode="after")
     def validate_selected_tier(self) -> Self:
-        selected = resolve_tier(self.range.duration, self.requested_max_points)
+        selected = (
+            tier_for_interval(self.requested_interval_seconds)
+            if self.requested_interval_seconds is not None
+            else resolve_tier(self.range.duration, self.requested_max_points)
+        )
         if self.tier is not selected:
             raise MonitoringValidationError(
                 f"tier {self.tier} does not match range-selected tier {selected}"

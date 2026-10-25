@@ -29,11 +29,23 @@ ControlRecord = Mapping[str, ControlRecordValue] | asyncpg.Record
 # outage; legacy dedicated room samples reuse the same bounded support span.
 SAMPLE_SUPPORTED_SPAN: Final[timedelta] = timedelta(seconds=60)
 
-# Recorded-control read scope. ``all`` keeps the complete automation-facing
-# surface (climate, light, device, requested-PID and photoperiod facts), while
-# ``lights`` selects only recorded light intensity and its photoperiod
-# metadata so rooms without automation/PID history stay readable.
-ControlReadScope = Literal["all", "lights"]
+# Recorded-control history/tail read scope. ``all`` keeps the complete
+# automation-facing surface (climate, light, device, requested-PID and
+# photoperiod facts). ``room`` keeps the room-facing climate, light and
+# photoperiod facts without device/PID automation state; ``climate`` narrows to
+# climate setpoints plus photoperiod, and ``photoperiod`` reads only committed
+# phase/coverage facts.
+ControlReadScope = Literal["all", "room", "climate", "photoperiod"]
+
+# Bounded overview keeps its existing light-only reader vocabulary.
+ControlOverviewScope = Literal["all", "lights"]
+
+# Detailed history/tail ranges are bounded per scope: full automation and room
+# reads stay within the detailed sensor horizon, while climate/photoperiod facts
+# are sparse and safe to read from the daily aggregates over a longer analysis
+# window.
+CONTROL_HISTORY_MAXIMUM: Final[timedelta] = timedelta(days=7)
+CONTROL_CLIMATE_HISTORY_MAXIMUM: Final[timedelta] = timedelta(days=400)
 
 
 class ControlReadModel(BaseModel):
@@ -43,7 +55,12 @@ class ControlReadModel(BaseModel):
 
 
 class ControlHistoryRange(ControlReadModel):
-    """One half-open, UTC-normalized recorded-control history interval."""
+    """One half-open, UTC-normalized recorded-control history interval.
+
+    Duration bounds are scope-dependent and enforced by the history/tail routes
+    (7 days for ``all``/``room``, 400 days for ``climate``/``photoperiod``), so
+    this model validates only ordering.
+    """
 
     start: AwareDatetime
     end: AwareDatetime
