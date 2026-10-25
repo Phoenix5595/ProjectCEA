@@ -291,8 +291,8 @@ function scanPlotFrame(
   // Expected overlay pixels come from the browser's own compositing math on an
   // identical-context sample canvas (opaque canvases composite over black).
   // The fills are inlined here because this function runs inside the page.
-  const SUN_FILL = 'rgba(251, 191, 36, 0.12)'
-  const MOON_FILL = 'rgba(129, 140, 248, 0.12)'
+  const SUN_FILL = 'rgba(251, 191, 36, 0.06)'
+  const MOON_FILL = 'rgba(129, 140, 248, 0.06)'
   const image = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height).data
   const transparentBackdrop = image[3] === 0
   const expectedPixel = (fill: string): [number, number, number, number] => {

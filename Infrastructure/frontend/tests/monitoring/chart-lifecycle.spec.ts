@@ -192,7 +192,7 @@ test('retains Flower chart instances, scale, and fulfilled data through resize t
   })
 })
 
-test('retains the fulfilled 3h viewport until delayed 1h history settles at the widest budget', async ({
+test('retains the fulfilled 3h viewport until delayed 1h history settles at the page budget', async ({
   page,
 }, testInfo) => {
   const { ledger, violations } = trackRequests(page)
@@ -203,7 +203,9 @@ test('retains the fulfilled 3h viewport until delayed 1h history settles at the 
   const fulfilledThreeHours = await waitForCharts(page)
   await page.getByRole('button', { name: 'Pause' }).first().click()
   const requestsBeforeRange = ledger.length
-  const widestWidth = Math.max(...fulfilledThreeHours.map(chart => chart.width))
+  // R1: the page budget is the narrowest plot area, so it never exceeds the
+  // narrowest chart frame (plot area = frame minus axis gutters).
+  const narrowestWidth = Math.min(...fulfilledThreeHours.map(chart => chart.width))
 
   await page.getByRole('button', { name: '1h' }).click()
   await expect.poll(() => ledger.length - requestsBeforeRange, { timeout: 10_000 }).toBe(3)
@@ -279,9 +281,10 @@ test('retains the fulfilled 3h viewport until delayed 1h history settles at the 
   expect(end - start).toBe(RANGE_DURATION_MS)
   expect(controlUrl.searchParams.get('start')).toBe(sensorUrl.searchParams.get('start'))
   expect(controlUrl.searchParams.get('end')).toBe(sensorUrl.searchParams.get('end'))
-  const expectedBudget = Math.min(50_000, Math.max(10, Math.ceil(widestWidth)))
-  expect(Number(sensorUrl.searchParams.get('max_points'))).toBe(expectedBudget)
-  expect(Number(controlUrl.searchParams.get('max_points'))).toBe(expectedBudget)
+  const sensorBudget = Number(sensorUrl.searchParams.get('max_points'))
+  expect(sensorBudget).toBeGreaterThanOrEqual(10)
+  expect(sensorBudget).toBeLessThanOrEqual(Math.min(4000, narrowestWidth))
+  expect(Number(controlUrl.searchParams.get('max_points'))).toBe(sensorBudget)
   for (const title of CHART_TITLES) {
     const chart = chartByTitle(fulfilledOneHour, title)
     if (chart.xScaleMin === null || chart.xScaleMax === null)

@@ -22,6 +22,7 @@ import {
   controlProjectionFixture,
   controlRangeFixture,
   controlTailFixture,
+  parseBudget,
   parseRange,
   sensorLiveFixture,
   sensorRangeFixture,
@@ -1109,13 +1110,22 @@ function relayTimelinePidFixture(req: { url?: string; method?: string; body?: st
   }
 }
 
-/** Keep scoped room-history fixture bodies free of non-light control tracking. */
-function lightOnlyHistoryFixture(body: unknown, url: string): unknown {
-  if (new URL(url, 'http://fixture.invalid').searchParams.get('scope') !== 'lights') return body
+/**
+ * Mirror the monitoring-service history/tail scopes: `room` keeps climate
+ * setpoints, lights and photoperiod; `climate` keeps climate and photoperiod;
+ * `photoperiod` keeps only photoperiod; `all` (no scope) is unchanged.
+ */
+function scopedHistoryFixture(body: unknown, url: string): unknown {
+  const scope = new URL(url, 'http://fixture.invalid').searchParams.get('scope') ?? 'all'
+  if (scope === 'all') return body
+  if (scope !== 'room' && scope !== 'climate' && scope !== 'photoperiod') {
+    return { __status: 400, detail: "scope must be 'all', 'room', 'climate' or 'photoperiod'" }
+  }
   const history = body as Record<string, unknown>
   return {
     ...history,
-    climate: [],
+    climate: scope === 'photoperiod' ? [] : history.climate,
+    lights: scope === 'room' ? history.lights : [],
     devices: [],
     pid: [],
     cursors: Array.isArray(history.cursors)
@@ -1188,7 +1198,13 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
     re: /^\/api\/sensors\/monitoring\/range\/([^/]+)/,
     handler: (req, scenario) => {
       const { start, end } = parseRange(req.url ?? '')
-      return sensorRangeFixture(roomFrom(req.url ?? '', 4), start, end, scenario)
+      return sensorRangeFixture(
+        roomFrom(req.url ?? '', 4),
+        start,
+        end,
+        scenario,
+        parseBudget(req.url ?? '')
+      )
     },
   },
   {
@@ -1196,7 +1212,10 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
     handler: (req, scenario) => {
       const parts = (req.url ?? '').split('?')[0].split('/').filter(Boolean)
       const node = decodeURIComponent(parts[parts.length - 1] ?? '')
-      const sequence = scenario === 'live-update' ? nextLiveFixtureSequence(req.url ?? '', node) : 0
+      const sequence =
+        scenario === 'live-update' || scenario === 'live-now'
+          ? nextLiveFixtureSequence(req.url ?? '', node)
+          : 0
       return sensorLiveFixture(node, scenario, sequence)
     },
   },
@@ -1217,7 +1236,7 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
     re: /^\/api\/monitoring\/control\/([^/]+)\/tail$/,
     handler: (req, scenario) => {
       const { start, end } = parseRange(req.url ?? '')
-      return lightOnlyHistoryFixture(
+      return scopedHistoryFixture(
         controlTailFixture(roomFrom(req.url ?? '', 3), start, end, scenario),
         req.url ?? ''
       )
@@ -1227,7 +1246,7 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
     re: /^\/api\/monitoring\/control\/([^/]+)\/history$/,
     handler: (req, scenario) => {
       const { start, end } = parseRange(req.url ?? '')
-      return lightOnlyHistoryFixture(
+      return scopedHistoryFixture(
         controlRangeFixture(roomFrom(req.url ?? '', 3), start, end, scenario),
         req.url ?? ''
       )
@@ -1843,7 +1862,9 @@ function monitoringPreviewPlugin(): Plugin {
           const key = counterKey('malformed-sensor')
           const count = scenarioCounters.get(key) ?? 0
           scenarioCounters.set(key, count + 1)
-          if (count < 2) {
+          // Only the first read is malformed (the store no longer issues a
+          // discarded pre-mount read), so Retry recovers on the second.
+          if (count < 1) {
             const { start, end } = parseRange(req.url ?? '')
             res.statusCode = 200
             res.setHeader('Content-Type', 'application/json')
@@ -2026,6 +2047,15 @@ function monitoringPreviewPlugin(): Plugin {
               { url: req.url, method: req.method, body: requestBody },
               scenario
             )
+            const { __status: fixtureStatus, ...fixtureBody } =
+              typeof handlerBody === 'object' && handlerBody !== null && '__status' in handlerBody
+                ? (handlerBody as { __status: number })
+                : { __status: undefined }
+            if (fixtureStatus !== undefined) {
+              res.statusCode = fixtureStatus
+              res.end(JSON.stringify(fixtureBody))
+              return
+            }
             const body = JSON.stringify(handlerBody)
             if (scenario === 'bed-capacity-conflict' && pathname.endsWith('/assignment')) {
               res.statusCode = 409

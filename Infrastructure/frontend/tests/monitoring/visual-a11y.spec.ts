@@ -135,7 +135,9 @@ test('table alternative is discoverable via aria-expanded and aria-controls', as
   expect(controls).toBeTruthy()
   await toggle.click()
   await expect(toggle).toHaveAttribute('aria-expanded', 'true')
-  await expect(page.locator(`#${controls}`)).toBeVisible()
+  // The fixture serves one point per budgeted bucket (~1 per plot pixel), so
+  // the full data table has well over a thousand rows to render.
+  await expect(page.locator(`#${controls}`)).toBeVisible({ timeout: 15_000 })
   expect(violations).toEqual([])
 })
 

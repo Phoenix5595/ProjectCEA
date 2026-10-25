@@ -83,12 +83,14 @@ test('renders five live value and viewport updates, handles stale pause/resume, 
     .locator('td')
     .nth(1)
     .textContent()
+  await page.getByRole('button', { name: 'Pause' }).first().click()
+  await expect(page.getByRole('button', { name: 'Resume' }).first()).toBeVisible()
+  // The live viewport follows the wall clock on every store update, so the
+  // frozen references are taken once the pause has been applied.
   const pausedCharts = await telemetry(page)
   const liveRequestsBeforePause = requests.filter(url =>
     url.includes('/api/sensors/monitoring/live/')
   ).length
-  await page.getByRole('button', { name: 'Pause' }).first().click()
-  await expect(page.getByRole('button', { name: 'Resume' }).first()).toBeVisible()
   await page.waitForTimeout(2_000)
   expect(requests.filter(url => url.includes('/api/sensors/monitoring/live/')).length).toBe(
     liveRequestsBeforePause

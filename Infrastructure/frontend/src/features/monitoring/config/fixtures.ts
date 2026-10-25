@@ -12,6 +12,12 @@
  * `MONITORING_SCENARIO=flower-partial` simulates a partial failure: the Front
  * live node returns empty and the control projection endpoint fails, while
  * Back live and recorded history still work.
+ *
+ * Budgeted sensor range reads (`max_points`, optional `interval_seconds`)
+ * mirror the backend bucketing: one point per nice-ladder bucket labelled with
+ * its start, including the in-progress bucket, with `interval_seconds` and
+ * `requested_interval_seconds` metadata. `scenario=live-now` serves live values
+ * whose timestamp follows the wall clock and whose value rises 0.1 per poll.
  */
 
 const T0 = '2026-08-02T12:00:00.000Z'
@@ -26,10 +32,41 @@ export function parseRange(url: string): { start: string; end: string } {
   return { start, end }
 }
 
+/** Monitoring-service nice interval ladder (`sensor_intervals.NICE_INTERVAL_SECONDS`). */
+const NICE_INTERVAL_SECONDS = [
+  1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 14400, 21600, 43200, 86400,
+]
+
+interface FixtureBudget {
+  readonly maxPoints: number | null
+  readonly requestedIntervalSeconds: number | null
+}
+
+/** Parse the R1 budget parameters (`max_points`, `interval_seconds`) from a request URL. */
+export function parseBudget(url: string): FixtureBudget {
+  const params = new URLSearchParams(url.split('?')[1] ?? '')
+  const maxPoints = Number(params.get('max_points'))
+  const interval = Number(params.get('interval_seconds'))
+  return {
+    maxPoints: Number.isInteger(maxPoints) && maxPoints > 0 ? maxPoints : null,
+    requestedIntervalSeconds: Number.isInteger(interval) && interval > 0 ? interval : null,
+  }
+}
+
+/** The backend's applied interval: the requested one, else the nicest fit for the budget. */
+function appliedIntervalSeconds(start: string, end: string, budget: FixtureBudget): number | null {
+  if (budget.requestedIntervalSeconds !== null) return budget.requestedIntervalSeconds
+  if (budget.maxPoints === null) return null
+  const durationSeconds = Math.max(1, (new Date(end).getTime() - new Date(start).getTime()) / 1000)
+  const minimum = Math.ceil(durationSeconds / budget.maxPoints)
+  return NICE_INTERVAL_SECONDS.find(interval => interval >= minimum) ?? 86400
+}
+
 function pointsInRange(
   start: string,
   end: string,
-  values: number[]
+  values: number[],
+  intervalSeconds: number | null
 ): Array<{
   timestamp: string
   average: number
@@ -39,17 +76,39 @@ function pointsInRange(
 }> {
   const s = new Date(start).getTime()
   const e = new Date(end).getTime()
-  const n = Math.max(2, values.length)
-  return values.map((v, i) => {
-    const t = s + Math.round(((e - s) * i) / (n - 1))
-    return {
+  if (values.length === 0) return []
+  if (intervalSeconds === null || values.length > 2) {
+    const n = Math.max(2, values.length)
+    return values.map((v, i) => {
+      const t = s + Math.round(((e - s) * i) / (n - 1))
+      return {
+        timestamp: new Date(t).toISOString(),
+        average: v,
+        minimum: v - 0.5,
+        maximum: v + 0.5,
+        sample_count: 60,
+      }
+    })
+  }
+  // Budgeted reads mirror the backend: one point per bucket, labelled with the
+  // bucket start and including the in-progress bucket at the range end.
+  const intervalMs = intervalSeconds * 1000
+  const first = Math.floor(s / intervalMs) * intervalMs
+  const from = values[0] ?? 0
+  const to = values[values.length - 1] ?? from
+  const points = []
+  for (let t = first; t < e; t += intervalMs) {
+    const fraction = e === first ? 0 : (t - first) / (e - first)
+    const average = Math.round((from + (to - from) * fraction) * 1000) / 1000
+    points.push({
       timestamp: new Date(t).toISOString(),
-      average: v,
-      minimum: v - 0.5,
-      maximum: v + 0.5,
-      sample_count: 60,
-    }
-  })
+      average,
+      minimum: average - 0.5,
+      maximum: average + 0.5,
+      sample_count: intervalSeconds,
+    })
+  }
+  return points
 }
 
 function sensorSeries(
@@ -59,14 +118,15 @@ function sensorSeries(
   unit: string,
   start: string,
   end: string,
-  values: number[]
+  values: number[],
+  intervalSeconds: number | null
 ) {
   return {
     sensor,
     node,
     unit_family: unitFamily,
     unit,
-    points: pointsInRange(start, end, values),
+    points: pointsInRange(start, end, values, intervalSeconds),
   }
 }
 
@@ -194,15 +254,22 @@ export function sensorRangeFixture(
   room: string,
   start: string,
   end: string,
-  _scenario: string | null = null
+  _scenario: string | null = null,
+  budget: FixtureBudget = { maxPoints: null, requestedIntervalSeconds: null }
 ): unknown {
   const sensors = roomSensors(room)
+  const intervalSeconds = appliedIntervalSeconds(start, end, budget)
+  const tier =
+    intervalSeconds === null || intervalSeconds < 60 ? 'raw' : intervalSeconds < 300 ? '1min' : '5min'
   return {
     metadata: {
-      generated_at: T0,
-      tier: 'raw',
+      generated_at: new Date().toISOString(),
+      tier,
       range: { start, end },
       room: { room, nodes: roomNodes(room) },
+      ...(budget.maxPoints === null ? {} : { requested_max_points: budget.maxPoints }),
+      ...(intervalSeconds === null ? {} : { interval_seconds: intervalSeconds }),
+      requested_interval_seconds: budget.requestedIntervalSeconds,
     },
     series: sensors.map(s => {
       const values =
@@ -213,7 +280,7 @@ export function sensorRangeFixture(
             : _scenario === 'empty-bulb' && s.sensor === 'dry_bulb_b'
               ? [0, ...s.values.slice(1)]
               : fixtureValues(s.values, _scenario)
-      return sensorSeries(s.sensor, s.node, s.unitFamily, s.unit, start, end, values)
+      return sensorSeries(s.sensor, s.node, s.unitFamily, s.unit, start, end, values, intervalSeconds)
     }),
     statistics: sensors.map(s => statisticsFor(s.sensor, s.node, mean(s.values))),
   }
@@ -246,16 +313,19 @@ export function sensorLiveFixture(
     ['pressure', 1013.2],
     ['water_level', 45.0],
   ]
+  // `live-now` models Redis values whose `_ts` advances with the wall clock.
   const timestamp =
     scenario === 'stale-live'
       ? '2026-01-01T00:00:00.000Z'
       : scenario === 'live-update'
         ? new Date(LIVE_FIXTURE_EPOCH + sequence * 1000).toISOString()
-        : T0
-  const valueOffset = scenario === 'live-update' ? sequence / 10 : 0
+        : scenario === 'live-now'
+          ? new Date(Math.floor(Date.now() / 1000) * 1000).toISOString()
+          : T0
+  const valueOffset = scenario === 'live-update' || scenario === 'live-now' ? sequence / 10 : 0
   return base.map(([name, value]) => ({
     sensor: `${name}_${suffix}`,
-    value: value + valueOffset,
+    value: Math.round((value + valueOffset) * 1000) / 1000,
     timestamp,
   }))
 }
