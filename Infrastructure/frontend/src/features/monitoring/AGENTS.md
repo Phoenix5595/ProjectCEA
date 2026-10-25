@@ -1,6 +1,17 @@
 # CEA Monitoring Feature
 
-Native Flower and Veg monitoring dashboards at `/flower/monitoring` and `/vegetation/monitoring`. The in-house dashboards are the only monitoring surface; room history/overview/control reads go through the read-only `monitoring-service` (`:8005` via Caddy).
+Native Flower and Veg dashboards at `/flower|vegetation/monitoring` (day-to-day operation) and `/flower|vegetation/historical` (analysis and retrospection). The in-house dashboards are the only monitoring surface; room history/overview/control reads go through the read-only `monitoring-service` (`:8005` via Caddy).
+
+## Graph Rules (owner, binding)
+
+Full text: `Infrastructure/frontend/REQUIREMENTS.md` → "Owner graph rules (R1–R6)". Summary for code changes here:
+
+- **R1** ≤ 4000 points and ≤ 1 point per CSS pixel per displayed line. The page budget is the minimum plot-area width over mounted charts (`data/pointBudget.ts` `requestBudget`, `pages/useMonitoringRangeBudget.ts`); no fixed point constants.
+- **R2** Monitoring: recorded + projected effective setpoints, future duration/9 area in live mode. Historical (`MonitoringStore` `mode: 'historical'`): recorded only, no projection request, no live polling, no future space.
+- **R3** Drag-zoom stays on the current page (≥ 5 min). Only a Monitoring range > 7 days navigates to Historical.
+- **R4** Live raw values enter through `data/liveTail.ts` (`LiveTailBuffer`, ≤ 1 raw point per bucket) and are replaced by completed buckets from incremental refreshes; the alignment base never keys on `now`. Bucket badge, tooltip span and min–max band make buckets visible.
+- **R5** Sun/moon overlays come only from recorded/projected photoperiod, never from climate periods.
+- **R6** `ChartDataTable` renders only in dev/fixture builds.
 
 ## Boundary Parsing
 

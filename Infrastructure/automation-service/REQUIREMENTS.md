@@ -29,6 +29,7 @@ Local verification runs the automation pure tests against fakes for database, Re
 ## Lights
 
 - Photoperiod boundaries come from `mode_parameters.day_start_time` and `night_start_time` per room per mode. Overnight windows are supported.
+- Photoperiod (SUN/MOON) and climate periods are independent schedules (owner rule R5). Nothing derives one from the other: climate period boundaries never move a photoperiod boundary, and photoperiod times never select a climate period. Graph sun/moon overlays come only from recorded or projected photoperiod.
 - Per-light intensity anchors live in `light_target_intensity` keyed by `(device_id, mode_id)`. A missing row falls back to `MINIMUM_LIGHT_INTENSITY = 10.0`.
 - `light_programs` provide `supplemental` (adds light in dark) or `override` (replaces intensity in sun) programs. Priority is descending; ties break by `created_at` ascending.
 - Moon-authority modes (`drying`, `sleep`) force scheduled lights to 0%, DFR intensities to 0%, and light relays OFF on entry and every tick. Manual light controls remain available.
