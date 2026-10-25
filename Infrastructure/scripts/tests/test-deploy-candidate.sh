@@ -219,6 +219,22 @@ case "${1:-}" in
     exit 0
     ;;
   run)
+    if [[ "${2:-}" == release:* ]]; then
+      printf 'npm run %s\n' "$2" >> "$EVENT_LOG"
+      python3 - "${2#release:}" <<'PY'
+import json, pathlib, sys
+path = pathlib.Path("package.json")
+package = json.loads(path.read_text())
+major, minor, patch = (int(part) for part in package["version"].split("."))
+tier = sys.argv[1]
+major, minor, patch = (
+    (major + 1, 0, 0) if tier == "major" else (major, minor + 1, 0) if tier == "minor" else (major, minor, patch + 1)
+)
+package["version"] = f"{major}.{minor}.{patch}"
+path.write_text(json.dumps(package) + "\n")
+PY
+      exit 0
+    fi
     if [[ "${2:-}" != "build" ]] || [[ "${VITE_CEA_API_KEY:-}" != "${DEPLOY_TEST_EXPECTED_API_KEY:-}" ]]; then
       exit 1
     fi
@@ -343,6 +359,13 @@ case "${1:-}" in
     ;;
   archive)
     tar -C "$DEPLOY_TEST_ARCHIVE_ROOT" -cf - Infrastructure pyproject.toml
+    ;;
+  symbolic-ref)
+    printf 'main\n'
+    ;;
+  commit|checkout)
+    printf 'git %s\n' "$*" >> "$EVENT_LOG"
+    if [[ "$1" == "commit" && "${DEPLOY_TEST_COMMIT_FAILURE:-0}" == "1" ]]; then exit 1; fi
     ;;
   *)
     echo "unexpected git invocation: $*" >&2
@@ -1486,6 +1509,76 @@ assert_event_before 'db_migrate down --to none' 'rollback_auto_symlink'
 [[ "$(cat "$DB_HEAD_FILE")" == "null" ]] || fail 'Caddy install failure did not reverse migrations'
 cmp -s "$CADDY_FILE" "$REL_A/Infrastructure/caddy/Caddyfile" || fail 'Caddy install failure did not restore Caddy'
 pass 'Caddy install failure triggers automatic schema and service rollback'
+
+# --- Versioned deploys: deploy.sh owns the bump, commits it and deploys that commit ---
+VERSION_SOURCE="$SANDBOX/version-source"
+reset_version_source() {
+  rm -rf "$VERSION_SOURCE"
+  mkdir -p "$VERSION_SOURCE/Infrastructure/frontend"
+  cp -a "$REPO_ROOT/Infrastructure/scripts" "$VERSION_SOURCE/Infrastructure/"
+  printf '{"name":"cea-frontend","version":"1.3.1"}\n' > "$VERSION_SOURCE/Infrastructure/frontend/package.json"
+  printf '{"name":"cea-frontend","version":"1.3.1"}\n' > "$VERSION_SOURCE/Infrastructure/frontend/package-lock.json"
+}
+version_of_source() {
+  python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' \
+    "$VERSION_SOURCE/Infrastructure/frontend/package.json"
+}
+
+reset_version_source
+clear_state
+set_current "$REL_A"
+write_state_json "rel-A" "$REL_A" "$REL_C"
+printf 'ready\n' > "$HEALTH_STATE_FILE"
+base_environment
+export SOURCE="$VERSION_SOURCE" DEPLOY_GIT_REPO="$VERSION_SOURCE" TARGET="$REL_B"
+expect_success bash "$DEPLOY_SCRIPT" patch
+[[ "$(version_of_source)" == "1.3.2" ]] || fail 'patch deploy did not bump 1.3.1 to 1.3.2'
+grep -Fq 'npm run release:patch' "$EVENT_LOG" || fail 'patch deploy did not run the release script'
+grep -Fq 'git commit -q -m release: v1.3.2 (patch) -- Infrastructure/frontend/package.json Infrastructure/frontend/package-lock.json' \
+  "$EVENT_LOG" || fail 'patch deploy did not commit exactly the package files'
+grep -Fq '"version_bumped"' "$EVENT_LOG" || fail 'patch deploy did not log the bump'
+assert_event_before 'git commit' 'candidate-active'
+[[ "$(current_target)" == "$REL_B" ]] || fail 'patch deploy did not activate its candidate'
+pass 'a version tier bumps, commits and deploys that commit in one run'
+
+reset_version_source
+clear_state
+set_current "$REL_A"
+write_state_json "rel-A" "$REL_A" "$REL_C"
+base_environment
+export SOURCE="$VERSION_SOURCE" DEPLOY_GIT_REPO="$VERSION_SOURCE" TARGET="$REL_B"
+set +e
+bash "$DEPLOY_SCRIPT" --commit main patch >/dev/null 2>&1
+status=$?
+set -e
+[[ "$status" -eq 2 ]] || fail '--commit with a version tier was not rejected as usage'
+[[ "$(version_of_source)" == "1.3.1" ]] || fail '--commit with a version tier bumped the version'
+pass '--commit and a version tier are mutually exclusive'
+
+reset_version_source
+clear_state
+set_current "$REL_B"
+write_state_json "rel-A" "$REL_A" "$REL_C" "rel-B" "$REL_B"
+base_environment
+export SOURCE="$VERSION_SOURCE" DEPLOY_GIT_REPO="$VERSION_SOURCE" TARGET="$REL_C"
+expect_failure bash "$DEPLOY_SCRIPT" patch
+[[ "$(version_of_source)" == "1.3.1" ]] || fail 'a blocked versioned deploy left a version bump behind'
+if grep -Fq 'npm run release:' "$EVENT_LOG"; then fail 'a blocked versioned deploy ran the release script'; fi
+pass 'preflight blocks run before the version bump'
+
+reset_version_source
+clear_state
+set_current "$REL_A"
+write_state_json "rel-A" "$REL_A" "$REL_C"
+base_environment
+export SOURCE="$VERSION_SOURCE" DEPLOY_GIT_REPO="$VERSION_SOURCE" TARGET="$REL_B" DEPLOY_TEST_COMMIT_FAILURE=1
+expect_failure bash "$DEPLOY_SCRIPT" patch
+grep -Fq 'git checkout -- Infrastructure/frontend/package.json Infrastructure/frontend/package-lock.json' "$EVENT_LOG" || \
+  fail 'a failed bump commit did not restore the package files'
+[[ "$(current_target)" == "$REL_A" ]] || fail 'a failed bump commit changed current'
+unset DEPLOY_TEST_COMMIT_FAILURE
+export SOURCE="$REPO_ROOT" DEPLOY_GIT_REPO="$REPO_ROOT"
+pass 'a failed version commit restores the package files and deploys nothing'
 
 # --- Rollback hardening: an explicit non-adjacent target unwinds every newer backup ---
 clear_state

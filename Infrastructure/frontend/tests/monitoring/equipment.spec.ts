@@ -317,7 +317,7 @@ async function equipmentHistoryScenario(
     // `scope=room`: recorded climate setpoints stay; relay/PID tracking does not.
     expect(new URL(historyResponse.url()).searchParams.get('scope')).toBe('room')
     expect(history.climate.map(series => series.name).sort()).toEqual(
-      expect.arrayContaining(['heating'])
+      expect.arrayContaining(['heating_setpoint'])
     )
     expect(history.devices).toEqual([])
     expect(history.pid).toEqual([])

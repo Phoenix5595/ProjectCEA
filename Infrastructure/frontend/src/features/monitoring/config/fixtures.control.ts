@@ -82,10 +82,11 @@ function controlBase(start: string, end: string): ControlFixture {
       { source: 'photoperiod_history', dropped_rows: 0, last_flushed_at: T0, healthy: true },
     ],
     climate: [
-      climateSeries('heating', 'heating_setpoint', start, end, 22),
-      climateSeries('cooling', 'cooling_setpoint', start, end, 27),
-      climateSeries('vpd', 'vpd_setpoint', start, end, 1.2),
-      climateSeries('co2', 'co2_setpoint', start, end, 900),
+      // Production names the series after their metric (`heating_setpoint`, …).
+      climateSeries('heating_setpoint', 'heating_setpoint', start, end, 22),
+      climateSeries('cooling_setpoint', 'cooling_setpoint', start, end, 27),
+      climateSeries('vpd_setpoint', 'vpd_setpoint', start, end, 1.2),
+      climateSeries('co2_setpoint', 'co2_setpoint', start, end, 900),
     ],
     lights: [],
     devices: [],

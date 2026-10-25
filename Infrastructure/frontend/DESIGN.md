@@ -63,6 +63,16 @@ Required tokens are listed in `src/features/monitoring/designTokens.ts` (`REQUIR
 
 - Sun/moon are plot-wide background intervals with fixed semantic fills that never follow the active theme; they are not y-series or legend items.
 - Recorded and projected effective targets are dotted lines. Projected segments use lower opacity and a "Projected" legend suffix.
+- Each effective climate target keeps its own colour (owner rule; the manifest series specs are the source, `config/flowerManifest.ts` and `config/vegManifest.ts`). The three targets must never share a colour, and the `--mon-target-*` tokens are only the fallback for an unknown target:
+
+  | Target | Series name (recorded) / projected label | Colour | Style |
+  | --- | --- | --- | --- |
+  | Heating | `heating_setpoint` / `Heating Setpoint` | `#ff6fb0` pink | dotted, 2 px, step |
+  | Cooling | `cooling_setpoint` / `Cooling Setpoint` | `#4fd1c5` teal | dotted, 2 px, step |
+  | VPD | `vpd_setpoint` / `VPD Setpoint` | `#c0dd55` lime | dotted, 2 px, step |
+
+  Commit `dcf21246` removed these specs together with the climate source, which left all three targets on the single fallback token; they were restored on 2026-10-25. Removing or merging a target spec is a design regression.
+- Sun/moon fills are `rgba(251, 191, 36, 0.09)` / `rgba(129, 140, 248, 0.09)` on monitoring graphs; bucketed sensor min–max bands are drawn over them at 15 % of the series colour.
 - A visible "now" divider separates recorded history from projection.
 
 ## Primitives

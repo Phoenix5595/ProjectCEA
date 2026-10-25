@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 # Deploy Infrastructure/ to /opt/projectcea/releases/<id> and switch current symlink.
+# This script is the only supported way to deploy and to version a release:
+#   ./deploy.sh patch|minor|major   bump the frontend version, commit the bump on
+#                                   the checked-out branch, deploy that commit
+#   ./deploy.sh [--commit <rev>]    deploy an exact existing commit, version unchanged
+# Every blocking preflight check runs before the bump, so a blocked deploy
+# leaves the checkout untouched.
 # Active-candidate semantics:
 #   - A successful deploy records the new release as candidate without overwriting last_good.
 #   - A failed health check immediately restores the previous active release.
@@ -348,36 +354,18 @@ rollback_previous() {
   return 0
 }
 
-# A version bump mutates the checkout. It must be committed separately so the
-# exact-commit release archive can include it.
 sudo mkdir -p "$DEPLOY_STATE_DIR"
-if [[ -n "$VERSION_TIER" ]]; then
-  echo "[deploy] bumping frontend $VERSION_TIER version in $SOURCE/Infrastructure/frontend"
-  if ! (cd "$SOURCE/Infrastructure/frontend" && run_package_command "npm-release-$VERSION_TIER" npm run "release:$VERSION_TIER"); then
-    exit 1
-  fi
-  echo "commit frontend/package.json and package-lock.json, then rerun with --commit" >&2
-  exit 1
-fi
 
-if ! FULL_SHA="$(git -C "$SOURCE" rev-parse --verify "${COMMIT_REV}^{commit}")"; then
-  echo "[deploy] cannot resolve commit: $COMMIT_REV" >&2
-  exit 1
+# --- Preflight: every check that can block a deploy runs before any mutation,
+# so a blocked deploy never leaves a version bump commit behind. ---
+if [[ -n "$VERSION_TIER" && "$COMMIT_SEEN" -ne 0 ]]; then
+  echo "[deploy] --commit and a version tier are exclusive: the version bump commit is the release" >&2
+  echo "Usage: $0 [--commit <rev>] [major|minor|patch]" >&2
+  exit 2
 fi
-if [[ ! "$FULL_SHA" =~ ^[[:xdigit:]]{40}$ ]]; then
-  echo "[deploy] git returned an invalid commit SHA for $COMMIT_REV" >&2
-  exit 1
-fi
-RELEASE_ID="$(date +%Y%m%d-%H%M%S)-${FULL_SHA:0:7}"
-TARGET="${TARGET:-$RELEASES/$RELEASE_ID}"
-if [[ "$TARGET" != "$RELEASES/$RELEASE_ID" ]]; then
-  RELEASE_ID="$(basename "$TARGET")"
-fi
-SYSTEMD_BACKUP_DIR="$SYSTEMD_BACKUP_ROOT/$RELEASE_ID"
 if [[ -L "$CURRENT_SYMLINK" || -e "$CURRENT_SYMLINK" ]]; then
   PREVIOUS_RELEASE="$(readlink -f "$CURRENT_SYMLINK" 2>/dev/null || true)"
 fi
-export RELEASE_ID TARGET PREVIOUS_RELEASE SOURCE FULL_SHA
 
 dirty_status="$(git -C "$SOURCE" status --porcelain=v1 -- Infrastructure pyproject.toml deploy.sh rollback-deploy.sh finalize-deploy.sh)" || {
   log_event "deploy_blocked" "dirty_tracked_inputs"
@@ -417,11 +405,62 @@ if ! bash "$SOURCE/Infrastructure/scripts/verify_time.sh"; then
   exit 1
 fi
 
+# --- Version bump: deploy owns it. The bump is committed on the checked-out
+# branch and that exact commit becomes the release, so the deployed archive
+# always carries the version it reports. ---
+FRONTEND_PACKAGE_FILES=(Infrastructure/frontend/package.json Infrastructure/frontend/package-lock.json)
+restore_version_files() {
+  git -C "$SOURCE" checkout -- "${FRONTEND_PACKAGE_FILES[@]}" || true
+}
+if [[ -n "$VERSION_TIER" ]]; then
+  if ! RELEASE_BRANCH="$(git -C "$SOURCE" symbolic-ref --quiet --short HEAD)"; then
+    log_event "deploy_blocked" "detached_head"
+    echo "[deploy] a version bump needs a checked-out branch to commit on" >&2
+    exit 1
+  fi
+  echo "[deploy] bumping frontend $VERSION_TIER version on $RELEASE_BRANCH"
+  if ! (cd "$SOURCE/Infrastructure/frontend" && run_package_command "npm-release-$VERSION_TIER" npm run "release:$VERSION_TIER"); then
+    restore_version_files
+    log_event "deploy_blocked" "version_bump_failed"
+    exit 1
+  fi
+  if ! RELEASE_VERSION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$SOURCE/Infrastructure/frontend/package.json")"; then
+    restore_version_files
+    log_event "deploy_blocked" "version_bump_failed"
+    exit 1
+  fi
+  if ! git -C "$SOURCE" commit -q -m "release: v$RELEASE_VERSION ($VERSION_TIER)" -- "${FRONTEND_PACKAGE_FILES[@]}"; then
+    restore_version_files
+    log_event "deploy_blocked" "version_commit_failed"
+    echo "[deploy] could not commit the version bump; nothing was deployed" >&2
+    exit 1
+  fi
+  COMMIT_REV="HEAD"
+  log_event "version_bumped" "v$RELEASE_VERSION"
+  echo "[deploy] committed release v$RELEASE_VERSION on $RELEASE_BRANCH"
+fi
+
+if ! FULL_SHA="$(git -C "$SOURCE" rev-parse --verify "${COMMIT_REV}^{commit}")"; then
+  echo "[deploy] cannot resolve commit: $COMMIT_REV" >&2
+  exit 1
+fi
+if [[ ! "$FULL_SHA" =~ ^[[:xdigit:]]{40}$ ]]; then
+  echo "[deploy] git returned an invalid commit SHA for $COMMIT_REV" >&2
+  exit 1
+fi
+RELEASE_ID="$(date +%Y%m%d-%H%M%S)-${FULL_SHA:0:7}"
+TARGET="${TARGET:-$RELEASES/$RELEASE_ID}"
+if [[ "$TARGET" != "$RELEASES/$RELEASE_ID" ]]; then
+  RELEASE_ID="$(basename "$TARGET")"
+fi
+SYSTEMD_BACKUP_DIR="$SYSTEMD_BACKUP_ROOT/$RELEASE_ID"
+export RELEASE_ID TARGET PREVIOUS_RELEASE SOURCE FULL_SHA
+
 echo "=== Deploying release: $RELEASE_ID ($FULL_SHA) ==="
 log_event "deploy_start" ""
 
 if [[ "$DEPLOY_SKIP_STAGING" != "1" ]]; then
-  echo "[1/7] Exporting exact commit $FULL_SHA..."
+  echo "[1/11] Exporting exact commit $FULL_SHA..."
   STAGE="$(mktemp -d)"
   if ! git -C "$SOURCE" archive "$FULL_SHA" Infrastructure pyproject.toml | tar -x -C "$STAGE"; then
     log_event "deploy_blocked" "git_archive_failed"
@@ -441,7 +480,7 @@ if [[ ! -s "$SERVICE_LIST" ]]; then
   exit 1
 fi
 
-echo "[2/7] Running read-only Ruff checks inside the release..."
+echo "[2/11] Running read-only Ruff checks inside the release..."
 RUFF_PATHS=(
   Infrastructure/backend/app
   Infrastructure/automation-service/app
@@ -463,7 +502,7 @@ if ! (cd "$TARGET" && ruff check "${RUFF_OPTS[@]}" "${RUFF_PATHS[@]}" && ruff fo
 fi
 
 if [[ "$DEPLOY_SKIP_STAGING" != "1" ]]; then
-  echo "[3/7] Building Python virtual environments..."
+  echo "[3/11] Building Python virtual environments..."
   sudo mkdir -p "$PIP_CACHE_DIR"
   for svc in backend automation-service can-processor-service soil-sensor-service onewire-worker-service weather-service monitoring-service grow-archive-service; do
     SVC_DIR="$TARGET/Infrastructure/$svc"
@@ -477,7 +516,7 @@ if [[ "$DEPLOY_SKIP_STAGING" != "1" ]]; then
     fi
   done
 
-  echo "[4/7] Building frontend..."
+  echo "[4/11] Building frontend..."
   cd "$TARGET/Infrastructure/frontend"
   sudo rm -rf dist/
   run_package_command "npm-ci" sudo env CI=true npm ci --silent --no-audit --no-fund
@@ -497,14 +536,14 @@ if [[ "$DEPLOY_SKIP_STAGING" != "1" ]]; then
     run_package_command "npm-build" sudo env CI=true "VITE_CEA_API_KEY=$CEA_API_KEY" npm run build
   )
 
-  echo "[5/7] Ensuring data directories..."
+  echo "[5/11] Ensuring data directories..."
   NOTES_DIR="${NOTES_DATA_DIR:-/var/lib/projectcea/notes}"
   sudo mkdir -p "$NOTES_DIR"
   sudo mkdir -p /var/lib/projectcea/settings-cache
   sudo chown antoine:antoine /var/lib/projectcea/settings-cache
   sudo chown -R "${NOTES_USER:-antoine}:${NOTES_GROUP:-antoine}" "$NOTES_DIR" 2>/dev/null || true
 
-  echo "[5b/7] Ensuring sudoers rule for cea user..."
+  echo "[6/11] Ensuring sudoers rule for cea user..."
   "$TARGET/Infrastructure/scripts/install-sudoers.sh"
 fi
 
@@ -543,7 +582,7 @@ if ! PREDEPLOY_ALEMBIC_HEADS="$(current_alembic_heads)"; then
   exit 1
 fi
 export PREDEPLOY_MIGRATION_HEAD PREDEPLOY_ALEMBIC_HEADS
-echo "[6/7] Planning and applying database migrations..."
+echo "[7/11] Planning and applying database migrations..."
 if ! MIGRATION_PLAN="$(db_migrate "$TARGET" plan --json)"; then
   log_event "deploy_blocked" "migration_plan_failed"
   echo "[deploy] migration plan failed" >&2
@@ -610,7 +649,7 @@ if ! MIGRATION_HEAD="$(python3 -c 'import json,sys; value=json.load(sys.stdin).g
   exit 1
 fi
 
-echo "[7/7] Synchronizing unit files and Caddy..."
+echo "[8/11] Synchronizing unit files and Caddy..."
 if ! DEPLOY_SYSTEMD_DIR="$SYSTEMD_DIR" bash "$TARGET/Infrastructure/scripts/sync_systemd_units.sh" \
   --release "$TARGET" --backup-dir "$SYSTEMD_BACKUP_DIR"; then
   log_event "deploy_blocked" "systemd_sync_failed"
@@ -653,7 +692,7 @@ if ! cmp -s "$CADDY_CONFIG" "$CADDY_FILE"; then
   fi
 fi
 
-echo "[8/7] Switching release symlink..."
+echo "[9/11] Switching release symlink..."
 sudo mkdir -p "$RELEASES"
 if ! sudo ln -sfn "$TARGET" "$CURRENT_SYMLINK"; then
   log_event "deploy_blocked" "symlink_switch_failed"
@@ -662,7 +701,7 @@ if ! sudo ln -sfn "$TARGET" "$CURRENT_SYMLINK"; then
 fi
 log_event "deploy_symlink_switched" "$TARGET" >/dev/null
 
-echo "[9/7] Restarting services..."
+echo "[10/11] Restarting services..."
 if ! restart_services "$SERVICE_LIST"; then
   if rollback_previous; then
     python3 "$STATE_HELPER" clear-candidate "$STATE_JSON" >/dev/null || true
@@ -678,7 +717,7 @@ if ! restart_services "$SERVICE_LIST"; then
   echo "[deploy] service restart failed; automatic rollback was attempted" >&2
   exit 1
 fi
-echo "[10/10] Health and readiness checks..."
+echo "[11/11] Health and readiness checks..."
 if ! run_health_checks "$SERVICE_LIST"; then
   if rollback_previous; then
     python3 "$STATE_HELPER" clear-candidate "$STATE_JSON" >/dev/null || true

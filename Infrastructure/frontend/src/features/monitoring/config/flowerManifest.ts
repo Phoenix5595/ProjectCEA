@@ -105,6 +105,35 @@ export const flowerManifest: MonitoringManifest = {
           color: '#2f7fe0',
           lineWidth: 3,
         },
+        // Effective climate setpoints (restored from before dcf21246): one
+        // distinct dotted colour per target so heating, cooling and VPD differ.
+        {
+          name: 'heating_setpoint',
+          displayName: 'Heating Setpoint',
+          unit: 'celsius',
+          color: '#ff6fb0',
+          lineStyle: 'dot',
+          lineWidth: 2,
+          lineInterpolation: 'stepBefore',
+        },
+        {
+          name: 'cooling_setpoint',
+          displayName: 'Cooling Setpoint',
+          unit: 'celsius',
+          color: '#4fd1c5',
+          lineStyle: 'dot',
+          lineWidth: 2,
+          lineInterpolation: 'stepBefore',
+        },
+        {
+          name: 'vpd_setpoint',
+          displayName: 'VPD Setpoint',
+          unit: 'kpa',
+          color: '#c0dd55',
+          lineStyle: 'dot',
+          lineWidth: 2,
+          lineInterpolation: 'stepBefore',
+        },
         {
           name: 'DAY Period Overlay',
           displayName: 'DAY Period Overlay',

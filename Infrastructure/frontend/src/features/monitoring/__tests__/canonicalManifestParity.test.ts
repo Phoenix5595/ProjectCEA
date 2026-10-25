@@ -44,4 +44,25 @@ describe('active monitoring manifests', () => {
 
     expect(averages.rows).not.toContain('Water Level Avg')
   })
+
+  it('gives heating, cooling and VPD setpoints their own dotted colour in both climate panels', () => {
+    for (const [manifest, panelId] of [
+      [flowerManifest, 'flower-climate'],
+      [vegManifest, 'veg-climate'],
+    ] as const) {
+      const panel = manifest.panels.find(candidate => candidate.id === panelId)
+      if (panel === undefined || panel.kind !== 'timeseries') throw new Error(`${panelId} missing`)
+      expect(panel.sources).toContain('climate')
+      const specs = ['heating_setpoint', 'cooling_setpoint', 'vpd_setpoint'].map(name =>
+        panel.series.find(spec => spec.name === name)
+      )
+      expect(specs.map(spec => spec?.displayName)).toEqual([
+        'Heating Setpoint',
+        'Cooling Setpoint',
+        'VPD Setpoint',
+      ])
+      expect(specs.every(spec => spec?.lineStyle === 'dot')).toBe(true)
+      expect(new Set(specs.map(spec => spec?.color)).size).toBe(3)
+    }
+  })
 })

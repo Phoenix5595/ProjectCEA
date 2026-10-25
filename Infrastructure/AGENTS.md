@@ -29,7 +29,14 @@ Config changes flow from automation-service to backend to frontend via Redis Str
 
 Monitoring range validation is intentionally split: monitoring-service sensor/control reads validate ranges down to 1 second (`sensor_models.MINIMUM_RANGE = timedelta(seconds=1)`), while automation-service projection snapshot construction independently requires ranges of at least 5 minutes (`app/schemas/monitoring_models.py` `MINIMUM_RANGE`). These are separate validators serving different purposes; neither is being changed by the plan.
 
-Deploys are exact-commit candidates (`deploy.sh [--commit <rev>] [major|minor|patch]`): the script exports committed `Infrastructure/`, runs read-only Ruff, applies Alembic and SQL migrations, synchronizes repo-managed units/drop-ins and Caddy, then requires each configured `/health` and `/ready` endpoint. Downtime migrations require a fresh passing rehearsal and a pre-deploy dump. Rollback restores the prior systemd/Caddy files; SQL migrations run down only for an older target (`--with-down-migrations` for manual rollback), and Alembic is never downgraded. Finalize restarts the candidate's deploy-managed units and rechecks health/readiness before promotion.
+Deploys are exact-commit candidates (`deploy.sh [--commit <rev>] | deploy.sh major|minor|patch`): the script exports committed `Infrastructure/`, runs read-only Ruff, applies Alembic and SQL migrations, synchronizes repo-managed units/drop-ins and Caddy, then requires each configured `/health` and `/ready` endpoint. Downtime migrations require a fresh passing rehearsal and a pre-deploy dump. Rollback restores the prior systemd/Caddy files; SQL migrations run down only for an older target (`--with-down-migrations` for manual rollback), and Alembic is never downgraded. Finalize restarts the candidate's deploy-managed units and rechecks health/readiness before promotion.
+
+`deploy.sh` is the only way to deploy and to version a release. Run it from the main checkout:
+
+- `./deploy.sh patch|minor|major`: a versioned release. All preflight checks run first (clean tracked inputs, no active candidate, NTP sync), so a blocked deploy changes nothing. The script then runs `npm run release:<tier>` in `Infrastructure/frontend` and commits only `package.json`/`package-lock.json` on the checked-out branch as `release: vX.Y.Z (<tier>)`. That commit is deployed. A failed bump or commit restores both files and deploys nothing. `--commit` cannot be combined with a tier.
+- `./deploy.sh [--commit <rev>]`: redeploys an exact existing commit without changing the version (hotfix or re-deploy of a known commit).
+- Output steps are numbered `[1/11]`…`[11/11]`. After `candidate-active`, inspect the site, then `./finalize-deploy.sh --confirm` or `./rollback-deploy.sh`.
+- Never bump `package.json` by hand or run `npm version` outside `deploy.sh`.
 
 ## Shared Code Ownership
 
