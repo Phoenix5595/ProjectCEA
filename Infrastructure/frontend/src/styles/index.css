@@ -1228,6 +1228,25 @@ body {
   .dashboard-inspector__overview-actions {
     flex-direction: column;
   }
+
+  /* Room-row trends share the sections' line and fill the width to their right.
+     Pairs sit side by side when both fit, else stack into a 2×2 block. Tiles never
+     shrink below their content, so a row without room for one pair wraps the
+     group below the sections, as below 1600 px. */
+  .dashboard-zone-row__trends {
+    flex: 1 1 0;
+  }
+
+  .dashboard-zone-row__trend-pair {
+    display: flex;
+    flex: 1 1 auto;
+    gap: 0.25rem;
+  }
+
+  .dashboard-zone-row__trend-pair > .dashboard-mini-trend {
+    flex: 1 1 0;
+    min-width: max-content;
+  }
 }
 
 @media (min-width: 1100px) and (max-width: 1599px) {

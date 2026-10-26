@@ -690,6 +690,45 @@ test('dashboard fits both supported desktop viewports without overflow', async (
   expect(roomBoxes[2]!.y + roomBoxes[2]!.height).toBeLessThanOrEqual(
     metrics.boxes.rooms!.bottom + 1
   )
+  // Room-row trends (owner, 2026-10-26): from 1600 px they share the sections'
+  // line and fill it to the end, one tile pair per row (Flower: Front over Back).
+  // Tiles never squeeze their header onto two lines.
+  for (const row of [flowerRow, vegRow]) {
+    const trends = await row.evaluate(element => {
+      const box = (target: Element) => {
+        const { top, right, bottom, left } = target.getBoundingClientRect()
+        return { top, right, bottom, left }
+      }
+      const line = element.querySelector('.dashboard-zone-row__wide > div')!
+      const group = line.querySelector('.dashboard-zone-row__trends')!
+      return {
+        line: box(line),
+        group: box(group),
+        sections: Array.from(line.children)
+          .filter(child => child !== group)
+          .map(box),
+        tiles: Array.from(group.querySelectorAll('.dashboard-mini-trend')).map(tile => {
+          const [label, delta] = Array.from(tile.firstElementChild!.children)
+          return { ...box(tile), oneLineHeader: Math.abs(box(label!).top - box(delta!).top) <= 1 }
+        }),
+      }
+    })
+    expect(trends.tiles).toHaveLength(4)
+    expect(trends.tiles.every(tile => tile.oneLineHeader)).toBe(true)
+    if (viewport!.width >= 1600) {
+      const [first, second, third, fourth] = trends.tiles
+      expect(Math.abs(trends.group.top - trends.sections[0]!.top)).toBeLessThanOrEqual(1)
+      expect(trends.group.left).toBeGreaterThanOrEqual(
+        Math.max(...trends.sections.map(section => section.right))
+      )
+      expect(Math.abs(trends.group.right - trends.line.right)).toBeLessThanOrEqual(1)
+      expect(Math.abs(first!.top - second!.top)).toBeLessThanOrEqual(1)
+      expect(Math.abs(third!.top - fourth!.top)).toBeLessThanOrEqual(1)
+      expect(third!.top).toBeGreaterThanOrEqual(first!.bottom)
+      expect(Math.abs(first!.left - third!.left)).toBeLessThanOrEqual(1)
+      expect(Math.abs(second!.left - fourth!.left)).toBeLessThanOrEqual(1)
+    }
+  }
   const initialPanels = [
     metrics.boxes.calendar!,
     metrics.boxes.inspector!,

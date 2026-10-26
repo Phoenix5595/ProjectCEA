@@ -255,6 +255,10 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
   const harvestSuffix =
     !isLab && expectedHarvestDate ? ` · Harvest ~${formatHarvestDay(expectedHarvestDate)}` : ''
   const trendKeys = isLab ? [] : trendMetrics(location, trendData)
+  // Trend tiles in pairs; for Flower each pair is one climate layer (Front, then Back).
+  const trendPairs = Array.from({ length: Math.ceil(trendKeys.length / 2) }, (_, index) =>
+    trendKeys.slice(index * 2, index * 2 + 2)
+  )
   const deviceStatus = statusDevices
   const lightReadouts = lightDevices.map(device => {
     const deviceName = device.device_name
@@ -597,13 +601,20 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
             </div>
           )}
 
-          <div className="shrink-0 flex flex-wrap gap-1 min-w-0">
-            {trendKeys.map(({ cluster: trendCluster, metric }) => (
-              <DashboardMiniTrend
-                key={`${trendCluster}-${metric}`}
-                metric={trendData[trendCluster]?.[metric]}
-                compact
-              />
+          <div className="dashboard-zone-row__trends shrink-0 flex flex-wrap gap-1">
+            {trendPairs.map(pair => (
+              <div
+                key={`${pair[0].cluster}-${pair[0].metric}`}
+                className="dashboard-zone-row__trend-pair contents"
+              >
+                {pair.map(({ cluster: trendCluster, metric }) => (
+                  <DashboardMiniTrend
+                    key={`${trendCluster}-${metric}`}
+                    metric={trendData[trendCluster]?.[metric]}
+                    compact
+                  />
+                ))}
+              </div>
             ))}
           </div>
         </div>
