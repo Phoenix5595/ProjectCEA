@@ -15,7 +15,7 @@ from app.sensor_registry_models import (
 )
 from shared.cluster_topology import known_rooms, sensor_name_like_pattern, sensor_url_clusters_for
 
-from .sensor_registry_channels import CAN_POSITION_RACKS, FLOWER_ROOM, RS485_BED_CAPACITY
+from .sensor_registry_channels import CAN_POSITION_RACKS, FLOWER_ROOM, VEG_ROOM
 
 
 class SensorRegistryAssignmentMixin:
@@ -30,7 +30,8 @@ class SensorRegistryAssignmentMixin:
 
         * Body discriminator must match the stored bus (422 otherwise).
         * CAN positions must satisfy the shared topology (422 otherwise).
-        * A fifth RS-485 probe on a bed → 409 ``bed_capacity``.
+        * RS-485 placements close the open ``soil_probe_placement`` row as
+          ``moved`` and insert the new one with one shared timestamp.
         * An occupied CAN room position → 409 ``position_occupied``.
         * CAN channel renames that would collide → 409 ``channel_name_conflict``
           with the assignment left unchanged.
@@ -147,54 +148,110 @@ class SensorRegistryAssignmentMixin:
         )
 
     async def _assign_rs485(self, conn: Any, row: Any, body: Rs485AssignmentRequest) -> None:
-        bed = body.bed
-        if bed not in RS485_BEDS:
-            raise ValidationAPIError(message=f"bed must be one of {list(RS485_BEDS)}")
-
-        bed_rack_id = await conn.fetchval(
-            """
-            SELECT r.rack_id
-            FROM rack r JOIN room f ON f.room_id = r.room_id
-            WHERE f.name = $1 AND r.name = $2
-            FOR UPDATE OF r
-            """,
-            FLOWER_ROOM,
-            bed,
-        )
-        if bed_rack_id is None:
-            raise ValidationAPIError(message=f"Flower bed {bed!r} does not exist")
-
-        occupied_count = await conn.fetchval(
-            """
-            SELECT count(*) FROM sensor_registry
-            WHERE bus = 'rs485' AND rack_id = $1 AND registry_id <> $2
-            """,
-            bed_rack_id,
-            row["registry_id"],
-        )
-        if int(occupied_count) >= RS485_BED_CAPACITY:
-            raise ConflictError(
-                message=f"{bed} already holds {RS485_BED_CAPACITY} probes and is at capacity",
-                error_code="bed_capacity",
+        registry_id = row["registry_id"]
+        if body.room == FLOWER_ROOM:
+            if body.bed not in RS485_BEDS:
+                raise ValidationAPIError(message=f"bed must be one of {list(RS485_BEDS)}")
+            target = await conn.fetchrow(
+                """
+                SELECT r.rack_id, r.room_id
+                FROM rack r JOIN room f ON f.room_id = r.room_id
+                WHERE f.name = $1 AND r.name = $2
+                FOR UPDATE OF r
+                """,
+                FLOWER_ROOM,
+                body.bed,
             )
+            if target is None:
+                raise ValidationAPIError(message=f"Flower bed {body.bed!r} does not exist")
+            room_id, rack_id = target["room_id"], target["rack_id"]
+        else:
+            room_id = await conn.fetchval("SELECT room_id FROM room WHERE name = $1", VEG_ROOM)
+            if room_id is None:
+                raise ValidationAPIError(message=f"Room {VEG_ROOM!r} does not exist")
+            rack_id = None
 
-        if row["device_id"] is not None:
-            await conn.execute(
-                "UPDATE device SET rack_id = $2 WHERE device_id = $1", row["device_id"], bed_rack_id
-            )
-
+        ts = await conn.fetchval("SELECT clock_timestamp()")
+        await conn.execute(
+            """
+            UPDATE soil_probe_placement
+            SET removed_at = $2, closed_reason = 'moved'
+            WHERE registry_id = $1 AND removed_at IS NULL
+            """,
+            registry_id,
+            ts,
+        )
+        await conn.execute(
+            """
+            INSERT INTO soil_probe_placement (registry_id, room_id, rack_id, x_frac, y_frac, placed_at)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            """,
+            registry_id,
+            room_id,
+            rack_id,
+            body.x_frac,
+            body.y_frac,
+            ts,
+        )
         await conn.execute(
             """
             UPDATE sensor_registry
             SET rack_id = $2,
-                room_id = NULL,
+                room_id = $3,
                 location_in_room = NULL,
                 updated_at = NOW()
             WHERE registry_id = $1
             """,
-            row["registry_id"],
-            bed_rack_id,
+            registry_id,
+            rack_id,
+            None if rack_id is not None else room_id,
         )
+        if row["device_id"] is not None:
+            await conn.execute(
+                "UPDATE device SET rack_id = $2 WHERE device_id = $1", row["device_id"], rack_id
+            )
+
+    async def unassign(self, registry_id: int) -> SensorRegistryRecord:
+        """Move an RS-485 probe to Unassigned, closing its placement."""
+        async with self._acquire() as conn, conn.transaction():
+            row = await conn.fetchrow(
+                """
+                SELECT registry_id, bus, device_id
+                FROM sensor_registry
+                WHERE registry_id = $1
+                FOR UPDATE
+                """,
+                registry_id,
+            )
+            if row is None:
+                raise NotFoundError(message=f"Registry record {registry_id} not found")
+            if row["bus"] != "rs485":
+                raise ConflictError(
+                    message=f"Registry record {registry_id} is a CAN node; only RS-485 probes "
+                    "are unassigned here",
+                    error_code="not_rs485",
+                )
+            await conn.execute(
+                """
+                UPDATE soil_probe_placement
+                SET removed_at = clock_timestamp(), closed_reason = 'unassigned'
+                WHERE registry_id = $1 AND removed_at IS NULL
+                """,
+                registry_id,
+            )
+            await conn.execute(
+                """
+                UPDATE sensor_registry
+                SET room_id = NULL, rack_id = NULL, location_in_room = NULL, updated_at = NOW()
+                WHERE registry_id = $1
+                """,
+                registry_id,
+            )
+            if row["device_id"] is not None:
+                await conn.execute(
+                    "UPDATE device SET rack_id = NULL WHERE device_id = $1", row["device_id"]
+                )
+        return await self.get_record(registry_id)
 
     @staticmethod
     def _canonical_suffix(room: str, location: str) -> str:

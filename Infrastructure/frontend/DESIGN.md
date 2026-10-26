@@ -157,6 +157,8 @@ The `/flower/soil` page reuses the monitoring layout system verbatim instead of 
 - **Chart sizing**: `.mon-chart` is `height: 100%`, so its wrapper must carry a definite height. Monitoring pages use fixed pixel heights; the soil History tab is a `flex min-h-0 flex-1 flex-col` panel that receives the remaining viewport height from the page shell, and its chart frame is `min-h-0 flex-1`, so the graph fills the component. A wrapper sized only by `min-height` without a definite flex parent collapses the uPlot frame to zero height.
 - **Data table**: the shared `ChartDataTable` primitive ("View data as table", consuming the exact `AlignedData` the plot renders) renders only in dev/fixture builds (R6); production keeps the legend's hidden semantic table. The page does not maintain its own table markup.
 - Beds render Back Bed above Front Bed; probe identity is the registry hardware address (`Soil probe #N`), and per-metric fresh/stale text uses `--mon-stale`.
+- **Bed figure** (`features/soil/SoilBedFigure.tsx`): a square with the bed's `width_ft/length_ft` aspect holds a 32×32 heatmap canvas stretched over it, active markers (solid dot, `#<address> <value>`) at `x_frac`/`y_frac` and closed markers (hollow ring, `#<address> · <age>`) for placements removed within 72 h. Under the square, a gradient legend with the 5th–95th percentile domain. Heatmap colours are fixed data stops (like the SUN/MOON fills), not theme tokens; cell alpha is `0.85 × confidence`, where confidence decays as `exp(−d / 1 ft)` times the point's freshness.
+- **Sensor Settings RS485 placement** draws Back Bed left and Front Bed right as squares with free-positioned tags, plus Unassigned and Veg Room drop zones and a per-probe button table.
 
 ## Responsive Layout
 

@@ -1,13 +1,15 @@
 /**
- * Sensor Settings: one row per physical registry record (CAN node or
- * RS-485 probe), unassigned first.
+ * Sensor Settings, split by bus (R9).
  *
- * CAN form: room select plus controlled position select from the frontend
- * topology mirror (Flower Front/Back; unsplit rooms Main). RS-485 form:
- * Front Bed or Back Bed only, with occupancy shown and a disabled option
- * when the bed is full. Save keeps the draft on 409/422 and renders the
- * server error inline; success refreshes the registry. No sensor deletion,
- * relay controls, free-text location, or manual bed slot exists here.
+ * CAN bus: one card per CAN registry record, pending identities first, then
+ * unassigned. The form is a room select plus a controlled position select
+ * from the frontend topology mirror (Flower Front/Back; unsplit rooms Main).
+ * Pending identities are confirmed as an older identity or as a new sensor.
+ * Save keeps the draft on 409/422 and renders the server error inline;
+ * success refreshes the registry.
+ *
+ * RS485: `Rs485PlacementSection` (drag/toggle placement, no live values).
+ * No sensor deletion, relay controls or free-text location exists here.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -18,12 +20,13 @@ import {
   soilApi,
   type AssignmentRequest,
   type IdentityRequest,
-  type Rs485Bed,
   type SensorRegistryRecord,
 } from '../../features/soil'
+import { formatUtcInstant } from '../../features/soil/format'
 import { logger } from '../../utils/logger'
 
-const BED_CAPACITY = 4
+import Rs485PlacementSection from './Rs485PlacementSection'
+
 const STALE_THRESHOLD_MS = 60_000
 
 // Match the services' ten-minute identity-absence threshold.
@@ -38,38 +41,19 @@ const POSITION_LABELS: Record<string, string> = {
 interface Draft {
   room: string
   location: 'front' | 'back' | 'main'
-  bed: Rs485Bed | ''
 }
 
 function draftFor(record: SensorRegistryRecord): Draft {
-  if (record.assignment === null) {
-    return {
-      room: record.bus === 'can' ? (knownRooms()[0] ?? 'Flower Room') : '',
-      location: 'main',
-      bed: '',
-    }
+  if (record.assignment === null || record.assignment.kind !== 'can') {
+    return { room: knownRooms()[0] ?? 'Flower Room', location: 'main' }
   }
-  if (record.assignment.kind === 'can') {
-    return {
-      room: record.assignment.room,
-      location: record.assignment.location_in_room,
-      bed: '',
-    }
-  }
-  return { room: '', location: 'main', bed: record.assignment.bed as Rs485Bed }
+  return { room: record.assignment.room, location: record.assignment.location_in_room }
 }
 
-function assignmentBody(record: SensorRegistryRecord, draft: Draft): AssignmentRequest | null {
-  if (record.bus === 'can') {
-    return draft.room === ''
-      ? null
-      : { kind: 'can', room: draft.room, location_in_room: draft.location }
-  }
-  return draft.bed === '' ? null : { kind: 'rs485', bed: draft.bed }
-}
-
-function formatInstant(date: Date): string {
-  return `${date.toISOString().slice(0, 19).replace('T', ' ')} UTC`
+function assignmentBody(draft: Draft): AssignmentRequest | null {
+  return draft.room === ''
+    ? null
+    : { kind: 'can', room: draft.room, location_in_room: draft.location }
 }
 
 function freshnessText(record: SensorRegistryRecord, nowMs: number): string | null {
@@ -94,11 +78,12 @@ export default function SensorSettingsPanel({
   const refresh = useCallback(async () => {
     try {
       const list = await soilApi.listRegistry()
-      setRecords(list.records)
+      const canRecords = list.records.filter(record => record.bus === 'can')
+      setRecords(canRecords)
       setLoadError(null)
       setDrafts(previous => {
         const next: Record<number, Draft> = {}
-        for (const record of list.records) {
+        for (const record of canRecords) {
           next[record.registry_id] = previous[record.registry_id] ?? draftFor(record)
         }
         return next
@@ -129,20 +114,6 @@ export default function SensorSettingsPanel({
     [records]
   )
 
-  const bedOccupancy = useCallback(
-    (bed: Rs485Bed): number => {
-      if (records === null) return 0
-      return records.filter(
-        record =>
-          record.bus === 'rs485' &&
-          record.assignment !== null &&
-          record.assignment.kind === 'rs485' &&
-          record.assignment.bed === bed
-      ).length
-    },
-    [records]
-  )
-
   const updateDraft = useCallback((registryId: number, patch: Partial<Draft>) => {
     setDrafts(previous => ({
       ...previous,
@@ -153,7 +124,7 @@ export default function SensorSettingsPanel({
   const save = useCallback(
     async (record: SensorRegistryRecord) => {
       const draft = drafts[record.registry_id] ?? draftFor(record)
-      const body = assignmentBody(record, draft)
+      const body = assignmentBody(draft)
       if (body === null) {
         setRowErrors(previous => ({
           ...previous,
@@ -169,7 +140,7 @@ export default function SensorSettingsPanel({
       })
       try {
         await soilApi.assign(record.registry_id, body)
-        toast.success(`Soil/CAN sensor #${record.hardware_address} assigned`)
+        toast.success(`CAN sensor #${record.hardware_address} assigned`)
         await refresh()
       } catch (error) {
         const detail = extractSoilApiError(error)
@@ -237,10 +208,6 @@ export default function SensorSettingsPanel({
     return [...pending, ...unassigned, ...assigned]
   }, [records])
 
-  if (records === null) {
-    return <p className="text-sm text-text-muted">Loading registry…</p>
-  }
-
   const nowMs = Date.now()
   const visibleRecords = (sortedRecords ?? []).filter(
     record =>
@@ -250,275 +217,263 @@ export default function SensorSettingsPanel({
   )
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 className="text-2xl font-bold text-text-input">Sensor Settings</h2>
-          <p className="mt-1 text-sm text-text-muted">
-            Commission detected CAN nodes and RS-485 probes into rooms, positions, and beds.
-          </p>
-        </div>
-        <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-text-muted">
-          <input
-            type="checkbox"
-            checked={unassignedOnly}
-            onChange={event => setUnassignedOnly(event.target.checked)}
-          />
-          Unassigned only
-        </label>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold text-text-input">Sensor Settings</h2>
+        <p className="mt-1 text-sm text-text-muted">
+          CAN nodes are commissioned to room positions; RS485 soil probes are placed by dragging
+          or with the placement buttons.
+        </p>
       </div>
 
-      {loadError !== null && (
-        <div
-          role="alert"
-          className="rounded border border-status-danger-border/60 bg-status-danger-bg/30 px-3 py-2 text-sm text-status-danger-text"
-        >
-          {loadError}
+      <section aria-labelledby="sensor-settings-can" className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 id="sensor-settings-can" className="text-lg font-semibold text-text-input">
+            CAN bus
+          </h3>
+          <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-text-muted">
+            <input
+              type="checkbox"
+              checked={unassignedOnly}
+              onChange={event => setUnassignedOnly(event.target.checked)}
+            />
+            Unassigned only
+          </label>
         </div>
-      )}
 
-      {visibleRecords.length === 0 && (
-        <p className="text-sm text-text-muted">No registry records match this filter.</p>
-      )}
+        {loadError !== null && (
+          <div
+            role="alert"
+            className="rounded border border-status-danger-border/60 bg-status-danger-bg/30 px-3 py-2 text-sm text-status-danger-text"
+          >
+            {loadError}
+          </div>
+        )}
 
-      <div className="space-y-3">
-        {visibleRecords.map(record => {
-          const draft = drafts[record.registry_id] ?? draftFor(record)
-          const isCan = record.bus === 'can'
-          const eligibleTargets = records.filter(
-            candidate =>
-              candidate.registry_id !== record.registry_id &&
-              candidate.bus === record.bus &&
-              (candidate.identity_status === 'detached' ||
-                (candidate.identity_status === 'confirmed' &&
-                  nowMs - candidate.last_seen.getTime() > IDENTITY_ABSENCE_MS))
-          )
-          const selectedTarget =
-            eligibleTargets.find(
-              candidate => candidate.registry_id === identityTargets[record.registry_id]
-            ) ??
-            eligibleTargets.find(
-              candidate => candidate.registry_id === record.pending_candidate_registry_id
-            ) ??
-            eligibleTargets[0]
-          return (
-            <div
-              key={record.registry_id}
-              className="rounded border border-border-subtle bg-surface-primary p-4 space-y-3"
-            >
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="rounded bg-surface-tertiary px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-text-secondary">
-                  {isCan ? 'CAN' : 'RS-485'}
-                </span>
-                <span className="font-mono text-sm text-text-input">
-                  {record.hardware_address === null
-                    ? 'No current address'
-                    : `#${record.hardware_address}`}
-                </span>
-                <span className="text-sm font-medium text-text-input">
-                  {record.display_name}
-                </span>
-                <span
-                  className={
-                    record.status === 'unassigned'
-                      ? 'rounded border border-status-warning/70 bg-status-warning-bg/30 px-2 py-0.5 text-xs font-semibold text-status-warning-text'
-                      : 'rounded border border-status-success-border/60 bg-status-success-bg/30 px-2 py-0.5 text-xs font-semibold text-status-success-text'
-                  }
-                >
-                  {record.status}
-                </span>
+        {records === null && loadError === null && (
+          <p className="text-sm text-text-muted">Loading registry…</p>
+        )}
 
-                {record.identity_status !== 'confirmed' && (
-                  <span className="rounded border border-status-warning/70 bg-status-warning-bg/30 px-2 py-0.5 text-xs font-semibold text-status-warning-text">
-                    {record.identity_status === 'pending' ? 'Identity pending' : 'Detached'}
+        {records !== null && visibleRecords.length === 0 && (
+          <p className="text-sm text-text-muted">No registry records match this filter.</p>
+        )}
+
+        <div className="space-y-3">
+          {visibleRecords.map(record => {
+            const draft = drafts[record.registry_id] ?? draftFor(record)
+            const eligibleTargets = (records ?? []).filter(
+              candidate =>
+                candidate.registry_id !== record.registry_id &&
+                candidate.bus === record.bus &&
+                (candidate.identity_status === 'detached' ||
+                  (candidate.identity_status === 'confirmed' &&
+                    nowMs - candidate.last_seen.getTime() > IDENTITY_ABSENCE_MS))
+            )
+            const selectedTarget =
+              eligibleTargets.find(
+                candidate => candidate.registry_id === identityTargets[record.registry_id]
+              ) ??
+              eligibleTargets.find(
+                candidate => candidate.registry_id === record.pending_candidate_registry_id
+              ) ??
+              eligibleTargets[0]
+            return (
+              <div
+                key={record.registry_id}
+                className="rounded border border-border-subtle bg-surface-primary p-4 space-y-3"
+              >
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="rounded bg-surface-tertiary px-2 py-0.5 text-xs font-semibold uppercase tracking-wide text-text-secondary">
+                    CAN
                   </span>
-                )}
-                {freshnessText(record, nowMs) !== null && (
-                  <span className="text-xs font-semibold uppercase tracking-wide text-status-warning-text">
-                    Stale
+                  <span className="font-mono text-sm text-text-input">
+                    {record.hardware_address === null
+                      ? 'No current address'
+                      : `#${record.hardware_address}`}
                   </span>
-                )}
-                <span className="ml-auto text-xs text-text-muted">
-                  First seen {formatInstant(record.first_seen)} · Last seen{' '}
-                  {formatInstant(record.last_seen)}
-                </span>
-              </div>
-
-              {record.identity_status === 'pending' ? (
-                <div className="flex flex-wrap items-end gap-3">
-                  {eligibleTargets.length > 0 ? (
-                    <>
-                      <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-text-muted">
-                        Same sensor as
-                        <select
-                          aria-label={`Previous identity for ${record.display_name}`}
-                          className="rounded border border-border-subtle bg-surface-secondary px-2 py-1.5 text-sm normal-case tracking-normal text-text-input"
-                          value={selectedTarget?.registry_id ?? ''}
-                          onChange={event =>
-                            setIdentityTargets(previous => ({
-                              ...previous,
-                              [record.registry_id]: Number(event.target.value),
-                            }))
-                          }
-                        >
-                          {eligibleTargets.map(candidate => (
-                            <option key={candidate.registry_id} value={candidate.registry_id}>
-                              #{candidate.registry_id} · {candidate.display_name} ·{' '}
-                              {candidate.hardware_address === null
-                                ? 'detached'
-                                : `address ${candidate.hardware_address}`}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <button
-                        type="button"
-                        disabled={savingIds.has(record.registry_id) || selectedTarget === undefined}
-                        onClick={() => {
-                          if (selectedTarget !== undefined) {
-                            void resolveIdentity(record, {
-                              decision: 'same',
-                              target_registry_id: selectedTarget.registry_id,
-                            })
-                          }
-                        }}
-                        className="rounded border border-btn-primary-light bg-btn-primary-light/20 px-3 py-1.5 text-sm font-semibold text-btn-primary-text disabled:opacity-50"
-                      >
-                        Same sensor as {selectedTarget?.display_name ?? 'selected identity'}
-                      </button>
-                    </>
-                  ) : (
-                    <p className="text-sm text-text-muted">
-                      No older identity is eligible to merge. Confirm this as a new sensor if it
-                      is a replacement.
-                    </p>
-                  )}
-                  <button
-                    type="button"
-                    disabled={savingIds.has(record.registry_id)}
-                    onClick={() =>
-                      void resolveIdentity(record, {
-                        decision: 'new',
-                      })
+                  <span className="text-sm font-medium text-text-input">
+                    {record.display_name}
+                  </span>
+                  <span
+                    className={
+                      record.status === 'unassigned'
+                        ? 'rounded border border-status-warning/70 bg-status-warning-bg/30 px-2 py-0.5 text-xs font-semibold text-status-warning-text'
+                        : 'rounded border border-status-success-border/60 bg-status-success-bg/30 px-2 py-0.5 text-xs font-semibold text-status-success-text'
                     }
-                    className="rounded border border-border-subtle bg-surface-secondary px-3 py-1.5 text-sm font-semibold text-text-input disabled:opacity-50"
                   >
-                    New sensor
-                  </button>
+                    {record.status}
+                  </span>
+
+                  {record.identity_status !== 'confirmed' && (
+                    <span className="rounded border border-status-warning/70 bg-status-warning-bg/30 px-2 py-0.5 text-xs font-semibold text-status-warning-text">
+                      {record.identity_status === 'pending' ? 'Identity pending' : 'Detached'}
+                    </span>
+                  )}
+                  {freshnessText(record, nowMs) !== null && (
+                    <span className="text-xs font-semibold uppercase tracking-wide text-status-warning-text">
+                      Stale
+                    </span>
+                  )}
+                  <span className="ml-auto text-xs text-text-muted">
+                    First seen {formatUtcInstant(record.first_seen)} · Last seen{' '}
+                    {formatUtcInstant(record.last_seen)}
+                  </span>
                 </div>
-              ) : record.identity_status === 'detached' ? (
-                <p className="text-sm text-text-muted">
-                  This identity has no current hardware address and can only be selected when
-                  confirming a pending sensor.
-                </p>
-              ) : isCan ? (
-                <div className="flex flex-wrap items-end gap-3">
-                  <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-text-muted">
-                    Room
-                    <select
-                      className="rounded border border-border-subtle bg-surface-secondary px-2 py-1.5 text-sm normal-case tracking-normal text-text-input"
-                      value={draft.room}
-                      onChange={event => {
-                        const room = event.target.value
-                        const positions = sensorSubclustersFor(room)
-                          .map(canSlugFor)
-                          .filter((slug): slug is NonNullable<typeof slug> => slug !== null)
-                        const keepsDraft = positions.includes(draft.location)
-                        updateDraft(record.registry_id, {
-                          room,
-                          location: keepsDraft
-                            ? draft.location
-                            : (positions[positions.length - 1] ?? 'main'),
-                        })
-                      }}
-                    >
-                      {knownRooms().map(room => (
-                        <option key={room} value={room}>
-                          {room}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-text-muted">
-                    Position
-                    <select
-                      className="rounded border border-border-subtle px-2 py-1.5 text-sm normal-case tracking-normal text-text-input"
-                      value={draft.location}
-                      onChange={event =>
-                        updateDraft(record.registry_id, {
-                          location: event.target.value as Draft['location'],
+
+                {record.identity_status === 'pending' ? (
+                  <div className="flex flex-wrap items-end gap-3">
+                    {eligibleTargets.length > 0 ? (
+                      <>
+                        <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-text-muted">
+                          Same sensor as
+                          <select
+                            aria-label={`Previous identity for ${record.display_name}`}
+                            className="rounded border border-border-subtle bg-surface-secondary px-2 py-1.5 text-sm normal-case tracking-normal text-text-input"
+                            value={selectedTarget?.registry_id ?? ''}
+                            onChange={event =>
+                              setIdentityTargets(previous => ({
+                                ...previous,
+                                [record.registry_id]: Number(event.target.value),
+                              }))
+                            }
+                          >
+                            {eligibleTargets.map(candidate => (
+                              <option key={candidate.registry_id} value={candidate.registry_id}>
+                                #{candidate.registry_id} · {candidate.display_name} ·{' '}
+                                {candidate.hardware_address === null
+                                  ? 'detached'
+                                  : `address ${candidate.hardware_address}`}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <button
+                          type="button"
+                          disabled={savingIds.has(record.registry_id) || selectedTarget === undefined}
+                          onClick={() => {
+                            if (selectedTarget !== undefined) {
+                              void resolveIdentity(record, {
+                                decision: 'same',
+                                target_registry_id: selectedTarget.registry_id,
+                              })
+                            }
+                          }}
+                          className="rounded border border-btn-primary-light bg-btn-primary-light/20 px-3 py-1.5 text-sm font-semibold text-btn-primary-text disabled:opacity-50"
+                        >
+                          Same sensor as {selectedTarget?.display_name ?? 'selected identity'}
+                        </button>
+                      </>
+                    ) : (
+                      <p className="text-sm text-text-muted">
+                        No older identity is eligible to merge. Confirm this as a new sensor if it
+                        is a replacement.
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      disabled={savingIds.has(record.registry_id)}
+                      onClick={() =>
+                        void resolveIdentity(record, {
+                          decision: 'new',
                         })
                       }
+                      className="rounded border border-border-subtle bg-surface-secondary px-3 py-1.5 text-sm font-semibold text-text-input disabled:opacity-50"
                     >
-                      {sensorSubclustersFor(draft.room)
-                        .map(canSlugFor)
-                        .filter((slug): slug is NonNullable<typeof slug> => slug !== null)
-                        .map(position => {
-                          const occupied = canPositionOccupied(
-                            draft.room,
-                            position,
-                            record.registry_id
-                          )
-                          const isDraft = draft.location === position
-                          const disabled = occupied && !isDraft
-                          const label = POSITION_LABELS[position] ?? position
-                          return (
-                            <option key={position} value={position} disabled={disabled}>
-                              {label}
-                              {disabled ? ' (occupied)' : ''}
-                            </option>
-                          )
-                        })}
-                    </select>
-                  </label>
-                </div>
-              ) : (
-                <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-text-muted">
-                  Flower bed
-                  <select
-                    className="rounded border border-border-subtle px-2 py-1.5 text-sm normal-case tracking-normal text-text-input"
-                    value={draft.bed}
-                    onChange={event =>
-                      updateDraft(record.registry_id, { bed: event.target.value as Rs485Bed })
-                    }
-                  >
-                    <option value="">Choose a bed…</option>
-                    {(['Front Bed', 'Back Bed'] as Rs485Bed[]).map(bed => {
-                      const occupancy = bedOccupancy(bed)
-                      const full = occupancy >= BED_CAPACITY
-                      const isDraft = draft.bed === bed
-                      return (
-                        <option key={bed} value={bed} disabled={full && !isDraft}>
-                          {bed} — {occupancy}/{BED_CAPACITY}
-                          {full ? ' (full)' : ''}
-                        </option>
-                      )
-                    })}
-                  </select>
-                </label>
-              )}
+                      New sensor
+                    </button>
+                  </div>
+                ) : record.identity_status === 'detached' ? (
+                  <p className="text-sm text-text-muted">
+                    This identity has no current hardware address and can only be selected when
+                    confirming a pending sensor.
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap items-end gap-3">
+                    <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-text-muted">
+                      Room
+                      <select
+                        className="rounded border border-border-subtle bg-surface-secondary px-2 py-1.5 text-sm normal-case tracking-normal text-text-input"
+                        value={draft.room}
+                        onChange={event => {
+                          const room = event.target.value
+                          const positions = sensorSubclustersFor(room)
+                            .map(canSlugFor)
+                            .filter((slug): slug is NonNullable<typeof slug> => slug !== null)
+                          const keepsDraft = positions.includes(draft.location)
+                          updateDraft(record.registry_id, {
+                            room,
+                            location: keepsDraft
+                              ? draft.location
+                              : (positions[positions.length - 1] ?? 'main'),
+                          })
+                        }}
+                      >
+                        {knownRooms().map(room => (
+                          <option key={room} value={room}>
+                            {room}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-text-muted">
+                      Position
+                      <select
+                        className="rounded border border-border-subtle px-2 py-1.5 text-sm normal-case tracking-normal text-text-input"
+                        value={draft.location}
+                        onChange={event =>
+                          updateDraft(record.registry_id, {
+                            location: event.target.value as Draft['location'],
+                          })
+                        }
+                      >
+                        {sensorSubclustersFor(draft.room)
+                          .map(canSlugFor)
+                          .filter((slug): slug is NonNullable<typeof slug> => slug !== null)
+                          .map(position => {
+                            const occupied = canPositionOccupied(
+                              draft.room,
+                              position,
+                              record.registry_id
+                            )
+                            const isDraft = draft.location === position
+                            const disabled = occupied && !isDraft
+                            const label = POSITION_LABELS[position] ?? position
+                            return (
+                              <option key={position} value={position} disabled={disabled}>
+                                {label}
+                                {disabled ? ' (occupied)' : ''}
+                              </option>
+                            )
+                          })}
+                      </select>
+                    </label>
+                  </div>
+                )}
 
-              <div className="flex flex-wrap items-center gap-3">
-                {record.identity_status === 'confirmed' && (
-                  <button
-                    type="button"
-                    disabled={savingIds.has(record.registry_id)}
-                    onClick={() => void save(record)}
-                    className="rounded border border-btn-primary-light bg-btn-primary-light/20 px-3 py-1.5 text-sm font-semibold text-btn-primary-text disabled:opacity-50"
-                  >
-                    {savingIds.has(record.registry_id) ? 'Saving…' : 'Save assignment'}
-                  </button>
-                )}
-                {rowErrors[record.registry_id] !== undefined && (
-                  <span role="alert" className="text-sm text-status-danger-text">
-                    {rowErrors[record.registry_id]}
-                  </span>
-                )}
+                <div className="flex flex-wrap items-center gap-3">
+                  {record.identity_status === 'confirmed' && (
+                    <button
+                      type="button"
+                      disabled={savingIds.has(record.registry_id)}
+                      onClick={() => void save(record)}
+                      className="rounded border border-btn-primary-light bg-btn-primary-light/20 px-3 py-1.5 text-sm font-semibold text-btn-primary-text disabled:opacity-50"
+                    >
+                      {savingIds.has(record.registry_id) ? 'Saving…' : 'Save assignment'}
+                    </button>
+                  )}
+                  {rowErrors[record.registry_id] !== undefined && (
+                    <span role="alert" className="text-sm text-status-danger-text">
+                      {rowErrors[record.registry_id]}
+                    </span>
+                  )}
+                </div>
               </div>
-            </div>
-          )
-        })}
-      </div>
+            )
+          })}
+        </div>
+      </section>
+
+      <Rs485PlacementSection />
     </div>
   )
 }

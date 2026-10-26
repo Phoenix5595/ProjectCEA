@@ -25,8 +25,17 @@ class ConfigLoader(YamlConfigLoader):
         self._service_settings: dict[str, Any] = {}
 
     def get_rs485_config(self) -> dict[str, Any]:
-        """Get RS485 serial port configuration."""
-        return self._config.get("rs485", {"port": "/dev/serial0", "baudrate": 9600, "timeout": 1.0})
+        """Return RS485 serial settings with defaults; ``rs485.port`` is required."""
+        rs485 = self._config.get("rs485") or {}
+        if not rs485.get("port"):
+            raise ValueError("soil_sensor_config.yaml: rs485.port is required")
+        return {
+            "baudrate": 9600,
+            "timeout": 0.5,
+            "scan_timeout": 0.2,
+            "inter_frame_delay": 0.005,
+            **rs485,
+        }
 
     def get_polling_config(self) -> dict[str, Any]:
         """Return YAML polling defaults overridden by loaded service settings."""

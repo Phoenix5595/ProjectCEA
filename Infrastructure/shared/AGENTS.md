@@ -19,6 +19,7 @@ All new Redis keys must use builders from [`redis_keys.py`](redis_keys.py). Do n
 |---|---|
 | Telemetry stream | `SENSOR_RAW_STREAM` (`sensor:raw`), maxlen 100,000 |
 | Current sensor values | `sensor_full()`, `sensor_full_ts()` (topology-qualified key and epoch-ms timestamp) |
+| Soil RS-485 bus state | `SOIL_BUS_STATUS_KEY` (`cea:soil:bus_status`), JSON `{state, address, at}`, TTL `SOIL_BUS_STATUS_TTL_SEC` (300 s) |
 
 ## Relay Bijection
 

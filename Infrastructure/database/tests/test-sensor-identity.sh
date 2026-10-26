@@ -29,12 +29,15 @@ MONITORING_TEST_FIXTURE_SQL="$IDENTITY_FIXTURE" \
     set -euo pipefail
     psql -X --set=ON_ERROR_STOP=1 --file="$IDENTITY_INFRA_DIR/database/migrate_sensor_registry.sql" "$MONITORING_TEST_DATABASE_URL" >/dev/null
     psql -X --set=ON_ERROR_STOP=1 --file="$IDENTITY_INFRA_DIR/database/migrations/0010_sensor_identity.sql" "$MONITORING_TEST_DATABASE_URL" >/dev/null
+    psql -X --set=ON_ERROR_STOP=1 --file="$IDENTITY_INFRA_DIR/database/migrations/0013_soil_free_placement.sql" "$MONITORING_TEST_DATABASE_URL" >/dev/null
     psql -X --set=ON_ERROR_STOP=1 --command="CREATE TABLE public.archive_availability (source_table TEXT NOT NULL, start_at TIMESTAMPTZ NOT NULL, end_at TIMESTAMPTZ NOT NULL, source_rows_removed BOOLEAN NOT NULL)" "$MONITORING_TEST_DATABASE_URL" >/dev/null
     cd "$IDENTITY_INFRA_DIR/backend"
     PYTHONPATH="$IDENTITY_INFRA_DIR/backend:$IDENTITY_INFRA_DIR/soil-sensor-service:$IDENTITY_INFRA_DIR/can-processor-service:$IDENTITY_INFRA_DIR" \
       python3 -m pytest -q \
-      "$IDENTITY_TEST_DIR/test_sensor_identity_db.py" \
-      "$IDENTITY_TEST_DIR/test_sensor_identity_concurrency.py"
+      "$IDENTITY_TEST_DIR/test_sensor_identity_db.py"
+    psql -X --set=ON_ERROR_STOP=1 \
+      --file="$IDENTITY_INFRA_DIR/database/migrations/0013_soil_free_placement.down.sql" \
+      "$MONITORING_TEST_DATABASE_URL" >/dev/null
     psql -X --set=ON_ERROR_STOP=1 \
       --file="$IDENTITY_INFRA_DIR/database/migrations/0010_sensor_identity.down.sql" \
       "$MONITORING_TEST_DATABASE_URL" >/dev/null

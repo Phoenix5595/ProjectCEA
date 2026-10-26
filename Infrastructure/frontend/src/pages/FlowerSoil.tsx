@@ -1,11 +1,15 @@
 /**
  * Flower Room soil SCADA page (/flower/soil).
  *
- * Two top-down 4 ft x 4 ft raised-bed schematics (Front Bed first, Back Bed
- * second), zero to four assigned RS-485 probes per bed placed by the fixed
- * percentage layout, live readings polled every five seconds, a
- * new-sensor toast plus a persistent unassigned badge, and one multi-axis
- * historical uPlot fed by the soil history API.
+ * Side column: a heatmap metric toggle (Off / Moisture / Temperature / EC /
+ * pH, default Moisture) and two top-down bed figures (Back Bed above Front
+ * Bed). Each figure draws placed RS-485 probes as solid markers at their
+ * free position, placements closed within 72 h as hollow markers, and a
+ * heatmap that fades past positions linearly to zero over 72 h (R9). Probe
+ * cards with live readings (polled every five seconds) sit under each bed.
+ * A new-probe toast fires only for RS-485 probes first seen after the page
+ * opened; a persistent badge lists unassigned and pending sensors. One
+ * multi-axis historical uPlot is fed by the soil history API.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -14,26 +18,38 @@ import { toast } from 'sonner'
 import { UPlotChart, createMonitoringChartFeed } from '../features/monitoring/charts'
 import type { MonitoringChartFeed, UPlotChartHandle } from '../features/monitoring/charts'
 import { MonitoringApi, monitoringRequestContextFromSearchParams } from '../features/monitoring/api'
-import {
-  ChartDataTable,
-  MonitoringFreshness,
-  TimeRangeToolbar,
-} from '../features/monitoring/components'
+import { ChartDataTable, TimeRangeToolbar } from '../features/monitoring/components'
 import { alignPhotoperiod } from '../features/monitoring/data'
 import type { PhotoperiodInterval } from '../features/monitoring/data'
+import SoilBedFigure, {
+  type ActiveMarker,
+  type ClosedMarker,
+  type HeatmapMetric,
+} from '../features/soil/SoilBedFigure'
 import {
   soilApi,
   type SensorRegistryRecord,
+  type SoilHeatmapResponse,
   type SoilLiveResponse,
   type SoilHistoryResponse,
 } from '../features/soil/api'
 import { emptyAlignedData } from '../features/soil/empty'
+import { BED_DISPLAY_ORDER } from '../features/soil/geometry'
+import { colorDomain, freshness } from '../features/soil/heatmap'
 import { adaptSoilHistory } from '../features/soil/history'
-import { groupByBed, PROBE_LAYOUT } from '../features/soil/layout'
 import { logger } from '../utils/logger'
 import '../features/monitoring/styles/monitoring.css'
 
 const POLL_INTERVAL_MS = 5000
+const HEATMAP_INTERVAL_MS = 30_000
+
+const HEATMAP_BUTTONS: { metric: HeatmapMetric; label: string }[] = [
+  { metric: 'off', label: 'Off' },
+  { metric: 'water_content', label: 'Moisture' },
+  { metric: 'temperature', label: 'Temperature' },
+  { metric: 'ec', label: 'EC' },
+  { metric: 'ph', label: 'pH' },
+]
 const LIVE_DURATION_MS = 3 * 3600 * 1000
 
 type SoilRange = { kind: 'live'; duration: number } | { kind: 'fixed'; start: Date; end: Date }
@@ -111,45 +127,6 @@ function ProbeCard({ probe }: { probe: SoilLiveResponse['probes'][number] }) {
   )
 }
 
-function BedSchematic({
-  label,
-  probes,
-  live,
-  errorAt,
-}: {
-  label: string
-  probes: SoilLiveResponse['probes']
-  live: SoilLiveResponse | null
-  errorAt: Date | null
-}) {
-  const slots = PROBE_LAYOUT[Math.min(probes.length, 4) as 0 | 1 | 2 | 3 | 4]
-  return (
-    <figure aria-label={`${label} bed schematic`} className="mon-card w-full">
-      <figcaption className="mon-card__title text-xs font-semibold uppercase tracking-wide text-mon-text-secondary">
-        {label}
-      </figcaption>
-      <MonitoringFreshness lastGoodAt={live?.generated_at ?? null} errorAt={errorAt} />
-      <div className="relative aspect-square w-full rounded border border-border-emphasis bg-surface-base">
-        {probes.length === 0 ? (
-          <p className="absolute inset-0 grid place-items-center text-sm text-mon-text-secondary">
-            No probes assigned
-          </p>
-        ) : (
-          probes.map((probe, index) => (
-            <div
-              key={probe.registry_id}
-              className="absolute w-[46%] -translate-x-1/2 -translate-y-1/2"
-              style={{ left: `${slots[index]?.x ?? 50}%`, top: `${slots[index]?.y ?? 50}%` }}
-            >
-              <ProbeCard probe={probe} />
-            </div>
-          ))
-        )}
-      </div>
-    </figure>
-  )
-}
-
 export default function FlowerSoil() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -168,6 +145,9 @@ export default function FlowerSoil() {
   const [maxPoints, setMaxPoints] = useState<number | null>(null)
   const [photoperiod, setPhotoperiod] = useState<PhotoperiodInterval[]>([])
   const seenUnassignedRef = useRef<Set<number>>(new Set())
+  const mountedAtRef = useRef<number>(Date.now())
+  const [metric, setMetric] = useState<HeatmapMetric>('water_content')
+  const [heatmap, setHeatmap] = useState<SoilHeatmapResponse | null>(null)
   const chartRef = useRef<UPlotChartHandle | null>(null)
   const feedRef = useRef<MonitoringChartFeed>(
     createMonitoringChartFeed(emptyAlignedData(), { kind: 'live', duration: LIVE_DURATION_MS })
@@ -188,10 +168,13 @@ export default function FlowerSoil() {
       setErrorAt(null)
       const freshUnassigned = registryList.records.filter(
         record =>
-          record.status === 'unassigned' && !seenUnassignedRef.current.has(record.registry_id)
+          record.bus === 'rs485' &&
+          record.status === 'unassigned' &&
+          record.first_seen.getTime() > mountedAtRef.current &&
+          !seenUnassignedRef.current.has(record.registry_id)
       )
-      // One Sonner toast per newly detected ID per mount; pre-existing
-      // unassigned records surface only in the badge, never as a toast storm.
+      // One Sonner toast per probe first seen after mount; pre-existing and
+      // disconnected probes surface only in the badge, never as a toast.
       for (const record of freshUnassigned) {
         seenUnassignedRef.current.add(record.registry_id)
         toast(`New soil probe detected: Soil probe #${record.hardware_address}`, {
@@ -209,6 +192,24 @@ export default function FlowerSoil() {
     const intervalId = window.setInterval(() => void poll(), POLL_INTERVAL_MS)
     return () => window.clearInterval(intervalId)
   }, [poll, seenUnassignedRef])
+
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      try {
+        const response = await soilApi.heatmap(metric === 'off' ? 'water_content' : metric)
+        if (!cancelled) setHeatmap(response)
+      } catch (error) {
+        logger.error('Soil heatmap fetch failed', error)
+      }
+    }
+    void load()
+    const intervalId = window.setInterval(() => void load(), HEATMAP_INTERVAL_MS)
+    return () => {
+      cancelled = true
+      window.clearInterval(intervalId)
+    }
+  }, [metric])
 
   const pendingRecords = useMemo(() => {
     if (registry === null) return []
@@ -305,7 +306,54 @@ export default function FlowerSoil() {
     feed.publish(aligned, range)
   }, [aligned, feed, range])
 
-  const beds = groupByBed(live?.probes ?? [])
+  const nowMs = Date.now()
+  const valueMetric = metric === 'off' ? 'water_content' : metric
+  const heatDomain = useMemo(() => {
+    const now = Date.now()
+    const values = (heatmap?.beds ?? []).flatMap(bed =>
+      bed.points.filter(point => freshness(point, now) > 0).map(point => point.value)
+    )
+    return colorDomain(values)
+  }, [heatmap])
+
+  const bedFigures = BED_DISPLAY_ORDER.map(name => {
+    const heatBed = heatmap?.beds.find(bed => bed.name === name) ?? null
+    const activeMarkers: ActiveMarker[] = (registry ?? [])
+      .filter(
+        record =>
+          record.bus === 'rs485' &&
+          record.hardware_address !== null &&
+          record.assignment?.kind === 'rs485' &&
+          record.assignment.bed === name
+      )
+      .sort((a, b) => (a.hardware_address ?? 0) - (b.hardware_address ?? 0))
+      .map(record => {
+        const assignment = record.assignment?.kind === 'rs485' ? record.assignment : null
+        const liveProbe = live?.probes.find(probe => probe.registry_id === record.registry_id)
+        return {
+          address: record.hardware_address ?? 0,
+          x_frac: assignment?.x_frac ?? 0.5,
+          y_frac: assignment?.y_frac ?? 0.5,
+          value: liveProbe?.metrics[valueMetric]?.value ?? null,
+        }
+      })
+    const closedMarkers: ClosedMarker[] = (heatBed?.points ?? []).flatMap(point =>
+      !point.active && point.removed_at !== null && freshness(point, nowMs) > 0
+        ? [
+            {
+              address: point.hardware_address,
+              x_frac: point.x_frac,
+              y_frac: point.y_frac,
+              removed_at: point.removed_at,
+            },
+          ]
+        : []
+    )
+    const probes = (live?.probes ?? [])
+      .filter(probe => probe.bed === name)
+      .sort((a, b) => a.hardware_address - b.hardware_address)
+    return { name, heatBed, activeMarkers, closedMarkers, probes }
+  })
 
   return (
     <div className="mon-page flex min-h-screen flex-col gap-1">
@@ -361,8 +409,43 @@ export default function FlowerSoil() {
 
       <div className="mon-layout mon-layout--beds min-h-0 flex-1">
         <aside className="mon-side mon-side--beds">
-          <BedSchematic label="Back Bed" probes={beds.backBed} live={live} errorAt={errorAt} />
-          <BedSchematic label="Front Bed" probes={beds.frontBed} live={live} errorAt={errorAt} />
+          <div role="group" aria-label="Heatmap" className="mon-card flex flex-wrap gap-1">
+            {HEATMAP_BUTTONS.map(button => (
+              <button
+                key={button.metric}
+                type="button"
+                aria-pressed={metric === button.metric}
+                onClick={() => setMetric(button.metric)}
+                className="rounded border border-border-default px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-mon-text-secondary aria-pressed:border-border-emphasis aria-pressed:bg-surface-tertiary aria-pressed:text-text-default"
+              >
+                {button.label}
+              </button>
+            ))}
+          </div>
+          {bedFigures.map(figure => (
+            <SoilBedFigure
+              key={figure.name}
+              name={figure.name}
+              testId={figure.name === 'Back Bed' ? 'back' : 'front'}
+              geometry={figure.heatBed}
+              metric={metric}
+              heatPoints={figure.heatBed?.points ?? []}
+              domain={heatDomain}
+              activeMarkers={figure.activeMarkers}
+              closedMarkers={figure.closedMarkers}
+              nowMs={nowMs}
+              lastGoodAt={live?.generated_at ?? null}
+              errorAt={errorAt}
+            >
+              {figure.probes.length > 0 && (
+                <div className="mt-1 grid grid-cols-2 gap-1">
+                  {figure.probes.map(probe => (
+                    <ProbeCard key={probe.registry_id} probe={probe} />
+                  ))}
+                </div>
+              )}
+            </SoilBedFigure>
+          ))}
         </aside>
         <div className="mon-main flex min-h-0 flex-col">
           <section className="mon-card flex min-h-0 flex-1 flex-col">

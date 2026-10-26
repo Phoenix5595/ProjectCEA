@@ -35,7 +35,7 @@ INSERT INTO baseline_kept(name) VALUES
   ('room_modes'), ('flower_submodes'), ('mode_parameters'), ('mode_notes'), ('room_active_mode'),
   ('light_presets'), ('light_programs'), ('light_target_intensity'), ('room_light_schedule'),
   ('schedules'), ('rules'), ('setpoints'), ('pid_parameters'), ('service_setting'), ('notes'),
-  ('soil_bed_profile'), ('soil_phase_target'), ('water_tank_monitor_config'),
+  ('soil_bed_profile'), ('soil_phase_target'), ('soil_probe_placement'), ('water_tank_monitor_config'),
   ('monitoring_job_snapshot_0007'), ('monitoring_refresh_policy_snapshot_0007'),
   ('monitoring_index_snapshot_0007'), ('monitoring_dependent_view_snapshot_0007'),
   ('monitoring_job_snapshot_0008'), ('monitoring_toolkit_snapshot_0008'),

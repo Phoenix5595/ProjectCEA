@@ -12,7 +12,7 @@ from shared.sensor_identity import SENSOR_IDENTITY_LOCK_NAMESPACE
 
 logger = get_logger(__name__)
 
-# Ten minutes separates a short bus interruption from a possible identity change.
+# A probe silent this long loses its placement (closed as `disconnected`, R9).
 ABSENCE = timedelta(minutes=10)
 
 
@@ -39,9 +39,12 @@ class DatabaseManager(DatabasePoolOwner):
             rows = await conn.fetch(
                 """
                 SELECT sr.registry_id, sr.hardware_address, sr.rack_id, rack.name AS bed_name,
+                       COALESCE(bed_room.name, room.name) AS room_name,
                        sr.sensor_uid, sr.device_id, sr.identity_status
                 FROM sensor_registry sr
                 LEFT JOIN rack rack ON rack.rack_id = sr.rack_id
+                LEFT JOIN room bed_room ON bed_room.room_id = rack.room_id
+                LEFT JOIN room room ON room.room_id = sr.room_id
                 WHERE sr.bus = 'rs485' AND sr.hardware_address IS NOT NULL
                 ORDER BY sr.hardware_address
                 """
@@ -52,6 +55,7 @@ class DatabaseManager(DatabasePoolOwner):
                 "hardware_address": int(row["hardware_address"]),
                 "rack_id": int(row["rack_id"]) if row["rack_id"] is not None else None,
                 "bed_name": row["bed_name"],
+                "room_name": row["room_name"],
                 "sensor_uid": row["sensor_uid"],
                 "device_id": int(row["device_id"]) if row["device_id"] is not None else None,
                 "identity_status": row["identity_status"],
@@ -83,32 +87,21 @@ class DatabaseManager(DatabasePoolOwner):
             )
         return int(device_id)
 
-    async def _insert_probe(
-        self,
-        conn: Any,
-        modbus_id: int,
-        observed_at: datetime,
-        identity_status: str,
-        pending_candidate_registry_id: int | None,
-        pending_since: datetime | None,
-    ) -> Any:
+    async def _insert_probe(self, conn: Any, modbus_id: int) -> Any:
+        """Register a new confirmed RS-485 identity at ``modbus_id`` (unassigned)."""
         row = await conn.fetchrow(
             """
             INSERT INTO sensor_registry (
                 bus, hardware_address, display_name, identity_status,
-                pending_candidate_registry_id, pending_since,
                 first_seen, last_seen, updated_at
             )
-            VALUES ('rs485', $1, $2, $3, $4, $5, $6, $6, $6)
-            RETURNING registry_id, bus, hardware_address, rack_id, device_id, sensor_uid,
-                      identity_status, pending_since, last_seen
+            VALUES ('rs485', $1, $2, 'confirmed',
+                    clock_timestamp(), clock_timestamp(), clock_timestamp())
+            RETURNING registry_id, hardware_address, rack_id, room_id, device_id, sensor_uid,
+                      first_seen
             """,
             modbus_id,
             f"soil_sensor_{modbus_id}",
-            identity_status,
-            pending_candidate_registry_id,
-            pending_since,
-            observed_at,
         )
         await conn.execute(
             """
@@ -117,135 +110,231 @@ class DatabaseManager(DatabasePoolOwner):
             """,
             row["registry_id"],
             modbus_id,
-            observed_at,
+            row["first_seen"],
         )
         return row
 
-    async def observe_probe(self, modbus_id: int) -> dict[str, Any]:
-        """Record a real bus response and apply the ten-minute identity rule."""
-        pool = await self._get_pool()
-        probe_name = f"soil_sensor_{modbus_id}"
-        async with pool.acquire() as conn, conn.transaction():
-            observed_at = await conn.fetchval("SELECT clock_timestamp()")
-            row = await conn.fetchrow(
-                """
-                SELECT registry_id, bus, hardware_address, rack_id, device_id, sensor_uid,
-                       identity_status, pending_since, last_seen
-                FROM sensor_registry
-                WHERE bus = 'rs485' AND hardware_address = $1
-                FOR UPDATE
-                """,
-                modbus_id,
-            )
+    async def _lock_probe(self, conn: Any, modbus_id: int) -> Any:
+        return await conn.fetchrow(
+            """
+            SELECT registry_id, hardware_address, rack_id, room_id, device_id, sensor_uid
+            FROM sensor_registry
+            WHERE bus = 'rs485' AND hardware_address = $1
+            FOR UPDATE
+            """,
+            modbus_id,
+        )
 
-            if row is not None and row["identity_status"] == "confirmed":
-                if row["last_seen"] < observed_at - ABSENCE:
-                    registry_id = int(row["registry_id"])
-                    # A legacy unmatched row needs a permanent device before
-                    # it can be retained as a detached identity candidate.
-                    await self._ensure_registry_device(conn, row, probe_name)
-                    await conn.execute(
-                        """
-                        UPDATE sensor_address_history
-                        SET valid_to = $2
-                        WHERE registry_id = $1 AND valid_to IS NULL
-                        """,
-                        registry_id,
-                        observed_at,
-                    )
-                    await conn.execute(
-                        """
-                        UPDATE sensor_registry
-                        SET hardware_address = NULL, identity_status = 'detached',
-                            pending_candidate_registry_id = NULL, pending_since = NULL,
-                            updated_at = $2
-                        WHERE registry_id = $1
-                        """,
-                        registry_id,
-                        observed_at,
-                    )
-                    row = await self._insert_probe(
-                        conn,
-                        modbus_id,
-                        observed_at,
-                        "pending",
-                        registry_id,
-                        observed_at,
-                    )
-                else:
-                    row = await conn.fetchrow(
-                        """
-                        UPDATE sensor_registry
-                        SET last_seen = $2, updated_at = $2
-                        WHERE registry_id = $1
-                        RETURNING registry_id, bus, hardware_address, rack_id, device_id,
-                                  sensor_uid, identity_status, pending_since, last_seen
-                        """,
-                        row["registry_id"],
-                        observed_at,
-                    )
-            elif row is not None:
-                row = await conn.fetchrow(
+    async def _observe_locked(self, conn: Any, row: Any) -> dict[str, Any]:
+        """Refresh ``last_seen``, ensure the device and apply the reconnect rule."""
+        registry_id = int(row["registry_id"])
+        address = int(row["hardware_address"])
+        await conn.execute(
+            """
+            UPDATE sensor_registry
+            SET last_seen = clock_timestamp(), updated_at = clock_timestamp()
+            WHERE registry_id = $1
+            """,
+            registry_id,
+        )
+        device_id = await self._ensure_registry_device(conn, row, f"soil_sensor_{address}")
+        has_open = await conn.fetchval(
+            "SELECT 1 FROM soil_probe_placement WHERE registry_id = $1 AND removed_at IS NULL",
+            registry_id,
+        )
+        if has_open is None:
+            await self._restore_placement(conn, registry_id, address, device_id)
+        return await self._probe_entry(conn, registry_id)
+
+    async def _restore_placement(
+        self, conn: Any, registry_id: int, address: int, device_id: int
+    ) -> None:
+        """Return a reconnecting probe to the spot it lost by disconnecting (R9)."""
+        last = await conn.fetchrow(
+            """
+            SELECT room_id, rack_id, x_frac, y_frac, closed_reason
+            FROM soil_probe_placement
+            WHERE registry_id = $1
+            ORDER BY placed_at DESC, placement_id DESC
+            LIMIT 1
+            """,
+            registry_id,
+        )
+        if last is None or last["closed_reason"] != "disconnected":
+            return
+        if last["rack_id"] is None:
+            await conn.execute(
+                """
+                INSERT INTO soil_probe_placement (registry_id, room_id, placed_at)
+                VALUES ($1, $2, clock_timestamp())
+                """,
+                registry_id,
+                last["room_id"],
+            )
+            await conn.execute(
+                """
+                UPDATE sensor_registry
+                SET room_id = $2, rack_id = NULL, location_in_room = NULL,
+                    updated_at = clock_timestamp()
+                WHERE registry_id = $1
+                """,
+                registry_id,
+                last["room_id"],
+            )
+            await conn.execute("UPDATE device SET rack_id = NULL WHERE device_id = $1", device_id)
+            logger.info(f"soil probe {address} returned to Veg Room")
+            return
+
+        rack_id = int(last["rack_id"])
+        # Serializes with the backend assignment, which locks the same bed row.
+        bed_name = await conn.fetchval(
+            "SELECT name FROM rack WHERE rack_id = $1 FOR UPDATE", rack_id
+        )
+        taken = await conn.fetchval(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM soil_probe_placement p
+                LEFT JOIN soil_bed_profile b ON b.rack_id = p.rack_id
+                WHERE p.rack_id = $1 AND p.removed_at IS NULL AND p.registry_id <> $4
+                  AND sqrt(power((p.x_frac - $2) * COALESCE(b.width_ft, 4.0), 2)
+                           + power((p.y_frac - $3) * COALESCE(b.length_ft, 4.0), 2)) <= 1.0
+            )
+            """,
+            rack_id,
+            last["x_frac"],
+            last["y_frac"],
+            registry_id,
+        )
+        if taken:
+            logger.info(f"soil probe {address} stays unassigned: spot taken")
+            return
+        await conn.execute(
+            """
+            INSERT INTO soil_probe_placement (registry_id, room_id, rack_id, x_frac, y_frac, placed_at)
+            VALUES ($1, $2, $3, $4, $5, clock_timestamp())
+            """,
+            registry_id,
+            last["room_id"],
+            rack_id,
+            last["x_frac"],
+            last["y_frac"],
+        )
+        await conn.execute(
+            """
+            UPDATE sensor_registry
+            SET rack_id = $2, room_id = NULL, location_in_room = NULL,
+                updated_at = clock_timestamp()
+            WHERE registry_id = $1
+            """,
+            registry_id,
+            rack_id,
+        )
+        await conn.execute("UPDATE device SET rack_id = $2 WHERE device_id = $1", device_id, rack_id)
+        logger.info(
+            f"soil probe {address} returned to {bed_name} ({last['x_frac']}, {last['y_frac']})"
+        )
+
+    async def _probe_entry(self, conn: Any, registry_id: int) -> dict[str, Any]:
+        row = await conn.fetchrow(
+            """
+            SELECT sr.registry_id, sr.hardware_address, sr.device_id, rack.name AS bed_name,
+                   CASE WHEN sr.rack_id IS NOT NULL THEN bed_room.name ELSE room.name END
+                       AS room_name
+            FROM sensor_registry sr
+            LEFT JOIN rack rack ON rack.rack_id = sr.rack_id
+            LEFT JOIN room bed_room ON bed_room.room_id = rack.room_id
+            LEFT JOIN room room ON room.room_id = sr.room_id
+            WHERE sr.registry_id = $1
+            """,
+            registry_id,
+        )
+        return {
+            "registry_id": int(row["registry_id"]),
+            "hardware_address": int(row["hardware_address"]),
+            "device_id": int(row["device_id"]),
+            "bed_name": row["bed_name"],
+            "room_name": row["room_name"],
+        }
+
+    async def observe_known_probe(self, modbus_id: int) -> dict[str, Any] | None:
+        """Record a response from a registered address; ``None`` when unknown."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn, conn.transaction():
+            row = await self._lock_probe(conn, modbus_id)
+            if row is None:
+                return None
+            return await self._observe_locked(conn, row)
+
+    async def adopt_probe(self, modbus_id: int) -> dict[str, Any]:
+        """Observe ``modbus_id``, registering it unassigned when unknown."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn, conn.transaction():
+            row = await self._lock_probe(conn, modbus_id)
+            if row is not None:
+                return await self._observe_locked(conn, row)
+            row = await self._insert_probe(conn, modbus_id)
+            probe_name = f"soil_sensor_{modbus_id}"
+            device_id = await self._ensure_registry_device(conn, row, probe_name)
+            await self._ensure_soil_channels(conn, device_id, probe_name)
+            logger.info(f"registered soil probe at address {modbus_id}")
+            return await self._probe_entry(conn, int(row["registry_id"]))
+
+    async def reserved_addresses(self) -> set[int]:
+        """Every RS-485 address ever used by an identity; never reassigned."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT hardware_address FROM sensor_registry
+                WHERE bus = 'rs485' AND hardware_address IS NOT NULL
+                UNION
+                SELECT hardware_address FROM sensor_address_history WHERE bus = 'rs485'
+                """
+            )
+        return {int(row["hardware_address"]) for row in rows}
+
+    async def close_absent_placements(self) -> list[int]:
+        """Close placements of probes silent for ``ABSENCE`` as ``disconnected``."""
+        pool = await self._get_pool()
+        async with pool.acquire() as conn, conn.transaction():
+            rows = await conn.fetch(
+                """
+                SELECT p.placement_id, p.registry_id, sr.device_id,
+                       GREATEST(sr.last_seen, p.placed_at) AS removed_at
+                FROM soil_probe_placement p
+                JOIN sensor_registry sr ON sr.registry_id = p.registry_id
+                WHERE p.removed_at IS NULL
+                  AND sr.last_seen < clock_timestamp() - $1::interval
+                ORDER BY p.registry_id
+                FOR UPDATE OF p, sr
+                """,
+                ABSENCE,
+            )
+            for row in rows:
+                await conn.execute(
+                    """
+                    UPDATE soil_probe_placement
+                    SET removed_at = $2, closed_reason = 'disconnected'
+                    WHERE placement_id = $1
+                    """,
+                    row["placement_id"],
+                    row["removed_at"],
+                )
+                await conn.execute(
                     """
                     UPDATE sensor_registry
-                    SET last_seen = $2, updated_at = $2
+                    SET room_id = NULL, rack_id = NULL, location_in_room = NULL,
+                        updated_at = clock_timestamp()
                     WHERE registry_id = $1
-                    RETURNING registry_id, bus, hardware_address, rack_id, device_id,
-                              sensor_uid, identity_status, pending_since, last_seen
                     """,
                     row["registry_id"],
-                    observed_at,
                 )
-            else:
-                # A linked row is a permanent identity; placement is separate.
-                stale = await conn.fetch(
-                    """
-                    SELECT registry_id
-                    FROM sensor_registry
-                    WHERE bus = 'rs485' AND device_id IS NOT NULL
-                      AND identity_status IN ('confirmed', 'detached')
-                      AND last_seen < $1::timestamptz - $2::interval
-                    ORDER BY registry_id
-                    """,
-                    observed_at,
-                    ABSENCE,
-                )
-                identity_status = "pending" if stale else "confirmed"
-                candidate_id = int(stale[0]["registry_id"]) if len(stale) == 1 else None
-                pending_since = observed_at if stale else None
-                row = await self._insert_probe(
-                    conn,
-                    modbus_id,
-                    observed_at,
-                    identity_status,
-                    candidate_id,
-                    pending_since,
-                )
-
-            device_id = await self._ensure_registry_device(conn, row, probe_name)
-            current = await conn.fetchrow(
-                """
-                SELECT sr.registry_id, sr.hardware_address, sr.rack_id, sr.sensor_uid,
-                       sr.identity_status, sr.pending_candidate_registry_id,
-                       sr.pending_since, sr.last_seen, rack.name AS bed_name
-                FROM sensor_registry sr
-                LEFT JOIN rack rack ON rack.rack_id = sr.rack_id
-                WHERE sr.registry_id = $1
-                """,
-                row["registry_id"],
-            )
-            return {
-                "registry_id": int(current["registry_id"]),
-                "hardware_address": int(current["hardware_address"]),
-                "rack_id": int(current["rack_id"]) if current["rack_id"] is not None else None,
-                "bed_name": current["bed_name"],
-                "sensor_uid": current["sensor_uid"],
-                "device_id": device_id,
-                "identity_status": current["identity_status"],
-                "pending_candidate_registry_id": current["pending_candidate_registry_id"],
-                "pending_since": current["pending_since"],
-                "last_seen": current["last_seen"],
-            }
+                if row["device_id"] is not None:
+                    await conn.execute(
+                        "UPDATE device SET rack_id = NULL WHERE device_id = $1", row["device_id"]
+                    )
+        return [int(row["registry_id"]) for row in rows]
 
     async def _resolve_current_registry_row(
         self, conn: Any, registry_id: int, modbus_id: int

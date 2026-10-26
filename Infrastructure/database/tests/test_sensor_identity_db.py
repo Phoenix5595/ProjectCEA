@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 import importlib.util
 import os
 from pathlib import Path
@@ -30,10 +30,6 @@ def _load_service_module(name: str, path: Path):
     return module
 
 
-soil_database = _load_service_module(
-    "sensor_identity_soil_database",
-    INFRASTRUCTURE / "soil-sensor-service/app/database.py",
-)
 can_registry = _load_service_module(
     "sensor_identity_can_registry",
     INFRASTRUCTURE / "can-processor-service/app/sensor_registry.py",
@@ -41,7 +37,7 @@ can_registry = _load_service_module(
 
 
 @pytest.mark.asyncio
-async def test_readdress_same_replacement_new_and_transient_absence() -> None:
+async def test_can_readdress_same_and_replacement_new() -> None:
     dsn = os.environ["MONITORING_TEST_DATABASE_URL"]
     assert urlsplit(dsn).port == 5433
     pool = await asyncpg.create_pool(dsn=dsn)
@@ -53,8 +49,6 @@ async def test_readdress_same_replacement_new_and_transient_absence() -> None:
         "user": urlsplit(dsn).username or "cea_user",
         "password": password,
     }
-    soil_db = soil_database.DatabaseManager(db_config)
-    soil_db._pool = pool
     repository = SensorRegistryRepository(pool=pool)
     try:
         async with pool.acquire() as conn:
@@ -69,76 +63,6 @@ async def test_readdress_same_replacement_new_and_transient_absence() -> None:
                 """
             )
             await conn.execute("UPDATE sensor_registry SET last_seen = clock_timestamp()")
-            original = await conn.fetchrow(
-                """
-                SELECT registry_id, device_id
-                FROM sensor_registry
-                WHERE bus = 'rs485' AND hardware_address = 226
-                """
-            )
-            assert original is not None
-            original_registry_id = int(original["registry_id"])
-            _, _, original_sensors, _ = await soil_db.register_sensor_device(
-                original_registry_id, 226, "soil_sensor_226"
-            )
-            await conn.execute(
-                "UPDATE sensor_registry SET last_seen = clock_timestamp() - interval '11 minutes' "
-                "WHERE registry_id = $1",
-                original_registry_id,
-            )
-
-        # Re-addressing: stale 226 becomes the candidate for new address 233.
-        pending = await soil_db.observe_probe(233)
-        assert pending["identity_status"] == "pending"
-        assert pending["pending_candidate_registry_id"] == original_registry_id
-        _, _, pending_sensors, _ = await soil_db.register_sensor_device(
-            pending["registry_id"], 233, "soil_sensor_233"
-        )
-        pending_since = pending["pending_since"]
-        sample_times = [
-            pending_since - timedelta(seconds=1),
-            pending_since + timedelta(seconds=1),
-        ]
-        pending_sensor_id = pending_sensors["temperature"]
-        original_sensor_id = original_sensors["temperature"]
-        async with pool.acquire() as conn:
-            await conn.executemany(
-                "INSERT INTO measurement (time, sensor_id, value) VALUES ($1, $2, $3)",
-                [
-                    (sample_times[0], pending_sensor_id, 20.5),
-                    (sample_times[1], pending_sensor_id, 21.5),
-                ],
-            )
-
-
-        await repository.resolve_identity(
-            pending["registry_id"],
-            SameIdentityRequest(decision="same", target_registry_id=original_registry_id),
-        )
-        async with pool.acquire() as conn:
-            target = await conn.fetchrow(
-                "SELECT hardware_address, identity_status FROM sensor_registry "
-                "WHERE registry_id = $1",
-                original_registry_id,
-            )
-            assert target is not None
-            assert target["hardware_address"] == 233
-            assert target["identity_status"] == "confirmed"
-            moved = await conn.fetch(
-                "SELECT time, sensor_id, value FROM measurement "
-                "WHERE time = ANY($1::timestamptz[]) ORDER BY time",
-                sample_times,
-            )
-            assert len(moved) == 2
-            assert [row["sensor_id"] for row in moved] == [original_sensor_id] * 2
-            assert [float(row["value"]) for row in moved] == [20.5, 21.5]
-            assert (
-                await conn.fetchval(
-                    "SELECT count(*) FROM sensor_registry WHERE registry_id = $1",
-                    pending["registry_id"],
-                )
-                == 0
-            )
 
         # A CAN node becomes stale only from its last actual frame; an idle
         # metadata cycle must not keep refreshing an observed address.
@@ -285,32 +209,5 @@ async def test_readdress_same_replacement_new_and_transient_absence() -> None:
             assert can_readdressed["hardware_address"] == 4
             assert can_readdressed["identity_status"] == "confirmed"
             assert int(can_readdressed["device_id"]) == can_readdress_target_device
-
-        # A 30-second interruption is below ABSENCE and keeps the same row.
-        async with pool.acquire() as conn:
-            transient = await conn.fetchrow(
-                "SELECT registry_id FROM sensor_registry "
-                "WHERE bus = 'rs485' AND hardware_address = 228"
-            )
-            assert transient is not None
-            transient_id = int(transient["registry_id"])
-            await conn.execute(
-                "UPDATE sensor_registry SET last_seen = clock_timestamp() - interval '30 seconds' "
-                "WHERE registry_id = $1",
-                transient_id,
-            )
-
-        observed = await soil_db.observe_probe(228)
-        assert observed["registry_id"] == transient_id
-        assert observed["identity_status"] == "confirmed"
-        assert observed["pending_since"] is None
-        async with pool.acquire() as conn:
-            assert (
-                await conn.fetchval(
-                    "SELECT count(*) FROM sensor_registry WHERE bus = 'rs485' "
-                    "AND identity_status = 'pending'"
-                )
-                == 0
-            )
     finally:
         await pool.close()

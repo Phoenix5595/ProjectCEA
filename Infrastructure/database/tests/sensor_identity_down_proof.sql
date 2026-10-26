@@ -14,8 +14,8 @@ BEGIN
         SELECT 1
         FROM public.sensor_registry AS sr
         JOIN public.device AS d ON d.device_id = sr.device_id
-        WHERE sr.bus = 'rs485' AND sr.hardware_address = 233
-          AND d.serial_number = 'MODBUS-233'
+        WHERE sr.bus = 'rs485' AND sr.hardware_address = 226
+          AND d.serial_number = 'MODBUS-226'
     ) THEN
         RAISE EXCEPTION 'sensor_identity_down_rs485_lookup_missing';
     END IF;

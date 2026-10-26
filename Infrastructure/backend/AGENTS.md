@@ -46,7 +46,17 @@ verified archive deletion are recorded in `archive_availability` and return
 `history_expired`. Closure alone does not block retained source rows. Live
 Redis and operational latest/predecessor reads never load archives.
 
-`POST /api/sensors/registry/{registry_id}/identity` confirms a pending address
+RS-485 rows are never pending (the Modbus address is the device ID, R9);
+identity confirmation is CAN-only. RS-485 placement routes:
+`PUT /api/sensors/registry/{registry_id}/assignment` (`room` `Flower Room` with
+`bed`/`x_frac`/`y_frac`, or `Veg Room` room-level) closes the open
+`soil_probe_placement` row as `moved` and inserts the new one with one shared
+timestamp; `DELETE …/assignment` closes it as `unassigned`. Read-only:
+`GET /api/sensors/registry/rs485/bus-status` (Redis `cea:soil:bus_status`,
+`unknown` when missing), `…/rs485/beds` and `…/rs485/heatmap?metric=` (10-minute
+mean per placement; closed placements within 72 h).
+
+`POST /api/sensors/registry/{registry_id}/identity` confirms a pending CAN address
 as the same stale/detached identity or as a new sensor. Same-identity merges
 take exclusive transaction advisory locks on the pending and target registry
 rows, shared with soil/CAN measurement-ingestion transactions. The merge moves

@@ -15,6 +15,8 @@ from app.redis_client import RedisClient  # noqa: E402
 from shared.redis_keys import (  # noqa: E402
     SENSOR_UPDATE_CHANNEL,
     SENSOR_UPDATE_SOIL_CHANNEL,
+    SOIL_BUS_STATUS_KEY,
+    SOIL_BUS_STATUS_TTL_SEC,
     SOIL_SENSOR_CURRENT_TTL_SEC,
     sensor_full,
     sensor_full_ts,
@@ -61,6 +63,9 @@ class FakeRedis:
     def pipeline(self, *, transaction: bool = True) -> FakePipeline:
         _ = transaction
         return FakePipeline(self)
+
+    async def set(self, key: str, value: str, *, ex: int) -> None:
+        self.state[key] = (value, ex)
 
 
 class SteppingDateTime:
@@ -173,6 +178,25 @@ class SoilPublicationTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(await client.publish_all_readings("soil_sensor", readings, "Bed"))
         self.assertEqual(redis.state, {})
         self.assertEqual(redis.notifications, [])
+
+    async def test_bus_status_is_json_with_state_address_time_and_ttl(self) -> None:
+        redis = FakeRedis()
+        client = RedisClient()
+        client.redis_enabled = True
+        client.redis_client = redis
+
+        self.assertTrue(await client.publish_bus_status("power_cycle_required", 3))
+
+        value, ttl = redis.state[SOIL_BUS_STATUS_KEY]
+        payload = cast(dict[str, object], json.loads(value))
+        self.assertEqual(SOIL_BUS_STATUS_KEY, "cea:soil:bus_status")
+        self.assertEqual(ttl, SOIL_BUS_STATUS_TTL_SEC)
+        self.assertEqual(ttl, 300)
+        self.assertEqual(
+            (payload["state"], payload["address"]), ("power_cycle_required", 3)
+        )
+        at = datetime.fromisoformat(cast(str, payload["at"]))
+        self.assertIsNotNone(at.tzinfo)
 
 
 if __name__ == "__main__":

@@ -30,6 +30,18 @@ CREATE TABLE rack (
     UNIQUE(room_id, name)
 );
 
+-- Production shape before 0013 (which adds width_ft/length_ft).
+CREATE TABLE soil_bed_profile (
+    rack_id INTEGER PRIMARY KEY REFERENCES rack(rack_id) ON DELETE CASCADE,
+    blusoak_total_length_ft NUMERIC(6,2) NOT NULL,
+    section_count SMALLINT NOT NULL,
+    section_length_ft NUMERIC(6,2) NOT NULL,
+    standard_carrots_per_section SMALLINT NOT NULL,
+    maxi_carrots_per_section SMALLINT NOT NULL,
+    substrate TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE device (
     device_id SERIAL PRIMARY KEY,
     rack_id INTEGER REFERENCES rack(rack_id) ON DELETE SET NULL,

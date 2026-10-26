@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 import json
 from typing import Any
 
@@ -19,6 +19,8 @@ from shared.redis_keys import (
     SENSOR_RAW_STREAM,
     SENSOR_UPDATE_CHANNEL,
     SENSOR_UPDATE_SOIL_CHANNEL,
+    SOIL_BUS_STATUS_KEY,
+    SOIL_BUS_STATUS_TTL_SEC,
     SOIL_SENSOR_CURRENT_TTL_SEC,
     sensor_full,
     sensor_full_ts,
@@ -196,4 +198,18 @@ class RedisClient:
             return True
         except Exception as exc:
             logger.warning("Error publishing soil sample to Redis: %s", exc)
+            return False
+
+    async def publish_bus_status(self, state: str, address: int | None) -> bool:
+        """Publish the RS-485 bus state for the Sensor Settings banner."""
+        if not self.redis_enabled or self.redis_client is None:
+            return False
+        payload = {"state": state, "address": address, "at": datetime.now(UTC).isoformat()}
+        try:
+            await self.redis_client.set(
+                SOIL_BUS_STATUS_KEY, json.dumps(payload), ex=SOIL_BUS_STATUS_TTL_SEC
+            )
+            return True
+        except Exception as exc:
+            logger.warning("Error publishing soil bus status to Redis: %s", exc)
             return False

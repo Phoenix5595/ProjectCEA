@@ -47,9 +47,12 @@ via `components/calendar/nextcloudConnectionErrors.ts`; keep that table in sync 
 the automation calendar routes' error codes. Use placeholders, never a real tailnet name.
 
 Physical sensor rows have a permanent identity separate from their CAN/RS-485
-address. Pending rows are listed first in Sensor Settings; the operator confirms
-them as an existing eligible identity or as a new sensor. The Flower Soil page
-surfaces a pending-identity badge. Registry wire contracts live in
+address. RS-485 rows are never pending (the Modbus address is the device ID,
+R9); identity confirmation is CAN-only. Pending CAN rows are listed first in the
+Sensor Settings CAN bus section; the operator confirms them as an existing
+eligible identity or as a new sensor. RS-485 probes are placed in the RS485
+section (`Rs485PlacementSection`). The Flower Soil page surfaces a
+pending/unassigned badge. Registry wire contracts live in
 `features/soil/api/contracts.ts`; do not hand-edit generated OpenAPI files.
 - `src/config/clusterTopology.ts` mirrors `Infrastructure/shared/cluster_topology.py`: device cluster is always `main`; Flower Room has sensor sub-clusters `front` and `back`; unsplit rooms reuse `main` as a sensor URL sentinel.
 - Operational event SSE uses `fetch` with `Accept: text/event-stream` and `X-API-Key`. Native `EventSource` and query-token keys are not used.

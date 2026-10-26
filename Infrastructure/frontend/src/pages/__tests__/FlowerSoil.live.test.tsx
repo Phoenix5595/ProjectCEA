@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     listRegistry: vi.fn(),
     soilLive: vi.fn(),
     soilHistory: vi.fn(),
+    heatmap: vi.fn(),
   },
   chartFeed: { publish: vi.fn() },
 }))
@@ -39,9 +40,11 @@ const HISTORY_RESPONSE = {
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
   vi.setSystemTime(new Date('2026-09-28T12:00:00Z'))
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
   mocks.soilApi.listRegistry.mockResolvedValue({ records: [], unassigned_count: 0 })
   mocks.soilApi.soilLive.mockResolvedValue({ generated_at: new Date(), probes: [] })
   mocks.soilApi.soilHistory.mockResolvedValue(HISTORY_RESPONSE)
+  mocks.soilApi.heatmap.mockResolvedValue({ metric: 'water_content', stale_after_hours: 72, beds: [] })
 })
 
 afterEach(() => {

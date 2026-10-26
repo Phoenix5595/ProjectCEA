@@ -1,10 +1,9 @@
 /**
- * Flower soil observable workflow: open /flower/soil, verify Front above
- * Back with live values; inject a newly detected probe; verify toast and
- * badge; follow the badge to filtered Sensor Settings; assign the probe;
- * return and verify the correct bed/reflow; exercise the history preset,
- * drag zoom, reset, grouped legend, and semantic table; assert no request
- * leaves the selected test-only loopback origin.
+ * Flower soil observable workflow: open /flower/soil, verify Back above
+ * Front beside the history chart, live probe cards, the default Moisture
+ * heatmap painted under a placed probe, a hollow marker for a placement
+ * closed 36 h ago and the legend; follow the unassigned badge to filtered
+ * Sensor Settings; assert no request leaves the test-only loopback origin.
  */
 import { expect, test, type Page } from '@playwright/test'
 
@@ -21,11 +20,11 @@ function trackViolations(page: Page): string[] {
   return violations
 }
 
-test('flower soil renders beds, live values, badge, and history', async ({ page }, testInfo) => {
+test('flower soil renders beds, heatmap, live values, and history', async ({ page }, testInfo) => {
   const violations = trackViolations(page)
-  await page.goto(fixtureUrl('/flower/soil', testInfo, 'soil', 'soil-probes-2'))
+  await page.goto(fixtureUrl('/flower/soil', testInfo, 'soil'))
 
-  // Back Bed first, Front Bed second, both labelled 4 ft x 4 ft.
+  // Back Bed first, Front Bed second.
   const front = page.getByRole('figure', { name: 'Front Bed bed schematic' })
   const back = page.getByRole('figure', { name: 'Back Bed bed schematic' })
   await expect(front).toBeVisible()
@@ -50,17 +49,32 @@ test('flower soil renders beds, live values, badge, and history', async ({ page 
   await expect(page.getByTestId('soil-probe-card').first()).toContainText('pH')
   await expect(page.getByTestId('soil-probe-card').first()).toContainText('°C')
 
+  // Moisture is the default heatmap: the cell under Soil 4 (0.3, 0.4) is painted.
+  await expect(page.getByRole('button', { name: 'Moisture' })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  )
+  const heatmap = page.getByTestId('soil-heatmap-back')
+  await expect
+    .poll(() =>
+      heatmap.evaluate(canvas => {
+        const context = (canvas as HTMLCanvasElement).getContext('2d')
+        return context === null ? 0 : (context.getImageData(9, 12, 1, 1).data[3] ?? 0)
+      })
+    )
+    .toBeGreaterThan(150)
+  await expect(page.getByTestId('soil-marker-closed-6')).toHaveText('#6 · 36 h')
+  await expect(page.getByTestId('soil-heatmap-legend').first()).toBeVisible()
+
   // History: toolbar preset + one plot render.
   await expect(page.getByRole('button', { name: 'Reset Zoom' })).toBeVisible()
 
   expect(violations).toEqual([])
 })
 
-test('injected probe raises one toast and the badge navigates to Sensor Settings', async ({
-  page,
-}, testInfo) => {
+test('the unassigned badge navigates to Sensor Settings', async ({ page }, testInfo) => {
   const violations = trackViolations(page)
-  await page.goto(fixtureUrl('/flower/soil', testInfo, 'badge', 'unassigned-after-mount'))
+  await page.goto(fixtureUrl('/flower/soil', testInfo, 'badge'))
 
   // The persistent unassigned badge appears and navigates to the filtered panel.
   const badge = page.getByRole('button', { name: /unassigned sensor/ })

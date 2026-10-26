@@ -1,5 +1,5 @@
 FLOWER_ROOM = "Flower Room"
-RS485_BED_CAPACITY = 4
+VEG_ROOM = "Veg Room"
 # Known CAN metric-channel bases whose location suffix is renamed on
 # assignment. Anything else on a CAN device is a conflict, not a guess.
 CAN_CHANNEL_BASES: tuple[str, ...] = (

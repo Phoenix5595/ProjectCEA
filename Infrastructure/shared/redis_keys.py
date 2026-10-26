@@ -152,6 +152,17 @@ ONEWIRE_SENSOR_CURRENT_TTL_SEC: Final[int] = 10
 lost, allowing consumers to detect unavailable hardware."""
 
 
+SOIL_BUS_STATUS_KEY: Final[str] = "cea:soil:bus_status"
+"""Soil RS-485 bus state, JSON ``{"state", "address", "at"}``. Written by the
+soil service each discovery cycle; ``state`` is ``ok``,
+``power_cycle_required`` (``address`` = the reserved address),
+``no_free_address`` or ``collision``."""
+
+SOIL_BUS_STATUS_TTL_SEC: Final[int] = 300
+"""300 s. A missing key means the soil service stopped publishing; readers
+report ``unknown``."""
+
+
 def monitoring_current_publication_key(location: str) -> str:
     """Canonical current-fact publication key for one automation location."""
     return f"cea:monitoring:current:{location}"
@@ -186,6 +197,9 @@ __all__ = [
     "CAN_SENSOR_CURRENT_TTL_SEC",
     "SOIL_SENSOR_CURRENT_TTL_SEC",
     "ONEWIRE_SENSOR_CURRENT_TTL_SEC",
+    # soil bus
+    "SOIL_BUS_STATUS_KEY",
+    "SOIL_BUS_STATUS_TTL_SEC",
     # monitoring publications
     "monitoring_current_publication_key",
     "monitoring_future_publication_key",

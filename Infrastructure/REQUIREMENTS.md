@@ -17,6 +17,7 @@ Stable cross-service contracts for ProjectCEA. For current architecture, see `AR
 - AOF is on with `appendfsync everysec`. At most one second of writes is lost on crash.
 - `sensor:raw` is capped at 100,000 entries (`Infrastructure/shared/redis_keys.py`).
 - Current sensor values use only `cea:sensor:{location}:{cluster}:{sensor_type}` and its `_ts` timestamp companion.
+- The soil RS-485 bus state uses `cea:soil:bus_status` (JSON `{state, address, at}`, 300 s TTL), written by the soil service and read by the backend.
 - New code must use the builders in `Infrastructure/shared/redis_keys.py`; do not introduce new top-level key namespaces without adding them here.
 
 ## Time Synchronization

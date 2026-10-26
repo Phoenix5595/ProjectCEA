@@ -20,6 +20,7 @@ from app.sensor_registry_models import (
 from .sensor_registry_assignment import SensorRegistryAssignmentMixin
 from .sensor_registry_channels import FLOWER_ROOM, SensorRegistryChannelsMixin
 from .sensor_registry_identity import SensorRegistryIdentityMixin
+from .soil_placement_repository import SoilPlacementRepositoryMixin
 from .soil_sensor_repository import SoilSensorRepositoryMixin
 
 if TYPE_CHECKING:
@@ -31,6 +32,7 @@ if TYPE_CHECKING:
 class SensorRegistryRepository(
     SensorRegistryIdentityMixin,
     SensorRegistryAssignmentMixin,
+    SoilPlacementRepositoryMixin,
     SoilSensorRepositoryMixin,
     SensorRegistryChannelsMixin,
 ):
@@ -72,11 +74,15 @@ class SensorRegistryRepository(
             sr.location_in_room,
             room.name      AS room_name,
             bed.name       AS bed_name,
-            bed_room.name  AS bed_room_name
+            bed_room.name  AS bed_room_name,
+            placement.x_frac,
+            placement.y_frac
         FROM sensor_registry sr
         LEFT JOIN room room ON room.room_id = sr.room_id
         LEFT JOIN rack bed ON bed.rack_id = sr.rack_id
         LEFT JOIN room bed_room ON bed_room.room_id = bed.room_id
+        LEFT JOIN soil_probe_placement placement
+            ON placement.registry_id = sr.registry_id AND placement.removed_at IS NULL
     """
 
     async def list_records(
@@ -126,10 +132,15 @@ class SensorRegistryRepository(
                 location_in_room=row["location_in_room"],
             )
         elif assigned:
+            on_bed = row["rack_id"] is not None
+            x_frac = row["x_frac"]
+            y_frac = row["y_frac"]
             assignment = Rs485AssignmentView(
                 kind="rs485",
-                room=row["bed_room_name"] or FLOWER_ROOM,
-                bed=row["bed_name"] or "",
+                room=(row["bed_room_name"] or FLOWER_ROOM) if on_bed else (row["room_name"] or ""),
+                bed=row["bed_name"] if on_bed else None,
+                x_frac=float(x_frac) if x_frac is not None else None,
+                y_frac=float(y_frac) if y_frac is not None else None,
             )
 
         return SensorRegistryRecord(

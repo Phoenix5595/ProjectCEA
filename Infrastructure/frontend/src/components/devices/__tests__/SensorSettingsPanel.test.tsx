@@ -5,6 +5,9 @@ const soilMocks = vi.hoisted(() => ({
   listRegistry: vi.fn(),
   assign: vi.fn(),
   resolveIdentity: vi.fn(),
+  unassign: vi.fn(),
+  beds: vi.fn(),
+  busStatus: vi.fn(),
 }))
 
 vi.mock('../../../features/soil', async importOriginal => {
@@ -16,6 +19,9 @@ vi.mock('../../../features/soil', async importOriginal => {
       listRegistry: soilMocks.listRegistry,
       assign: soilMocks.assign,
       resolveIdentity: soilMocks.resolveIdentity,
+      unassign: soilMocks.unassign,
+      beds: soilMocks.beds,
+      busStatus: soilMocks.busStatus,
     },
   }
 })
@@ -24,13 +30,13 @@ import SensorSettingsPanel from '../SensorSettingsPanel'
 
 const PENDING_RECORD = {
   registry_id: 2,
-  bus: 'rs485' as const,
+  bus: 'can' as const,
   hardware_address: 233,
   sensor_uid: '00000000-0000-4000-8000-000000000002',
   identity_status: 'pending' as const,
   pending_candidate_registry_id: 1,
   pending_since: new Date('2026-10-19T12:00:00Z'),
-  display_name: 'soil_sensor_233',
+  display_name: 'can_node_233',
   status: 'unassigned' as const,
   first_seen: new Date('2026-10-19T12:00:00Z'),
   last_seen: new Date('2026-10-19T12:00:00Z'),
@@ -39,17 +45,17 @@ const PENDING_RECORD = {
 
 const ELIGIBLE_RECORD = {
   registry_id: 1,
-  bus: 'rs485' as const,
+  bus: 'can' as const,
   hardware_address: 226,
   sensor_uid: '00000000-0000-4000-8000-000000000001',
   identity_status: 'confirmed' as const,
   pending_candidate_registry_id: null,
   pending_since: null,
-  display_name: 'soil_sensor_226',
+  display_name: 'can_node_226',
   status: 'assigned' as const,
   first_seen: new Date('2026-10-01T12:00:00Z'),
   last_seen: new Date(Date.now() - 11 * 60 * 1000),
-  assignment: { kind: 'rs485' as const, room: 'Flower Room', bed: 'Front Bed' },
+  assignment: { kind: 'can' as const, room: 'Flower Room', location_in_room: 'front' as const },
 }
 
 beforeEach(() => {
@@ -59,6 +65,8 @@ beforeEach(() => {
     unassigned_count: 1,
   })
   soilMocks.resolveIdentity.mockResolvedValue(ELIGIBLE_RECORD)
+  soilMocks.beds.mockResolvedValue({ beds: [] })
+  soilMocks.busStatus.mockResolvedValue({ state: 'ok', address: null, at: null })
 })
 
 describe('SensorSettingsPanel identity confirmation', () => {
@@ -66,13 +74,13 @@ describe('SensorSettingsPanel identity confirmation', () => {
     render(<SensorSettingsPanel />)
 
     const target = await screen.findByRole('combobox', {
-      name: 'Previous identity for soil_sensor_233',
+      name: 'Previous identity for can_node_233',
     })
     expect(target).toHaveValue('1')
-    expect(screen.getByRole('button', { name: 'Same sensor as soil_sensor_226' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Same sensor as can_node_226' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'New sensor' })).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Same sensor as soil_sensor_226' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Same sensor as can_node_226' }))
 
     expect(soilMocks.resolveIdentity).toHaveBeenCalledWith(2, {
       decision: 'same',

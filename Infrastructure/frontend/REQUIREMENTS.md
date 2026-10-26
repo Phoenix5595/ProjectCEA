@@ -59,6 +59,18 @@ Climate periods are keyed by `(location, cluster, mode_id, submode_id)`. Fetch t
 - DFR0971 board names are edited only in `DfrBoardsPanel`. System Settings shows board ID (read-only) and board address but no name input; a board-address save resends the stored name because `DfrBoardUpdate.name` is still required by the API.
 - System Settings saves nested settings objects (for example `safety_limits`) as one `PUT /api/settings/automation`; the mutation event lists each changed leaf as a dotted key (`safety_limits.max_temperature`) with its before/after value.
 
+## Soil Sensors
+
+- **R9 Soil RS-485.**
+  - Sensor Settings has two sections: **CAN bus** (commissioning, identity confirmation, room/position form) and **RS485** (placement only, no live values).
+  - The Modbus address is the probe's device ID. A new probe is connected alone at factory address 1; the soil service writes into it the lowest address in 2–254 that never appeared in `sensor_registry` or `sensor_address_history` and registers it there. Address 1 is never a device ID. RS-485 rows are never pending.
+  - Never-placed, unknown and disconnected probes are Unassigned.
+  - A probe absent for 10 minutes loses its placement (closed as `disconnected`). When it answers again it returns to its last spot only if that placement was closed by the disconnect and no placed probe in the same bed lies within 1 ft; a Veg probe returns to Veg Room; otherwise it stays Unassigned.
+  - Flower Room has two separate 4×4 ft beds side by side (Back Bed left, Front Bed right) with free placement. Veg Room placement is room-level.
+  - Placement: drag a probe tag into a bed (drop position = `x_frac`/`y_frac`), onto Veg Room or onto Unassigned, or use the per-row `Unassigned` / `Back Bed` / `Front Bed` / `Veg Room` buttons. Routes: `PUT /api/sensors/registry/{id}/assignment` with `{kind: 'rs485', room: 'Flower Room', bed, x_frac, y_frac}` or `{kind: 'rs485', room: 'Veg Room'}`; `DELETE /api/sensors/registry/{id}/assignment` unassigns.
+  - The RS485 section shows the bus banner from `GET /api/sensors/registry/rs485/bus-status`: `power_cycle_required` (with the reserved address), `collision` (several probes on address 1) or `no_free_address`.
+  - The Soil-page heatmap (`GET /api/sensors/registry/rs485/heatmap?metric=`) gives current positions full weight; past positions fade linearly to zero over 72 h. Off / Moisture / Temperature / EC / pH, default Moisture.
+
 ## Lights
 
 - Light intensity targets come from the DB SUN/DAY row.

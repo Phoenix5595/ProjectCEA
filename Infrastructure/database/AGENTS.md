@@ -8,6 +8,7 @@ PostgreSQL + TimescaleDB for normalized metadata, time-series measurements, cont
 |---|---|
 | `cea_schema.sql` | Core tables: `room`, `rack`, `device`, `sensor`, `measurement` hypertable, `climate_periods`; `measurement_with_metadata` view |
 | `migrations/0012_mode_transition_history.sql` | Creates `mode_transition_history` and removes the unused `latest_sensor_values` view; down restores a view that existed before the upgrade |
+| `migrations/0013_soil_free_placement.sql` | R9 soil placement: `soil_probe_placement` (one row per placement interval; open row mirrors `sensor_registry.room_id/rack_id`), `soil_bed_profile.width_ft/length_ft` (default 4 ft), `sensor_registry_legal_state` gains the RS-485 room-level (Veg) branch; backfills assigned RS-485 rows at 0.5/0.5. Down clears Veg room-level rows before restoring the old check |
 | `monitoring_read_models.sql` | Canonical base read models for the native monitoring feature: `monitoring_measurement_1min/5min`, `monitoring_effective_setpoints_1min/5min`, `monitoring_automation_state_1min/5min` aggregates, photoperiod coverage, and monitoring helpers |
 | `monitoring_history_overview.sql` | Canonical hour/day overview aggregates (`monitoring_measurement_1hour/1day`, `monitoring_light_intensity_1hour/1day`, `monitoring_requested_pid_1hour/1day`), coverage/watermark tables; includes `monitoring_relay_history_overview.sql` |
 | `timescaledb_config.sql` | Compression and retention policies |
@@ -222,7 +223,8 @@ bash Infrastructure/database/tests/test-grow-data-lifecycle.sh --case schema
 
 Run these locally against a disposable Postgres instance, never against production.
 
-- The permanent identity schema, stale-address detection, pre-cutoff and concurrent measurement transfer, and legacy-key rollback proof is `bash Infrastructure/database/tests/test-sensor-identity.sh` (guarded `monitoring_test_*` database on port 5433, cluster data directory `/15/test`).
+- The permanent identity schema, CAN stale-address detection and identity confirmation, and legacy-key rollback proof is `bash Infrastructure/database/tests/test-sensor-identity.sh` (guarded `monitoring_test_*` database on port 5433, cluster data directory `/15/test`). RS-485 rows are never pending (R9).
+- The R9 soil placement proof is `CEA_TEST_PGPORT=5433 bash Infrastructure/database/tests/test-soil-placement.sh`: baseline + 0013 backfill and down/up, soil-service adoption, absence sweep and reconnect rule, backend placement/unassign/heatmap SQL (`test_soil_placement_db.py`), and the guarded `Infrastructure/scripts/clear_soil_sensors_2026-10.sql` (aborts on a measurement, clears exactly the target rows, aborts on a second run).
 
 ---
 

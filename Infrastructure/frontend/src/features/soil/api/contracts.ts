@@ -39,7 +39,9 @@ export const RegistryAssignment = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('rs485'),
     room: z.string(),
-    bed: z.string(),
+    bed: z.string().nullable(),
+    x_frac: z.number().min(0).max(1).nullable(),
+    y_frac: z.number().min(0).max(1).nullable(),
   }),
 ])
 export type RegistryAssignment = z.infer<typeof RegistryAssignment>
@@ -70,11 +72,67 @@ export const SensorRegistryList = z.object({
 export type SensorRegistryList = z.infer<typeof SensorRegistryList>
 
 // ---------------------------------------------------------------------------
+// RS-485 bus status, beds and heatmap
+// ---------------------------------------------------------------------------
+
+export const SoilBusState = z.enum([
+  'ok',
+  'power_cycle_required',
+  'no_free_address',
+  'collision',
+  'unknown',
+])
+export type SoilBusState = z.infer<typeof SoilBusState>
+
+export const SoilBusStatus = z.object({
+  state: SoilBusState,
+  address: z.number().int().nullable(),
+  at: awareDate.nullable(),
+})
+export type SoilBusStatus = z.infer<typeof SoilBusStatus>
+
+export const SoilBed = z.object({
+  rack_id: z.number().int(),
+  name: z.string(),
+  width_ft: z.number().positive(),
+  length_ft: z.number().positive(),
+})
+export type SoilBed = z.infer<typeof SoilBed>
+
+export const SoilBedsResponse = z.object({
+  beds: z.array(SoilBed),
+})
+export type SoilBedsResponse = z.infer<typeof SoilBedsResponse>
+
+export const SoilHeatmapPoint = z.object({
+  registry_id: z.number().int(),
+  hardware_address: z.number().int().positive(),
+  x_frac: z.number().min(0).max(1),
+  y_frac: z.number().min(0).max(1),
+  value: z.number(),
+  active: z.boolean(),
+  removed_at: awareDate.nullable(),
+})
+export type SoilHeatmapPoint = z.infer<typeof SoilHeatmapPoint>
+
+export const SoilHeatmapBed = SoilBed.extend({
+  points: z.array(SoilHeatmapPoint),
+})
+export type SoilHeatmapBed = z.infer<typeof SoilHeatmapBed>
+
+// ---------------------------------------------------------------------------
 // Soil live
 // ---------------------------------------------------------------------------
 
 export const SoilMetricName = z.enum(['temperature', 'water_content', 'ec', 'ph'])
 export type SoilMetricName = z.infer<typeof SoilMetricName>
+
+export const SoilHeatmapResponse = z.object({
+  metric: SoilMetricName,
+  stale_after_hours: z.number().int().positive(),
+  beds: z.array(SoilHeatmapBed),
+})
+export type SoilHeatmapResponse = z.infer<typeof SoilHeatmapResponse>
 
 export const SoilMetricValue = z.object({
   value: z.number(),
@@ -152,10 +210,19 @@ export const CanAssignmentRequest = z.object({
 })
 export type CanAssignmentRequest = z.infer<typeof CanAssignmentRequest>
 
-export const Rs485AssignmentRequest = z.object({
-  kind: z.literal('rs485'),
-  bed: Rs485Bed,
-})
+export const Rs485AssignmentRequest = z.union([
+  z.object({
+    kind: z.literal('rs485'),
+    room: z.literal('Flower Room'),
+    bed: Rs485Bed,
+    x_frac: z.number().min(0).max(1),
+    y_frac: z.number().min(0).max(1),
+  }),
+  z.object({
+    kind: z.literal('rs485'),
+    room: z.literal('Veg Room'),
+  }),
+])
 export type Rs485AssignmentRequest = z.infer<typeof Rs485AssignmentRequest>
 
 export type AssignmentRequest = CanAssignmentRequest | Rs485AssignmentRequest

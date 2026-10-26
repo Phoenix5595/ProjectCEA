@@ -21,6 +21,9 @@ from app.sensor_registry_models import (
     Rs485AssignmentRequest,
     SensorRegistryListResponse,
     SensorRegistryRecord,
+    SoilBedsResponse,
+    SoilBusStatus,
+    SoilHeatmapResponse,
     SoilHistoryResponse,
     SoilLiveResponse,
 )
@@ -39,14 +42,49 @@ async def list_sensor_registry(
     return SensorRegistryListResponse(records=records, unassigned_count=unassigned_count)
 
 
+# Static RS-485 routes are declared before any ``{registry_id}`` route.
+@router.get("/registry/rs485/bus-status", response_model=SoilBusStatus)
+async def soil_bus_status(
+    repository: Annotated[SensorRegistryRepository, Depends(get_sensor_registry_repository)],
+) -> SoilBusStatus:
+    """RS-485 commissioning state published by the soil service (``unknown`` when absent)."""
+    return await repository.soil_bus_status()
+
+
+@router.get("/registry/rs485/beds", response_model=SoilBedsResponse)
+async def soil_beds(
+    repository: Annotated[SensorRegistryRepository, Depends(get_sensor_registry_repository)],
+) -> SoilBedsResponse:
+    """Flower Room soil beds with dimensions, Back Bed then Front Bed."""
+    return SoilBedsResponse(beds=await repository.soil_beds())
+
+
+@router.get("/registry/rs485/heatmap", response_model=SoilHeatmapResponse)
+async def soil_heatmap(
+    repository: Annotated[SensorRegistryRepository, Depends(get_sensor_registry_repository)],
+    metric: str = Query("water_content", pattern="^(water_content|temperature|ec|ph)$"),
+) -> SoilHeatmapResponse:
+    """Current and recently closed (72 h) bed placements with their 10-minute mean value."""
+    return await repository.soil_heatmap(metric)
+
+
 @router.put("/registry/{registry_id}/assignment")
 async def assign_sensor_registry(
     registry_id: int,
     body: Annotated[CanAssignmentRequest | Rs485AssignmentRequest, Body(discriminator="kind")],
     repository: Annotated[SensorRegistryRepository, Depends(get_sensor_registry_repository)],
 ):
-    """Assign a physical sensor unit to a room position (CAN) or Flower bed (RS-485)."""
+    """Assign a CAN node to a room position, or place an RS-485 probe (Flower bed spot or Veg Room)."""
     return await repository.assign(registry_id, body)
+
+
+@router.delete("/registry/{registry_id}/assignment", response_model=SensorRegistryRecord)
+async def unassign_sensor_registry(
+    registry_id: int,
+    repository: Annotated[SensorRegistryRepository, Depends(get_sensor_registry_repository)],
+) -> SensorRegistryRecord:
+    """Move an RS-485 probe to Unassigned (409 ``not_rs485`` for CAN nodes)."""
+    return await repository.unassign(registry_id)
 
 
 @router.post("/registry/{registry_id}/identity", response_model=SensorRegistryRecord)

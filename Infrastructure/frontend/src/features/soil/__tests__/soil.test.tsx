@@ -1,7 +1,7 @@
 /**
- * Focused soil-surface coverage: route/tab cutover, Zod boundary rejection,
- * 0–4 placement coordinates, Modbus ordering/reflow, stale/missing display,
- * one-toast-per-new-ID, badge navigation, and the history chart contract.
+ * Focused soil-surface coverage: bed order, free marker positions, closed
+ * markers, stale/missing display, badge navigation, pointer-to-bed
+ * fractions, and the history chart contract.
  */
 import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
@@ -11,8 +11,8 @@ import { ThemeProvider } from '../../../contexts/ThemeContext'
 import FlowerSoil from '../../../pages/FlowerSoil'
 import { extractSoilApiError } from '../api/client'
 import type { SoilHistoryResponse } from '../api/contracts'
+import { fracFromPointer } from '../geometry'
 import { adaptSoilHistory } from '../history'
-import { PROBE_LAYOUT, groupByBed } from '../layout'
 
 vi.mock('../api/client', async importOriginal => {
   const actual = await importOriginal<typeof import('../api/client')>()
@@ -23,6 +23,7 @@ vi.mock('../api/client', async importOriginal => {
       assign: vi.fn(),
       soilLive: vi.fn(),
       soilHistory: vi.fn(),
+      heatmap: vi.fn(),
     },
   }
 })
@@ -43,7 +44,13 @@ const REGISTRY_RESPONSE = {
       status: 'assigned' as const,
       first_seen: new Date('2026-09-21T09:00:00Z'),
       last_seen: new Date('2026-09-21T12:00:00Z'),
-      assignment: { kind: 'rs485' as const, room: 'Flower Room', bed: 'Front Bed' },
+      assignment: {
+        kind: 'rs485' as const,
+        room: 'Flower Room',
+        bed: 'Front Bed',
+        x_frac: 0.25,
+        y_frac: 0.75,
+      },
     },
   ],
   unassigned_count: 0,
@@ -134,9 +141,34 @@ function renderSoil(): void {
 }
 
 beforeEach(() => {
+  // jsdom has no 2-D canvas; the bed figure skips painting on a null context.
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
   vi.mocked(soilApi.listRegistry).mockResolvedValue(REGISTRY_RESPONSE)
   vi.mocked(soilApi.soilLive).mockResolvedValue(LIVE_RESPONSE)
   vi.mocked(soilApi.soilHistory).mockResolvedValue(HISTORY_RESPONSE)
+  vi.mocked(soilApi.heatmap).mockResolvedValue({
+    metric: 'water_content',
+    stale_after_hours: 72,
+    beds: [
+      {
+        rack_id: 5,
+        name: 'Front Bed',
+        width_ft: 4,
+        length_ft: 4,
+        points: [
+          {
+            registry_id: 6,
+            hardware_address: 6,
+            x_frac: 0.7,
+            y_frac: 0.7,
+            value: 41,
+            active: false,
+            removed_at: new Date(Date.now() - 36 * 3600_000),
+          },
+        ],
+      },
+    ],
+  })
 })
 
 describe('soil page', () => {
@@ -145,6 +177,18 @@ describe('soil page', () => {
     const back = await screen.findByText('Back Bed')
     const front = screen.getByText('Front Bed')
     expect(back.compareDocumentPosition(front) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('places active markers at the stored bed fractions', async () => {
+    renderSoil()
+    const marker = await screen.findByTestId('soil-marker-226')
+    expect(marker).toHaveStyle({ left: '25%', top: '75%' })
+    expect(marker).toHaveTextContent('#226 32.1 %')
+  })
+
+  it('shows recently closed placements as hollow markers with their age', async () => {
+    renderSoil()
+    expect(await screen.findByTestId('soil-marker-closed-6')).toHaveTextContent('#6 · 36 h')
   })
 
   it('renders a probe card with the four metric families', async () => {
@@ -217,50 +261,12 @@ describe('soil history labels', () => {
   })
 })
 
-describe('deterministic 0–4 probe layout', () => {
-  it.each([
-    [1, [{ x: 50, y: 50 }]],
-    [
-      2,
-      [
-        { x: 30, y: 50 },
-        { x: 70, y: 50 },
-      ],
-    ],
-    [
-      3,
-      [
-        { x: 50, y: 28 },
-        { x: 32, y: 68 },
-        { x: 68, y: 68 },
-      ],
-    ],
-    [
-      4,
-      [
-        { x: 30, y: 30 },
-        { x: 70, y: 30 },
-        { x: 30, y: 70 },
-        { x: 70, y: 70 },
-      ],
-    ],
-  ])('maps %i probes to fixed percentage coordinates', (count, expected) => {
-    expect(PROBE_LAYOUT[count as 1 | 2 | 3 | 4]).toEqual(expected)
-  })
-
-  it('groups assigned probes per bed sorted by numeric Modbus address', () => {
-    const probes = [
-      { registry_id: 6, hardware_address: 228, bed: 'Front Bed', metrics: {} },
-      { registry_id: 4, hardware_address: 226, bed: 'Front Bed', metrics: {} },
-      { registry_id: 5, hardware_address: 227, bed: 'Back Bed', metrics: {} },
-    ] as never[]
-    const grouped = groupByBed(probes)
-    expect(
-      grouped.frontBed.map((probe: { hardware_address: number }) => probe.hardware_address)
-    ).toEqual([226, 228])
-    expect(
-      grouped.backBed.map((probe: { hardware_address: number }) => probe.hardware_address)
-    ).toEqual([227])
+describe('bed pointer fractions', () => {
+  it('clamps to the bed and rounds to three decimals', () => {
+    const rect = { left: 100, top: 50, width: 200, height: 400 } as DOMRect
+    expect(fracFromPointer(rect, 150, 350)).toEqual({ x_frac: 0.25, y_frac: 0.75 })
+    expect(fracFromPointer(rect, 133.3333, 50)).toEqual({ x_frac: 0.167, y_frac: 0 })
+    expect(fracFromPointer(rect, 40, 900)).toEqual({ x_frac: 0, y_frac: 1 })
   })
 })
 
@@ -274,13 +280,13 @@ describe('structured error boundary', () => {
         data: {
           error: {
             status_code: 409,
-            message: 'Front Bed is at capacity',
-            error_code: 'bed_capacity',
+            message: 'Registry record 7 is a CAN node',
+            error_code: 'not_rs485',
           },
         },
       },
     })
     expect(detail.status).toBe(409)
-    expect(detail.errorCode).toBe('bed_capacity')
+    expect(detail.errorCode).toBe('not_rs485')
   })
 })

@@ -28,7 +28,7 @@ import {
   sensorRangeFixture,
   wsFixtureMessage,
 } from './src/features/monitoring/config/fixtures.ts'
-import { SOIL_FIXTURE_ROUTES } from './src/features/soil/config/soilFixtures.ts'
+import { soilFixtureReply } from './src/features/soil/config/soilFixtures.ts'
 import {
   eventHistoryFixture,
   sseFrameForEntry,
@@ -1243,7 +1243,6 @@ function calendarCurrentRunFixtureReply(
 }
 
 const FIXTURE_ROUTES: FixtureRoute[] = [
-  ...SOIL_FIXTURE_ROUTES,
   {
     re: /^\/api\/sensors\/monitoring\/range\/([^/]+)/,
     handler: (req, scenario) => {
@@ -1753,6 +1752,8 @@ function monitoringPreviewPlugin(): Plugin {
               /^\/api\/archives\//.test(pathname))) ||
           (req.method === 'PUT' && /^\/api\/lights\//.test(pathname)) ||
           (req.method === 'PUT' && /^\/api\/devices\/registry\/\d+\/relay$/.test(pathname)) ||
+          ((req.method === 'PUT' || req.method === 'DELETE') &&
+            /^\/api\/sensors\/registry\/\d+\/assignment$/.test(pathname)) ||
           (req.method === 'PATCH' && /^\/api\/calendar\/events/.test(pathname)) ||
           (req.method === 'DELETE' && /^\/api\/archives\//.test(pathname))
         const isSensorBulkRead = req.method === 'POST' && pathname === '/api/sensor-data'
@@ -1771,6 +1772,17 @@ function monitoringPreviewPlugin(): Plugin {
           res.statusCode = calendarReply.status
           res.setHeader('Content-Type', 'application/json')
           res.end(JSON.stringify(calendarReply.body))
+          return
+        }
+        const soilReply = soilFixtureReply(
+          { url: req.url ?? '/', method: req.method, body: requestBody },
+          scenario,
+          fixtureSession
+        )
+        if (soilReply !== null) {
+          res.statusCode = soilReply.status
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify(soilReply.body))
           return
         }
         if (pathname === '/api/archives' || pathname.startsWith('/api/archives/')) {
@@ -2114,11 +2126,6 @@ function monitoringPreviewPlugin(): Plugin {
               return
             }
             const body = JSON.stringify(handlerBody)
-            if (scenario === 'bed-capacity-conflict' && pathname.endsWith('/assignment')) {
-              res.statusCode = 409
-              res.end(body)
-              return
-            }
             if (scenario === 'delayed-control-recovery' && pathname.endsWith('/tail')) {
               const key = counterKey('delayed-control-tail')
               const count = scenarioCounters.get(key) ?? 0

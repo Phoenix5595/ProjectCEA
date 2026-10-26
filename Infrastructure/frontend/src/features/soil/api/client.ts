@@ -17,8 +17,12 @@ import {
   type IdentityRequest,
   SensorRegistryList,
   SensorRegistryRecord,
+  SoilBedsResponse,
+  SoilBusStatus,
+  SoilHeatmapResponse,
   SoilHistoryResponse,
   SoilLiveResponse,
+  type SoilMetricName,
 } from './contracts'
 
 export interface ListRegistryParams {
@@ -83,6 +87,30 @@ export const soilApi = {
       body
     )
     return SensorRegistryRecord.parse(response.data)
+  },
+
+  async unassign(registryId: number): Promise<SensorRegistryRecord> {
+    const response = await apiClient.backendClient.delete(
+      `/api/sensors/registry/${registryId}/assignment`
+    )
+    return SensorRegistryRecord.parse(response.data)
+  },
+
+  async busStatus(): Promise<SoilBusStatus> {
+    const response = await apiClient.backendClient.get('/api/sensors/registry/rs485/bus-status')
+    return SoilBusStatus.parse(response.data)
+  },
+
+  async beds(): Promise<SoilBedsResponse> {
+    const response = await apiClient.backendClient.get('/api/sensors/registry/rs485/beds')
+    return SoilBedsResponse.parse(response.data)
+  },
+
+  async heatmap(metric: SoilMetricName): Promise<SoilHeatmapResponse> {
+    const response = await apiClient.backendClient.get('/api/sensors/registry/rs485/heatmap', {
+      params: { metric },
+    })
+    return SoilHeatmapResponse.parse(response.data)
   },
 
   async resolveIdentity(

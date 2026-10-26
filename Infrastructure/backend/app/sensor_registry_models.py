@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 RegistryBus = Literal["can", "rs485"]
 CAN_LOCATIONS = ("front", "back", "main")
@@ -45,13 +45,27 @@ class CanAssignmentRequest(BaseModel):
 
 
 class Rs485AssignmentRequest(BaseModel):
-    """Assign an RS-485 probe to a Flower bed. The room is derived from the
-    chosen bed rack, never accepted from the body."""
+    """Place an RS-485 probe (R9): free position in a Flower bed, or
+    room-level in Veg Room."""
 
     model_config = ConfigDict(extra="forbid")
 
     kind: Literal["rs485"]
-    bed: Literal["Front Bed", "Back Bed"]
+    room: Literal["Flower Room", "Veg Room"]
+    bed: Literal["Front Bed", "Back Bed"] | None = None
+    x_frac: float | None = Field(default=None, ge=0, le=1)
+    y_frac: float | None = Field(default=None, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def _placement_shape(self) -> Rs485AssignmentRequest:
+        spot = (self.bed, self.x_frac, self.y_frac)
+        if self.room == "Flower Room" and any(value is None for value in spot):
+            raise ValueError("Flower Room placement requires bed, x_frac and y_frac")
+        if self.room == "Veg Room" and any(value is not None for value in spot):
+            raise ValueError(
+                "Veg Room placement is room-level; bed, x_frac and y_frac are not allowed"
+            )
+        return self
 
 
 AssignmentRequest = Annotated[
@@ -88,7 +102,9 @@ class CanAssignmentView(BaseModel):
 class Rs485AssignmentView(BaseModel):
     kind: Literal["rs485"]
     room: str
-    bed: str
+    bed: str | None
+    x_frac: float | None
+    y_frac: float | None
 
 
 AssignmentView = CanAssignmentView | Rs485AssignmentView
@@ -119,6 +135,51 @@ class SensorRegistryRecord(BaseModel):
 class SensorRegistryListResponse(BaseModel):
     records: list[SensorRegistryRecord]
     unassigned_count: int
+
+
+# ---------------------------------------------------------------------------
+# RS-485 bus status, beds and heatmap
+# ---------------------------------------------------------------------------
+
+SOIL_HEATMAP_STALE_HOURS = 72
+SOIL_HEATMAP_WINDOW_MINUTES = 10
+
+
+class SoilBusStatus(BaseModel):
+    state: Literal["ok", "power_cycle_required", "no_free_address", "collision", "unknown"]
+    address: int | None
+    at: datetime | None
+
+
+class SoilBed(BaseModel):
+    rack_id: int
+    name: str
+    width_ft: float
+    length_ft: float
+
+
+class SoilBedsResponse(BaseModel):
+    beds: list[SoilBed]
+
+
+class SoilHeatmapPoint(BaseModel):
+    registry_id: int
+    hardware_address: int
+    x_frac: float
+    y_frac: float
+    value: float
+    active: bool
+    removed_at: datetime | None
+
+
+class SoilHeatmapBed(SoilBed):
+    points: list[SoilHeatmapPoint]
+
+
+class SoilHeatmapResponse(BaseModel):
+    metric: Literal["temperature", "water_content", "ec", "ph"]
+    stale_after_hours: int
+    beds: list[SoilHeatmapBed]
 
 
 # ---------------------------------------------------------------------------
