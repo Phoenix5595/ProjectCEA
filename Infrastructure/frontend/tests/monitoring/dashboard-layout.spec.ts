@@ -20,6 +20,10 @@ const LONG_GROUP_EVENT_TYPE =
 const LONG_GROUP_EVENT_LABEL =
   'System greenhouse humidity stayed below the requested target for several consecutive measurements and needs operator review'
 
+/** Category cards only: the per-card detail line and collapse control share the prefix. */
+const EVENT_GROUP_SELECTOR =
+  '[data-testid^="event-group-"]:not([data-testid="event-group-detail"]):not([data-testid="event-group-collapse"])'
+
 const CALENDAR_ITEMS = [
   {
     id: 901,
@@ -350,25 +354,23 @@ test('dashboard fits both supported desktop viewports without overflow', async (
   await expect(labRow).not.toContainText(
     /Mode:|No scheduled transition|TEMP IN BAND|AUTO|Setpoints|heater-1/
   )
-  // The long-label fixture is the content-growth case: the page may exceed the
-  // viewport, so rows and rail panels must be reachable in document flow rather
-  // than squeezed into view. (Strict viewport-fit is asserted on the normal
-  // short-label fixture in event-log.spec.ts.)
-  await flowerRow.scrollIntoViewIfNeeded()
+  // R7: the long-label fixture must also fit one viewport; only the event-log
+  // body and the calendar inspector may scroll internally.
   await expect(flowerRow).toBeInViewport()
-  await vegRow.scrollIntoViewIfNeeded()
   await expect(vegRow).toBeInViewport()
-  await labRow.scrollIntoViewIfNeeded()
   await expect(labRow).toBeInViewport()
-  await page.locator('.dashboard-water-panel [role="img"]').scrollIntoViewIfNeeded()
   await expect(page.locator('.dashboard-water-panel [role="img"]')).toBeInViewport()
-  await page.locator('button[aria-label="Open mothernode status"]').scrollIntoViewIfNeeded()
   await expect(page.locator('button[aria-label="Open mothernode status"]')).toBeInViewport()
+  const longLabelScroll = await page.evaluate(() => ({
+    scrollHeight: document.scrollingElement!.scrollHeight,
+    innerHeight,
+  }))
+  expect(longLabelScroll.scrollHeight).toBeLessThanOrEqual(longLabelScroll.innerHeight + 1)
   const longSystemGroup = page.getByTestId('event-group-system')
   await expect(longSystemGroup.getByText(LONG_GROUP_EVENT_LABEL, { exact: true })).toBeVisible()
   expect(await longSystemGroup.getAttribute('title')).toContain(LONG_GROUP_EVENT_LABEL)
   const groupGrid = page.getByRole('group', { name: 'Grouped alert console' })
-  const groupRows = await groupGrid.locator('[data-testid^="event-group-"]').evaluateAll(elements =>
+  const groupRows = await groupGrid.locator(EVENT_GROUP_SELECTOR).evaluateAll(elements =>
     elements.map(element => {
       const rect = element.getBoundingClientRect()
       return {
@@ -391,13 +393,19 @@ test('dashboard fits both supported desktop viewports without overflow', async (
     if (!grid) return null
     const intersects = (a: DOMRect, b: DOMRect) =>
       a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1
-    const cards = Array.from(grid.querySelectorAll<HTMLElement>('[data-testid^="event-group-"]'))
+    const cards = Array.from(
+      grid.querySelectorAll<HTMLElement>(
+        '[data-testid^="event-group-"]:not([data-testid="event-group-detail"]):not([data-testid="event-group-collapse"])'
+      )
+    )
     const problems: string[] = []
     const cardRects = cards.map(card => card.getBoundingClientRect())
     for (let first = 0; first < cards.length; first += 1) {
       for (let second = first + 1; second < cards.length; second += 1) {
         if (intersects(cardRects[first]!, cardRects[second]!)) {
-          problems.push(`card-overlap:${cards[first]!.dataset.testid}:${cards[second]!.dataset.testid}`)
+          problems.push(
+            `card-overlap:${cards[first]!.dataset.testid}:${cards[second]!.dataset.testid}`
+          )
         }
       }
       const card = cards[first]!
@@ -464,6 +472,7 @@ test('dashboard fits both supported desktop viewports without overflow', async (
       events: '.dashboard-event-log-panel',
       water: '.dashboard-water-panel',
       waterGraphic: '.dashboard-water-panel [role="img"]',
+      waterReadings: '[data-testid="water-tank-readings"]',
       footer: 'button[aria-label="Open mothernode status"]',
     }
     const boxes = Object.fromEntries(
@@ -490,6 +499,8 @@ test('dashboard fits both supported desktop viewports without overflow', async (
       .map(element => ({
         tag: element.tagName,
         className: typeof element.className === 'string' ? element.className : '',
+        // R7 permits exactly the event-log body and the calendar inspector.
+        allowed: element.matches('[data-testid="event-log-body"], .dashboard-inspector'),
         overflowX: getComputedStyle(element).overflowX,
         overflowY: getComputedStyle(element).overflowY,
         scrollHeight: element.scrollHeight,
@@ -502,7 +513,13 @@ test('dashboard fits both supported desktop viewports without overflow', async (
         '.main-dashboard button, .main-dashboard a, .main-dashboard input, .main-dashboard select'
       )
     )
-      .filter(element => element.getClientRects().length > 0)
+      // R7 lets the event-log body and the calendar inspector scroll, so their
+      // off-screen controls stay reachable even when their rects leave the shell.
+      .filter(
+        element =>
+          element.getClientRects().length > 0 &&
+          element.closest('[data-testid="event-log-body"], .dashboard-inspector') === null
+      )
       .map(element => {
         const rect = element.getBoundingClientRect()
         return {
@@ -549,9 +566,10 @@ test('dashboard fits both supported desktop viewports without overflow', async (
   expect(metrics.boxes.events).not.toBeNull()
   expect(metrics.boxes.water).not.toBeNull()
   expect(metrics.boxes.waterGraphic).not.toBeNull()
+  expect(metrics.boxes.waterReadings).not.toBeNull()
   expect(metrics.boxes.footer).not.toBeNull()
   expect(metrics.railOverflow).not.toBeNull()
-  expect(metrics.scrollContainers).toEqual([])
+  expect(metrics.scrollContainers.filter(container => !container.allowed)).toEqual([])
   expect(metrics.outsideControls).toEqual([])
   expect(metrics.document.width).toBeLessThanOrEqual(metrics.document.clientWidth + 1)
   expect(metrics.root!.x).toBe(30)
@@ -565,7 +583,10 @@ test('dashboard fits both supported desktop viewports without overflow', async (
   // 4:1 calendar/inspector tracks side by side only at width >= 1600;
   // 1280 stacks the inspector below the calendar at full track width.
   if (viewport!.width >= 1600) {
-    expect(metrics.boxes.inspectorTrack!.left - metrics.boxes.calendarTrack!.right).toBeCloseTo(8, 0)
+    expect(metrics.boxes.inspectorTrack!.left - metrics.boxes.calendarTrack!.right).toBeCloseTo(
+      8,
+      0
+    )
     const upperTrackRatio = metrics.boxes.calendarTrack!.width / metrics.boxes.inspectorTrack!.width
     expect(upperTrackRatio).toBeGreaterThan(3.8)
     expect(upperTrackRatio).toBeLessThan(4.2)
@@ -622,9 +643,12 @@ test('dashboard fits both supported desktop viewports without overflow', async (
   expect(metrics.boxes.events!.bottom).toBeLessThanOrEqual(metrics.boxes.water!.top + 1)
   expect(metrics.boxes.events!.left).toBeGreaterThanOrEqual(metrics.boxes.rail!.left - 1)
   expect(metrics.boxes.events!.right).toBeLessThanOrEqual(metrics.boxes.rail!.right + 1)
+  // The tank is a fixed 15rem square snapped to the rail's bottom-right corner.
+  expect(Math.abs(metrics.boxes.water!.right - metrics.boxes.rail!.right)).toBeLessThanOrEqual(1)
+  expect(Math.abs(metrics.boxes.water!.bottom - metrics.boxes.rail!.bottom)).toBeLessThanOrEqual(1)
+  expect(Math.abs(metrics.boxes.water!.width - 240)).toBeLessThanOrEqual(1)
+  expect(Math.abs(metrics.boxes.water!.height - 240)).toBeLessThanOrEqual(1)
   expect(metrics.boxes.water!.bottom).toBeLessThanOrEqual(metrics.boxes.footer!.top + 1)
-  expect(metrics.boxes.water!.left).toBeGreaterThanOrEqual(metrics.boxes.rail!.left - 1)
-  expect(metrics.boxes.water!.right).toBeLessThanOrEqual(metrics.boxes.rail!.right + 1)
   expect(metrics.boxes.waterGraphic!.left).toBeGreaterThanOrEqual(metrics.boxes.water!.left - 1)
   expect(metrics.boxes.waterGraphic!.right).toBeLessThanOrEqual(metrics.boxes.water!.right + 1)
   expect(metrics.boxes.waterGraphic!.top).toBeGreaterThanOrEqual(metrics.boxes.water!.top - 1)
@@ -632,6 +656,10 @@ test('dashboard fits both supported desktop viewports without overflow', async (
   expect(
     Math.abs(metrics.boxes.waterGraphic!.width - metrics.boxes.waterGraphic!.height)
   ).toBeLessThanOrEqual(1)
+  // Readings sit 15 px above their 29% anchor line inside the tank graphic.
+  const expectedReadingsTop =
+    metrics.boxes.waterGraphic!.top + 0.29 * metrics.boxes.waterGraphic!.height - 15
+  expect(Math.abs(metrics.boxes.waterReadings!.top - expectedReadingsTop)).toBeLessThanOrEqual(1)
   expect(metrics.railOverflow!.scrollHeight).toBeLessThanOrEqual(
     metrics.railOverflow!.clientHeight + 1
   )
@@ -686,10 +714,14 @@ test('dashboard fits both supported desktop viewports without overflow', async (
   expect((Math.max(...september.weekHeights) - shortestWeek) / shortestWeek).toBeLessThanOrEqual(
     0.03
   )
-  await expect(page.locator('.rdp-day_button[aria-label*="4 tasks"]')).toHaveCount(1)
-
+  // The day's accessible label lists every marker by title (the old
+  // task-count summary is gone since the source-resident marker rewrite).
   const septemberTenth = page.locator('.rdp-day_button[aria-label*="10 septembre 2026"]')
   await expect(septemberTenth).toHaveCount(1)
+  await expect(septemberTenth).toHaveAttribute(
+    'aria-label',
+    /September nutrient check[\s\S]*September follow-up task[\s\S]*Long note event[\s\S]*September sensor inspection/
+  )
   await septemberTenth.click()
   const allDayEvents = page.getByRole('button', { name: 'All 4 events' })
   await expect(allDayEvents).toBeVisible()
@@ -717,11 +749,11 @@ test('dashboard fits both supported desktop viewports without overflow', async (
   await expect(page.getByRole('dialog')).not.toBeVisible()
   await expect(newEventButton).toBeFocused()
 
-  await expect(page.locator('[data-testid^="event-group-"]')).toHaveCount(expectedBucketCount)
+  await expect(page.locator(EVENT_GROUP_SELECTOR)).toHaveCount(expectedBucketCount)
   await expect
     .poll(() =>
       page
-        .locator('[data-testid^="event-group-"]')
+        .locator(EVENT_GROUP_SELECTOR)
         .evaluateAll(elements => elements.map(element => element.getAttribute('data-testid')))
     )
     .toEqual(expectedBucketIds)
@@ -757,30 +789,15 @@ test('dashboard fits both supported desktop viewports without overflow', async (
   await expect(sentinelRow.getByTestId('event-detail-opener')).toBeFocused()
 
   await page.getByTestId('event-group-collapse').click()
-  await expect(page.locator('[data-testid^="event-group-"]')).toHaveCount(expectedBucketCount)
+  await expect(page.locator(EVENT_GROUP_SELECTOR)).toHaveCount(expectedBucketCount)
   await expect
     .poll(() =>
       page
-        .locator('[data-testid^="event-group-"]')
+        .locator(EVENT_GROUP_SELECTOR)
         .evaluateAll(elements => elements.map(element => element.getAttribute('data-testid')))
     )
     .toEqual(expectedBucketIds)
   await expect(page.getByRole('button', { name: /category page/i })).toHaveCount(0)
-  if (!(await page.getByRole('button', { name: 'All events' }).isVisible())) {
-    await page.getByRole('button', { name: /^Filters/ }).click()
-  }
-  await page.getByRole('button', { name: 'All events' }).click()
-  await expect(eventStatus).toHaveText('Page 1 of 10 · 50 events')
-
-  const filterSearch = page.getByRole('searchbox', { name: 'Filter events' })
-  if (!(await filterSearch.isVisible())) {
-    await page.getByRole('button', { name: /^Filters/ }).click()
-  }
-  await filterSearch.fill('dashboard-layout-49')
-  await expect(eventStatus).toHaveText('Page 1 of 1 · 1 event')
-  await filterSearch.fill('')
-  await expect(eventStatus).toHaveText('Page 1 of 10 · 50 events')
-  await page.keyboard.press('Escape')
 
   const finalMetrics = await page.evaluate(() => ({
     documentHeight: document.documentElement.scrollHeight,

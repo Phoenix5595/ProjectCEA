@@ -40,6 +40,10 @@ class CalendarRepositoryFake(CalendarRepository):
         del event_id, applied_date
         return False
 
+    async def get_current_run(self, location: str, today: date | None = None):
+        del location, today
+        return None
+
 
 @final
 class RoomModeRepositoryFake(RoomModeRepository):
@@ -52,7 +56,8 @@ class RoomModeRepositoryFake(RoomModeRepository):
         return self._active
 
     async def get_room_mode_by_name(self, name: str) -> dict[str, Any] | None:
-        return {"id": 2, "name": "flower"} if name == "flower" else None
+        catalogue = {"veg": 1, "flower": 2}
+        return {"id": catalogue[name], "name": name} if name in catalogue else None
 
     async def get_flower_submodes(self) -> list[dict[str, Any]]:
         return [{"id": 4, "name": "bulk"}]
@@ -176,10 +181,21 @@ async def _build_schedule(
         (
             "Flower Room",
             True,
-            {"id": 7, "metadata": {"target_mode_name": "flower", "target_submode_name": "bulk"}},
-            (2, 4),
+            {"id": 7, "metadata": {"target_mode_name": "veg", "target_submode_name": "bulk"}},
+            (1, 4),
         ),
-        ("Flower Room", False, {"id": 7, "metadata": {"target_mode_name": "flower"}}, (1, None)),
+        (
+            "Flower Room",
+            False,
+            {"id": 7, "metadata": {"target_mode_name": "veg", "target_submode_name": "bulk"}},
+            (1, None),
+        ),
+        (
+            "Flower Room",
+            True,
+            {"id": 7, "metadata": {"target_mode_name": "flower", "target_submode_name": "bulk"}},
+            (1, None),
+        ),
         ("Flower Room", True, None, (1, None)),
         ("Veg Room", True, {"id": 7, "metadata": {"target_mode_name": "flower"}}, (1, None)),
     ),
@@ -236,8 +252,8 @@ async def test_saved_timeline_falls_back_to_active_schedule_and_warns_for_unknow
 
 @pytest.mark.asyncio
 async def test_scheduler_skips_unknown_destination_once_and_isolates_sink_failure() -> None:
-    # Given: a due calendar transition whose destination mode cannot resolve.
-    event = {"id": 7, "metadata": {"target_mode_name": "missing"}}
+    # Given: a due same-mode calendar transition whose destination submode cannot resolve.
+    event = {"id": 7, "metadata": {"target_mode_name": "veg", "target_submode_name": "missing"}}
     recording_sink = RecordingSink()
     scheduler = CalendarModeScheduler(DatabaseFake(True, event), recording_sink)
 

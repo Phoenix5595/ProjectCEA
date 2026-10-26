@@ -94,6 +94,7 @@ Reader health fields:
 Routes live in [`../routes/operational_events.py`](../routes/operational_events.py).
 
 - `GET /api/events/history` returns a bounded, cursor-paged window. Default limit 200, max 500, bounded scan up to 5,000. Supports `before` or `after`, room, cluster, category, severity, and `type` filters.
+- **R8 is a UI rule.** No frontend event log has filter controls, a room selector, a view switch or an event total; the dashboard log shows every room as category cards and a room overview's log is scoped by its `location`/`cluster` data. The `/api/events/history` filters above remain for API clients.
 - `GET /api/events/stream?after=<cursor>` returns `text/event-stream` with `Cache-Control: no-cache`. It replays strictly after the supplied Redis ID, then tails with `XREAD` blocking reads.
 - SSE frames use `id:`, `event: operational_event`, and `data:` lines. Filtered events produce `id:`-only cursor frames. Heartbeats are comment frames emitted every 15 seconds of inactivity.
 

@@ -91,10 +91,22 @@ export function categoryTheme(category: string): CategoryVisual {
  * the orange "Sensors" bucket while platform events stay slate "System".
  * The six-bucket console merges raw `ramp` events into "Control" and raw
  * `mutation` events into "System"; the eight-bucket console keeps every raw
- * category in its own bucket. Filtering keeps working on the raw backend
- * category.
+ * category in its own bucket. Categories outside the backend EventCategory
+ * vocabulary land in "System" so they stay reachable without an All-events
+ * view, keeping their raw category and type in the drill-down list (R8).
  */
 export type EventBucketCount = 6 | 8
+
+/** Mirrors the backend EventCategory enum (`app/events/operational_models.py`). */
+const RAW_EVENT_CATEGORIES: Record<string, true> = {
+  relay: true,
+  manual_override: true,
+  ramp: true,
+  control: true,
+  mutation: true,
+  alarm: true,
+  system: true,
+}
 
 /** Canonical slot order per policy; every bucket occupies its slot so the layout never reflows. */
 export const EVENT_BUCKET_ORDERS: Readonly<Record<EventBucketCount, readonly string[]>> = {
@@ -116,7 +128,7 @@ export function displayCategoryOf(
     if (entry.category === 'ramp') return 'control'
     if (entry.category === 'mutation') return 'system'
   }
-  return entry.category
+  return RAW_EVENT_CATEGORIES[entry.category] === true ? entry.category : 'system'
 }
 
 export function relayActiveStateClass(isActive: boolean): string {

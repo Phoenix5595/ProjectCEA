@@ -39,6 +39,10 @@ control/
 
 Every tick captures the current `RuntimeDeviceSnapshot` once. `Scheduler.bind_snapshot()` and `release_snapshot()` scope that snapshot to the tick via a context var, so no cross-version scheduling state leaks between ticks.
 
+## Actuation lock
+
+`run_control_loop()` holds `RuntimeDeviceRegistry.actuation_lock` from the snapshot capture through the end of its `finally` block. Manual device commands (`DeviceCommandService.execute`), raw channel writes, relay tests (one channel per lock span), and registry mutations (`DeviceRegistryService._mutate_outputs`, including relay moves) take the same lock first, so no actuation interleaves with a relay move or a tick. Lock order is actuation, then any service lock. Never re-acquire the actuation lock inside the tick.
+
 ## Scheduler.install_snapshot()
 
 `Scheduler.install_snapshot(snapshot)` atomically installs all projections from one immutable snapshot: mode parameters, light intensities, light programs, and device lookup. The `_ready` flag blocks ticks until the complete snapshot is installed. Partial caches are never visible to the control loop.

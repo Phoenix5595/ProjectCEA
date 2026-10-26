@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date
+from datetime import date, datetime
 import json
 from typing import Any
 from urllib.parse import urlsplit
@@ -12,7 +12,8 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query
 import httpx
 
-from app.calendar.flower_grow_plan import FlowerGrowPlanInput
+from app.calendar.flower_grow_plan import LOCAL_TZ, FlowerGrowPlanInput
+from app.calendar.mode_change import pending_mode_change
 from app.calendar.sync_worker import CalendarSyncWorker
 from app.database import DatabaseManager
 from app.events.mutation_context import (
@@ -31,12 +32,15 @@ from app.schemas.calendar import (
     CalendarCurrentRunResponse,
     CalendarEventCreate,
     CalendarEventUpdate,
+    ExpectedHarvestResponse,
     FlowerCalendarModeTransitionUpdate,
     FlowerGrowPlanRequest,
     GrowAssociationRequest,
     GrowClosePreviewResponse,
     GrowLifecycleResponse,
+    GrowPlanExtendRequest,
     GrowRevisionRequest,
+    PendingModeChangeResponse,
     SyncConnectionCreate,
     SyncConnectionTest,
     SyncReconnectRequest,
@@ -246,6 +250,60 @@ async def get_flower_mode_transitions(
     return {"enabled": await database.calendar_repo.flower_calendar_mode_transitions_enabled()}
 
 
+@router.get(
+    "/pending-mode-change/{location}/{cluster}",
+    response_model=PendingModeChangeResponse | None,
+)
+async def get_pending_mode_change(
+    location: str,
+    cluster: str,
+    database: DatabaseManager = Depends(get_database),
+) -> PendingModeChangeResponse | None:
+    """The manual mode change Flower Room's latest plan still expects (R11)."""
+    if location != "Flower Room" or cluster != "main":
+        return None
+    today = datetime.now(tz=LOCAL_TZ).date()
+    active = await database.room_mode_repo.get_active_mode(location, cluster)
+    plan = await database.calendar_repo.get_latest_flower_plan(today)
+    pending = pending_mode_change((active or {}).get("mode_name"), plan, today)
+    if pending is None:
+        return None
+    return PendingModeChangeResponse(
+        from_mode=pending.from_mode,
+        to_mode=pending.to_mode,
+        to_submode=pending.to_submode,
+        event_id=pending.event_id,
+        since=pending.since,
+    )
+
+
+@router.get(
+    "/expected-harvest/{location}/{cluster}",
+    response_model=ExpectedHarvestResponse | None,
+)
+async def get_expected_harvest(
+    location: str,
+    cluster: str,
+    database: DatabaseManager = Depends(get_database),
+) -> ExpectedHarvestResponse | None:
+    """The last ripen day of the plan occupying the room, only while it is ahead."""
+    today = datetime.now(tz=LOCAL_TZ).date()
+    try:
+        harvest = await database.calendar_repo.get_expected_harvest(location, cluster, today)
+    except GrowPlanCurrentRunAmbiguousError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "current_run_ambiguous", "detail": str(error)},
+        ) from error
+    if harvest is None:
+        return None
+    return ExpectedHarvestResponse(
+        harvest_date=harvest["harvest_date"],
+        grow_plan_id=harvest["grow_plan_id"],
+        event_id=harvest["id"],
+    )
+
+
 @router.put("/flower-mode-transitions")
 @emits_operational_mutation
 async def update_flower_mode_transitions(
@@ -452,15 +510,16 @@ async def create_flower_grow_plan(
     inp = FlowerGrowPlanInput(
         crop_name=body.crop_name,
         environment=body.environment,
-        flower_end=body.flower_end,
-        flower_weeks=body.flower_weeks,
-        include_pot_phases=body.include_pot_phases,
-        clone_weeks=body.clone_weeks,
-        pot_weeks=body.pot_weeks,
-        bed_weeks=body.bed_weeks,
+        anchor=body.anchor,
+        anchor_date=body.anchor_date,
+        bed_veg_start=body.bed_veg_start,
+        bed_veg_days=body.bed_veg_days,
         stretch_days=body.stretch_days,
+        bulk_days=body.bulk_days,
         ripen_days=body.ripen_days,
         drying_days=body.drying_days,
+        pot_start=body.pot_start,
+        clone_start=body.clone_start,
         auto_mode_transition=body.auto_mode_transition,
     )
     try:
@@ -596,6 +655,37 @@ async def delete_grow_plan(
         "events": [
             _serialize_event(event) for event in await _sync_saved_events(database, changed)
         ],
+    }
+
+
+@router.post("/grow-plans/{grow_plan_id}/extend")
+@emits_operational_mutation
+async def extend_grow_plan_phase(
+    grow_plan_id: uuid.UUID,
+    body: GrowPlanExtendRequest,
+    database: DatabaseManager = Depends(get_database),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
+) -> dict[str, Any]:
+    """Extend one current stretch/bulk/ripen phase by a whole number of days."""
+    today = datetime.now(tz=LOCAL_TZ).date()
+    try:
+        before, after, events = await database.calendar_repo.extend_grow_plan_phase(
+            grow_plan_id, body.event_id, body.days, today
+        )
+    except CalendarMutationError as error:
+        _raise_calendar_error(error)
+    _emit_calendar_mutation(
+        sink,
+        context,
+        "update",
+        after,
+        _calendar_event_values(before),
+        _calendar_event_values(after),
+    )
+    return {
+        "grow_plan_id": str(grow_plan_id),
+        "events": [_serialize_event(event) for event in await _sync_saved_events(database, events)],
     }
 
 

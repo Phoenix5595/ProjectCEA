@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { SensorSampleMeta } from '../../../types/sensor'
 import {
   buildTrendMetric,
+  clusterFreshnessText,
   deriveRoomControlContext,
   deriveRoomDecisionSummary,
   deriveClusterSensorStatus,
@@ -32,12 +33,14 @@ describe('dashboard status derivations', () => {
     expect(front).toEqual({
       quality: 'stale',
       newestAgeMs: 46_000,
+      newestObservedAtMs: nowMs - 46_000,
       source: 'poll',
       cluster: 'front',
     })
     expect(back).toEqual({
       quality: 'live',
       newestAgeMs: 2_000,
+      newestObservedAtMs: nowMs - 2_000,
       source: 'websocket',
       cluster: 'back',
     })
@@ -54,6 +57,7 @@ describe('dashboard status derivations', () => {
     expect(badFront).toEqual({
       quality: 'bad',
       newestAgeMs: null,
+      newestObservedAtMs: null,
       source: null,
       cluster: 'front',
     })
@@ -78,10 +82,51 @@ describe('dashboard status derivations', () => {
     ).toEqual({
       quality: 'missing',
       newestAgeMs: null,
+      newestObservedAtMs: null,
       source: null,
       cluster: 'front',
     })
     expect(deriveClusterSensorStatus('Veg Room', 'main', {}, nowMs).quality).toBe('missing')
+  })
+
+  it('describes freshness from the last good Toronto reading', () => {
+    const live = clusterFreshnessText({
+      quality: 'live',
+      newestAgeMs: 2_000,
+      newestObservedAtMs: nowMs - 2_000,
+      source: 'websocket',
+      cluster: 'back',
+    })
+    expect(live).toBe('Last good reading 11:59:58 (Toronto) · 2s ago · WebSocket')
+
+    const stalePoll = clusterFreshnessText({
+      quality: 'stale',
+      newestAgeMs: 185_000,
+      newestObservedAtMs: nowMs - 185_000,
+      source: 'poll',
+      cluster: 'front',
+    })
+    expect(stalePoll).toBe('Last good reading 11:56:55 (Toronto) · 3m 05s ago · polling')
+
+    expect(
+      clusterFreshnessText({
+        quality: 'missing',
+        newestAgeMs: null,
+        newestObservedAtMs: null,
+        source: null,
+        cluster: 'front',
+      })
+    ).toBe('No reading received')
+
+    expect(
+      clusterFreshnessText({
+        quality: 'bad',
+        newestAgeMs: null,
+        newestObservedAtMs: null,
+        source: null,
+        cluster: 'front',
+      })
+    ).toBe('No valid reading received')
   })
 
   it('selects the abnormal Flower layer and keeps signed deltas', () => {

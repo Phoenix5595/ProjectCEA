@@ -7,7 +7,13 @@
  */
 import axios, { AxiosInstance } from 'axios'
 
-import { ARCHIVE_API_URL, AUTOMATION_API_URL, BACKEND_API_URL, CEA_API_KEY, WEATHER_API_URL } from '../config/env'
+import {
+  ARCHIVE_API_URL,
+  AUTOMATION_API_URL,
+  BACKEND_API_URL,
+  CEA_API_KEY,
+  WEATHER_API_URL,
+} from '../config/env'
 import { timelineMethods } from '../features/climate-timeline/api/timeline'
 import type { TimelineApi } from '../features/climate-timeline/api/timeline'
 import type { components } from '../generated/api'
@@ -26,6 +32,8 @@ import type {
   CalendarReconnectResult,
   CalendarTestResult,
   CalendarConnection,
+  ExpectedHarvest,
+  PendingModeChange,
 } from '../types/calendar'
 import type { LightTargetSetResponse } from '../types/light'
 import type {
@@ -343,6 +351,31 @@ class ApiClient implements ApiClientCore {
     return response.data
   }
 
+  async extendGrowPlanPhase(
+    growPlanId: string,
+    eventId: number,
+    days: number
+  ): Promise<{ grow_plan_id: string; events: CalendarEventDto[] }> {
+    const response = await this.automationClient.post(
+      `/api/calendar/grow-plans/${encodeURIComponent(growPlanId)}/extend`,
+      { event_id: eventId, days }
+    )
+    return response.data
+  }
+
+  async getPendingModeChange(location: string, cluster: string): Promise<PendingModeChange | null> {
+    const response = await this.automationClient.get<PendingModeChange | null>(
+      `/api/calendar/pending-mode-change/${encodeURIComponent(location)}/${encodeURIComponent(cluster)}`
+    )
+    return response.data
+  }
+
+  async getExpectedHarvest(location: string, cluster: string): Promise<ExpectedHarvest | null> {
+    const response = await this.automationClient.get<ExpectedHarvest | null>(
+      `/api/calendar/expected-harvest/${encodeURIComponent(location)}/${encodeURIComponent(cluster)}`
+    )
+    return response.data
+  }
 
   async getModeSchedule(
     location: string,
@@ -382,7 +415,6 @@ class ApiClient implements ApiClientCore {
     return response.data
   }
 
-
   async getGrowLifecycle(growPlanId: string): Promise<GrowLifecycle> {
     const response = await this.automationClient.get(
       `/api/calendar/grow-plans/${encodeURIComponent(growPlanId)}/lifecycle`
@@ -420,7 +452,10 @@ class ApiClient implements ApiClientCore {
     return response.data
   }
 
-  async reconnectCalendar(connectionId: number, expectedGeneration: number): Promise<CalendarReconnectResult> {
+  async reconnectCalendar(
+    connectionId: number,
+    expectedGeneration: number
+  ): Promise<CalendarReconnectResult> {
     const response = await this.automationClient.post(
       `/api/calendar/sync/connections/${connectionId}/reconnect`,
       { expected_generation: expectedGeneration, backup_confirmed: true }
@@ -445,7 +480,6 @@ class ApiClient implements ApiClientCore {
     const response = await this.automationClient.post('/api/calendar/sync/run')
     return response.data
   }
-
 
   // System Config (automation service)
   async getConfig(): Promise<SystemConfigResponse> {

@@ -12,8 +12,6 @@ export type Sector = 'laboratory' | 'vegetation' | 'flower' | 'devices'
 
 export interface TopRibbonProps {
   sector: Sector
-  activeTab: string
-  onTabChange: (tab: string) => void
   roomName?: string
   showActions?: boolean
   onSave?: () => void
@@ -51,23 +49,29 @@ interface Tab {
 }
 
 const sectorTabs: Record<Sector, Tab[]> = {
-  laboratory: [{ id: 'overview', label: 'Overview', path: '/laboratory' }],
+  laboratory: [],
   vegetation: [
-    { id: 'overview', label: 'Overview', path: '/vegetation' },
     { id: 'monitoring', label: 'Monitoring', path: '/vegetation/monitoring' },
-    { id: 'historical', label: 'Historical', path: '/vegetation/historical' },
     { id: 'control', label: 'Control', path: '/vegetation/control' },
     { id: 'automation', label: 'Automation', path: '/vegetation/automation' },
+    { id: 'historical', label: 'Historical', path: '/vegetation/historical' },
   ],
   flower: [
-    { id: 'overview', label: 'Overview', path: '/flower' },
     { id: 'monitoring', label: 'Monitoring', path: '/flower/monitoring' },
-    { id: 'historical', label: 'Historical', path: '/flower/historical' },
-    { id: 'soil', label: 'Soil', path: '/flower/soil' },
     { id: 'control', label: 'Control', path: '/flower/control' },
     { id: 'automation', label: 'Automation', path: '/flower/automation' },
+    { id: 'soil', label: 'Soil', path: '/flower/soil' },
+    { id: 'historical', label: 'Historical', path: '/flower/historical' },
   ],
-  devices: [{ id: 'overview', label: 'Overview', path: '/devices' }],
+  devices: [],
+}
+
+/** Sector overview path; the ribbon heading links to it. */
+const sectorRootPaths: Record<Sector, string> = {
+  laboratory: '/laboratory',
+  vegetation: '/vegetation',
+  flower: '/flower',
+  devices: '/devices',
 }
 
 const sectorIcons: Record<Sector, LucideIcon> = {
@@ -133,8 +137,6 @@ const chipClass = (state: RibbonChipState): string => {
 
 const TopRibbon: FC<TopRibbonProps> = ({
   sector,
-  activeTab,
-  onTabChange,
   roomName,
   showActions = false,
   onSave,
@@ -171,14 +173,8 @@ const TopRibbon: FC<TopRibbonProps> = ({
   const tabs = sectorTabs[sector]
 
   const currentPath = location.pathname
-  const activeTabFromPath = tabs.find(tab => {
-    if (tab.id === 'overview') {
-      return currentPath === tab.path
-    }
-    return currentPath.startsWith(tab.path)
-  })
+  const activeTabId = tabs.find(tab => currentPath.startsWith(tab.path))?.id ?? null
 
-  const activeTabId = activeTabFromPath?.id || activeTab || 'overview'
   const isControlPage = currentPath.includes('/control')
 
   const displayRoomName = roomName || sectorDefaultNames[sector]
@@ -195,8 +191,14 @@ const TopRibbon: FC<TopRibbonProps> = ({
   return (
     <AppRibbon position="top" sticky className="pl-2 overflow-x-visible">
       <h1 className="flex max-w-none shrink-0 items-center gap-1 overflow-hidden whitespace-nowrap text-base font-bold text-text-default">
-        <SectorIconComponent className="size-5 shrink-0" />
-        <span className="inline">{displayRoomName}</span>
+        <Link
+          to={sectorRootPaths[sector]}
+          aria-current={currentPath === sectorRootPaths[sector] ? 'page' : undefined}
+          className="flex items-center gap-1"
+        >
+          <SectorIconComponent className="size-5 shrink-0" />
+          <span className="inline">{displayRoomName}</span>
+        </Link>
       </h1>
 
       <nav className="flex min-w-0 flex-1">
@@ -207,7 +209,7 @@ const TopRibbon: FC<TopRibbonProps> = ({
               <Link
                 key={tab.id}
                 to={tab.id === 'historical' ? `${tab.path}?${historicalSearch}` : tab.path}
-                onClick={() => onTabChange(tab.id)}
+                aria-current={isActive ? 'page' : undefined}
                 className={`
                   px-1.5 py-1 text-sm font-medium whitespace-nowrap
                   transition-colors duration-200 rounded-lg

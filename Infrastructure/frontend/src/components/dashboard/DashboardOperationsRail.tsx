@@ -28,9 +28,12 @@ function formatMetric(value: number | undefined, unit: string, digits = 1): stri
 function WaterTankGraphic({
   levelPercent,
   waterTemp,
+  fit = 'width',
 }: {
   levelPercent: number | null
   waterTemp: number | undefined
+  /** 'width' sizes from the parent width (default); 'height' fits a square panel. */
+  fit?: 'width' | 'height'
 }) {
   const BODY_TOP = 20
   const BODY_BOTTOM = 82
@@ -161,12 +164,26 @@ function WaterTankGraphic({
   )
 
   return (
-    <div className="relative w-full aspect-square min-h-0" role="img" aria-label={ariaLabel}>
+    <div
+      className={`${
+        fit === 'height'
+          ? 'relative h-full max-w-full aspect-square min-h-0'
+          : 'relative w-full aspect-square min-h-0'
+      }`}
+      role="img"
+      aria-label={ariaLabel}
+    >
       {tank}
-      <div className="absolute left-[22%] right-[24%] top-[29%] bottom-[17%] flex flex-col justify-center gap-1 px-1 text-center">
+      <div
+        data-testid="water-tank-readings"
+        className="absolute left-[22%] right-[24%] top-[29%] bottom-[17%] flex -translate-y-[15px] flex-col justify-center gap-1 px-1 text-center"
+      >
         {details}
       </div>
-      <div className="absolute right-0 top-[31%] text-[clamp(0.45rem,0.8vw,0.6rem)] font-mono text-text-muted [writing-mode:vertical-rl]">
+      <div
+        data-testid="water-tank-level-label"
+        className="absolute right-0 top-[31%] -translate-y-[15px] text-[clamp(0.45rem,0.8vw,0.6rem)] font-mono text-text-muted [writing-mode:vertical-rl]"
+      >
         {level != null ? `${level}%` : '—'}
       </div>
     </div>
@@ -177,20 +194,28 @@ interface RailSectionProps {
   title: string
   children: React.ReactNode
   boxed?: boolean
+  /** Fill the remaining height of a fixed panel (water tank under the log). */
+  fill?: boolean
 }
 
-function RailSection({ title, children, boxed = false }: RailSectionProps) {
+function RailSection({ title, children, boxed = false, fill = false }: RailSectionProps) {
   return (
     <section
       aria-label={title}
       className={
-        boxed
-          ? 'border border-border-subtle rounded-md px-2 py-2 min-h-0 overflow-y-auto'
-          : 'border-b border-border-subtle px-2 py-2'
+        fill
+          ? 'flex min-h-0 flex-1 flex-col px-2 py-2'
+          : boxed
+            ? 'border border-border-subtle rounded-md px-2 py-2 min-h-0 overflow-y-auto'
+            : 'border-b border-border-subtle px-2 py-2'
       }
     >
       <h3 className="text-xs font-bold uppercase tracking-wide text-text-muted mb-1.5">{title}</h3>
-      {children}
+      {fill ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center">{children}</div>
+      ) : (
+        children
+      )}
     </section>
   )
 }
@@ -226,6 +251,7 @@ export default function DashboardOperationsRail({
   const grid = layout === 'grid'
   const showLab = sections !== 'water'
   const showWater = sections !== 'lab'
+  const waterOnly = sections === 'water'
   // Pi machine stats and service status live in the bottom Mothernode ribbon;
   // the lower-row strip only carries Lab (and degraded, while it is active).
 
@@ -234,8 +260,8 @@ export default function DashboardOperationsRail({
       className={
         grid
           ? `grid h-full min-h-0 grid-cols-1 auto-rows-fr gap-2 overflow-y-auto bg-surface-primary border border-border-subtle rounded-lg p-2`
-          : sections === 'water'
-            ? 'flex flex-col min-h-0 bg-surface-primary border border-border-subtle rounded-lg'
+          : waterOnly
+            ? 'flex h-full flex-col min-h-0 bg-surface-primary border border-border-subtle rounded-lg'
             : 'flex flex-col h-full min-h-0 overflow-y-auto bg-surface-primary border border-border-subtle rounded-lg'
       }
     >
@@ -257,8 +283,12 @@ export default function DashboardOperationsRail({
       )}
 
       {showWater && (
-        <RailSection title="Water" boxed={grid}>
-          <WaterTankGraphic levelPercent={waterLevelPercent} waterTemp={waterTemp} />
+        <RailSection title="Water" boxed={grid} fill={waterOnly}>
+          <WaterTankGraphic
+            levelPercent={waterLevelPercent}
+            waterTemp={waterTemp}
+            fit={waterOnly ? 'height' : 'width'}
+          />
         </RailSection>
       )}
     </div>

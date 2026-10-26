@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import type { Page } from '@playwright/test'
 import { describeViolation } from '../../src/features/monitoring/config/originGuard'
 import { fixtureUrl } from './fixtureUrl'
 import {
@@ -6,7 +7,11 @@ import {
   type EventBucketCount,
 } from '../../src/features/event-log/presentation/categoryTheme'
 
-function trackViolations(page: import('@playwright/test').Page): string[] {
+/** Category cards only: the per-card detail line and collapse control share the prefix. */
+const EVENT_GROUP_SELECTOR =
+  '[data-testid^="event-group-"]:not([data-testid="event-group-detail"]):not([data-testid="event-group-collapse"])'
+
+function trackViolations(page: Page): string[] {
   const violations: string[] = []
   page.on('request', request => {
     const violation = describeViolation(request.url())
@@ -15,7 +20,7 @@ function trackViolations(page: import('@playwright/test').Page): string[] {
   return violations
 }
 
-test('grouped alert console opens by default, reacts to window height, and keeps raw filters', async ({
+test('grouped alert console opens by default, reacts to window height, and opens one category list', async ({
   page,
 }, testInfo) => {
   const violations = trackViolations(page)
@@ -29,10 +34,12 @@ test('grouped alert console opens by default, reacts to window height, and keeps
   const categoryCard = (category: string) => page.getByTestId(`event-group-${category}`)
   const groupedIds = () =>
     page
-      .locator('[data-testid^="event-group-"]')
+      .locator(EVENT_GROUP_SELECTOR)
       .evaluateAll(elements => elements.map(element => element.getAttribute('data-testid')))
   const expectGroupedIds = async (policy: EventBucketCount) => {
-    await expect(page.getByRole('group', { name: 'Grouped alert console' })).toBeVisible()
+    await expect(page.getByRole('group', { name: 'Grouped alert console' })).toBeVisible({
+      timeout: 15_000,
+    })
     await expect
       .poll(groupedIds)
       .toEqual(EVENT_BUCKET_ORDERS[policy].map(category => `event-group-${category}`))
@@ -41,6 +48,15 @@ test('grouped alert console opens by default, reacts to window height, and keeps
   await page.goto(fixtureUrl('/', testInfo, undefined, 'grouped-console'))
   await expectGroupedIds(initialPolicy)
   await expect(categoryCard('sensor')).toContainText('Sensor degraded')
+
+  // R8: the dashboard log carries no filter toolbar, room selector, view
+  // switch or event total; the cards are the whole interface.
+  const log = page.locator('[aria-labelledby="event-log-heading"]')
+  await expect(page.getByRole('toolbar')).toHaveCount(0)
+  await expect(log.getByRole('button', { name: /^(Filters|All events|Alerts)$/ })).toHaveCount(0)
+  await expect(log.getByRole('searchbox')).toHaveCount(0)
+  await expect(log.getByRole('button', { name: /^(Flower Room|Veg Room|Lab)$/ })).toHaveCount(0)
+  await expect(log.getByText(/^\d+ events?$/)).toHaveCount(0)
 
   // Normal short-label fixture: the dashboard fits the viewport without page
   // scroll (no component scrolling involved) at BOTH supported heights.
@@ -54,6 +70,21 @@ test('grouped alert console opens by default, reacts to window height, and keeps
     expect(fit.doc).toBeLessThanOrEqual(fit.client + 1)
   }
   await expectViewportFit()
+
+  // Every non-empty card carries exactly one detail line from its latest event.
+  const cards = page.locator(EVENT_GROUP_SELECTOR)
+  let nonEmptyCards = 0
+  for (let index = 0; index < (await cards.count()); index += 1) {
+    const card = cards.nth(index)
+    if ((await card.getAttribute('aria-disabled')) === 'true') continue
+    nonEmptyCards += 1
+    const detail = card.getByTestId('event-group-detail')
+    await expect(detail).toHaveCount(1)
+    const text = (await detail.textContent())?.trim() ?? ''
+    expect(text.length).toBeGreaterThan(0)
+    expect(await detail.getAttribute('title')).toBe(text)
+  }
+  expect(nonEmptyCards).toBeGreaterThan(0)
 
   // Count badge + latest-event summary per row; the policy decides whether
   // ramp/mutation merge into their neighbours.
@@ -84,9 +115,8 @@ test('grouped alert console opens by default, reacts to window height, and keeps
 
   // Live height transition leg: before switching, expand the category that
   // changes meaning across policies (raw ramp when tall, merged control when
-  // short), open its inline detail, and select one raw filter. The transition
-  // must return to the proper overview with the filter preserved and no stale
-  // detail or page position.
+  // short) and open its inline detail. The transition must return to the
+  // proper overview with no stale detail, list or page position.
   if (initialPolicy === 8) {
     await categoryCard('ramp').click()
   } else {
@@ -96,9 +126,6 @@ test('grouped alert console opens by default, reacts to window height, and keeps
   await expect(expandedList.getByRole('listitem')).toHaveCount(initialPolicy === 8 ? 1 : 4)
   await expandedList.getByTestId('event-detail-opener').first().click()
   await expect(page.getByRole('region', { name: 'Selected event details' })).toBeVisible()
-  await page.getByRole('button', { name: /^Filters/ }).click()
-  await page.getByRole('checkbox', { name: 'ramp', exact: true }).check()
-  await expect(page.getByTestId('event-events-page-status')).toHaveText('Page 1 of 1 · 1 event')
 
   await page.setViewportSize(otherViewport)
   await expectGroupedIds(otherPolicy)
@@ -108,10 +135,10 @@ test('grouped alert console opens by default, reacts to window height, and keeps
   if (otherPolicy === 8) {
     await expect(categoryCard('ramp').getByText('1', { exact: true })).toBeVisible()
     await expect(categoryCard('ramp')).toContainText('Ramp started')
-    await expect(categoryCard('control').getByText('0', { exact: true })).toBeVisible()
+    await expect(categoryCard('control').getByText('3', { exact: true })).toBeVisible()
   } else {
-    // Merged six-bucket card shows ONLY the surviving raw ramp filter.
-    await expect(categoryCard('control').getByText('1', { exact: true })).toBeVisible()
+    // The merged six-bucket Control card keeps the raw ramp event on top.
+    await expect(categoryCard('control').getByText('4', { exact: true })).toBeVisible()
     await expect(categoryCard('control')).toContainText('Ramp started')
   }
 
@@ -124,40 +151,12 @@ test('grouped alert console opens by default, reacts to window height, and keeps
     await expect(categoryCard('control')).toContainText('Ramp started')
   }
 
-  // Raw Ramp and Mutation filters select only the original backend
-  // categories; clearing returns the full 11-event fixture and Alerts view.
-  // Grouped overview has no page-status row, so switch to the flat list first:
-  // this also re-proves the raw filter survived both resizes.
-  if (!(await page.getByRole('button', { name: 'All events' }).isVisible())) {
-    await page.getByRole('button', { name: /^Filters/ }).click()
-  }
-  await page.getByRole('button', { name: 'All events' }).click()
-  await expect(page.getByTestId('event-events-page-status')).toHaveText('Page 1 of 1 · 1 event')
-  const clearAll = page.getByRole('button', { name: /Clear all filters/ })
-  if (await clearAll.isVisible()) await clearAll.click()
-  if (!(await page.getByRole('checkbox', { name: 'mutation', exact: true }).isVisible())) {
-    await page.getByRole('button', { name: /^Filters/ }).click()
-  }
-  await page.getByRole('checkbox', { name: 'mutation', exact: true }).check()
-  await expect(page.getByTestId('event-events-page-status')).toHaveText('Page 1 of 1 · 1 event')
-  await expect(page.getByText('Configuration updated')).toBeVisible()
-  await page.getByRole('checkbox', { name: 'mutation', exact: true }).uncheck()
-  await page.getByRole('checkbox', { name: 'ramp', exact: true }).check()
-  await expect(page.getByTestId('event-events-page-status')).toHaveText('Page 1 of 1 · 1 event')
-  await expect(page.getByText('Ramp started')).toBeVisible()
-  await page.getByRole('checkbox', { name: 'ramp', exact: true }).uncheck()
-  await expect(page.getByTestId('event-events-page-status')).toHaveText('Page 1 of 3 · 11 events')
-  await page.getByRole('button', { name: 'Alerts' }).click()
+  // A card's list is one control away from the overview again.
+  await categoryCard(initialPolicy === 8 ? 'ramp' : 'control').click()
+  await expect(page.getByTestId('event-group-collapse')).toBeVisible()
+  await page.getByTestId('event-group-collapse').click()
   await expectGroupedIds(initialPolicy)
-  await expect(categoryCard('relay').getByText('3', { exact: true })).toBeVisible()
-  await expect(categoryCard('relay')).toContainText('Relay command failed')
 
-  // The viewport-fit proof runs with the disclosure closed: an opened filter
-  // disclosure may legitimately grow the document per the layout rules.
-  const filtersTrigger = page.getByRole('button', { name: 'Filters' })
-  if ((await filtersTrigger.getAttribute('aria-expanded')) === 'true') {
-    await filtersTrigger.click()
-  }
   await expectViewportFit()
   await page.screenshot({ path: `${testInfo.outputDir}/grouped-console-final.png`, fullPage: true })
 
@@ -169,7 +168,7 @@ test('relay-active state text renders in the green category shade', async ({ pag
 
   await page.goto(fixtureUrl('/', testInfo, undefined, 'grouped-console'))
   const relayRow = page.getByTestId('event-group-relay')
-  await expect(relayRow).toBeVisible()
+  await expect(relayRow).toBeVisible({ timeout: 15_000 })
   await expect(relayRow).toContainText('Relay command failed')
 
   // Expanding the relay category surfaces the engaged ON state row.
@@ -201,6 +200,7 @@ test('from-to setpoint values render on enriched rows and in expanded lists', as
   const policy: EventBucketCount = page.viewportSize()!.height >= 1300 ? 8 : 6
 
   await page.goto(fixtureUrl('/', testInfo, undefined, 'grouped-console'))
+  await expect(page.getByTestId('event-group-control')).toBeVisible({ timeout: 15_000 })
   await page.getByTestId('event-group-control').click()
 
   const list = page.getByRole('list', { name: 'Event list' })
@@ -240,28 +240,6 @@ test('from-to setpoint values render on enriched rows and in expanded lists', as
     await page.getByTestId('event-group-collapse').click()
   }
   await expect(page.getByTestId('event-group-control')).toBeVisible()
-
-  expect(violations).toEqual([])
-})
-
-test('the All events toggle shows the flat newest-first list and filters still work', async ({
-  page,
-}, testInfo) => {
-  const violations = trackViolations(page)
-
-  await page.goto(fixtureUrl('/flower', testInfo, undefined, 'grouped-console'))
-  await page.getByRole('button', { name: 'All events' }).click()
-  const list = page.getByRole('list', { name: 'Event list' })
-  await expect(list).toBeVisible()
-  await expect(list.getByRole('listitem')).toHaveCount(11)
-  await expect(list.getByRole('listitem').first()).toContainText('Relay command failed')
-
-  // Severity filtering still applies in the flat view.
-  await page.getByRole('button', { name: 'Critical' }).click()
-  await expect(list.getByRole('listitem')).toHaveCount(1)
-  await expect(list.getByRole('listitem').first()).toContainText('Alarm triggered')
-
-  await page.screenshot({ path: `${testInfo.outputDir}/flat-filtered.png` })
 
   expect(violations).toEqual([])
 })

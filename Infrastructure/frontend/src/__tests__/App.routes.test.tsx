@@ -126,17 +126,33 @@ describe('historical entry', () => {
 })
 
 describe('sector navigation', () => {
-  it('does not expose obsolete Laboratory tabs', () => {
+  it('renders only the sector root link for Laboratory', () => {
     render(
       <MemoryRouter initialEntries={['/laboratory']}>
-        <TopRibbon sector="laboratory" activeTab="overview" onTabChange={() => {}} />
+        <TopRibbon sector="laboratory" />
       </MemoryRouter>
     )
 
-    expect(screen.getByRole('link', { name: 'Overview' })).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Climate' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Water' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Infrastructure' })).not.toBeInTheDocument()
+    const links = screen.getAllByRole('link')
+    expect(links).toHaveLength(1)
+    expect(links[0]).toHaveAccessibleName('Laboratory')
+    expect(links[0]).toHaveAttribute('href', '/laboratory')
+    expect(links[0]).toHaveAttribute('aria-current', 'page')
+    expect(screen.queryByRole('link', { name: 'Overview' })).not.toBeInTheDocument()
+  })
+
+  it('renders only the sector root link for Devices', () => {
+    render(
+      <MemoryRouter initialEntries={['/devices']}>
+        <TopRibbon sector="devices" />
+      </MemoryRouter>
+    )
+
+    const links = screen.getAllByRole('link')
+    expect(links).toHaveLength(1)
+    expect(links[0]).toHaveAccessibleName('Device Configuration')
+    expect(links[0]).toHaveAttribute('href', '/devices')
+    expect(links[0]).toHaveAttribute('aria-current', 'page')
   })
 
   it('renders the Flower Soil page at /flower/soil with a Soil ribbon link', async () => {
@@ -150,15 +166,26 @@ describe('sector navigation', () => {
     expect(window.location.pathname).toBe('/flower/soil')
   })
 
-  it('exposes the Soil link in the Flower ribbon and marks it active on that path', () => {
+  it('orders the Flower ribbon links and marks the Soil tab as current', () => {
     render(
       <MemoryRouter initialEntries={['/flower/soil']}>
-        <TopRibbon sector="flower" activeTab="soil" onTabChange={() => {}} />
+        <TopRibbon sector="flower" />
       </MemoryRouter>
     )
 
-    expect(screen.getByRole('link', { name: 'Monitoring' })).toBeInTheDocument()
+    const links = screen.getAllByRole('link')
+    expect(links.map(link => link.textContent)).toEqual([
+      'Flower Room',
+      'Monitoring',
+      'Control',
+      'Automation',
+      'Soil',
+      'Historical',
+    ])
+
     const soilLink = screen.getByRole('link', { name: 'Soil' })
     expect(soilLink).toHaveAttribute('href', '/flower/soil')
+    expect(soilLink).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'Flower Room' })).not.toHaveAttribute('aria-current')
   })
 })

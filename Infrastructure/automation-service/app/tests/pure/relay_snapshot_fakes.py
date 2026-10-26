@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections import deque
 
 
@@ -13,6 +14,7 @@ class Snapshot:
 class Registry:
     def __init__(self) -> None:
         self.snapshot = Snapshot()
+        self.actuation_lock = asyncio.Lock()
 
     def subscribe(self, _callback) -> None:
         return None
@@ -98,6 +100,7 @@ class SnapshotBinding:
     def __init__(self) -> None:
         self.snapshot = object()
         self.released: list[object] = []
+        self.actuation_lock = asyncio.Lock()
 
     def bind_snapshot(self, _snapshot: object) -> object:
         return object()

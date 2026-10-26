@@ -19,6 +19,7 @@ from app.calendar.flower_grow_plan import (
     build_flower_grow_plan,
     phase_to_metadata,
 )
+from app.calendar.mode_change import FlowerPlanDates
 from app.repositories.base import BaseRepository, logger
 from shared.grow_lifecycle import (
     GrowLifecycleInputError,
@@ -976,6 +977,170 @@ class CalendarRepository(BaseRepository):
                 continue
         raise CalendarMutationError("calendar_event_conflict", 409)
 
+    async def _lock_plan_for_shift(
+        self, conn: asyncpg.Connection, grow_plan_id: uuid.UUID
+    ) -> dict[uuid.UUID, asyncpg.Record]:
+        """Lock one plan's rooms, lifecycle and dataset before shifting its phases."""
+        initial = await conn.fetch(
+            "SELECT * FROM calendar_event WHERE grow_plan_id=$1 AND deleted_at IS NULL ORDER BY id",
+            grow_plan_id,
+        )
+        rooms = [row["location"] for row in initial]
+        await self._lock_rooms(conn, rooms)
+        current = await conn.fetch(
+            "SELECT * FROM calendar_event WHERE grow_plan_id=$1 AND deleted_at IS NULL ORDER BY id",
+            grow_plan_id,
+        )
+        if any(row["location"] not in rooms for row in current):
+            raise _RetryRoomLocks
+        grows = await self._lock_grows(conn, [grow_plan_id], require_all=True)
+        if grows[grow_plan_id]["state"] == "closed":
+            raise CalendarMutationError("grow_closed")
+        return await self._lock_datasets(conn, [grow_plan_id])
+
+    @staticmethod
+    async def _shift_phases_locked(
+        conn: asyncpg.Connection,
+        grow_plan_id: uuid.UUID,
+        after_phase_order: int,
+        days: int,
+    ) -> None:
+        """Move every later phase of the plan by ``days`` while already locked."""
+        await conn.execute(
+            "UPDATE calendar_event SET start_date=start_date+$3::int,"
+            "end_date=end_date+$3::int,sync_status='pending_push',"
+            "updated_at=clock_timestamp() "
+            "WHERE grow_plan_id=$1 AND deleted_at IS NULL "
+            "AND (metadata->>'phase_order')::int > $2",
+            grow_plan_id,
+            after_phase_order,
+            days,
+        )
+
+    async def _finish_shift(
+        self,
+        conn: asyncpg.Connection,
+        grow_plan_id: uuid.UUID,
+        datasets: Mapping[uuid.UUID, asyncpg.Record],
+    ) -> list[dict[str, Any]]:
+        """Validate, fence and re-read a plan after a phase shift."""
+        windows = self._phase_windows(await self._active_phase_events(conn, grow_plan_id))
+        await self._assert_no_overlaps(conn, windows, grow_plan_id)
+        await self._advance_membership(conn, [grow_plan_id], datasets)
+        return await self._active_phase_events(conn, grow_plan_id)
+
+    @staticmethod
+    async def _pending_flower_alignment(
+        conn: asyncpg.Connection,
+        grow_plan_id: uuid.UUID,
+        flower_start: date,
+        *,
+        forward_only: bool,
+    ) -> tuple[int, int, int] | None:
+        """The bed-veg row, its phase order and the flip delta a shift would apply."""
+        rows = await conn.fetch(
+            "SELECT id,event_type,start_date,end_date,metadata FROM calendar_event "
+            "WHERE grow_plan_id=$1 AND deleted_at IS NULL "
+            "AND event_type IN ('bed_veg','flip_to_flower','flower_stretch') "
+            "ORDER BY start_date,id",
+            grow_plan_id,
+        )
+        phases = {row["event_type"]: dict(row) for row in rows}
+        bed_veg = phases.get("bed_veg")
+        flip = phases.get("flip_to_flower")
+        stretch = phases.get("flower_stretch")
+        if bed_veg is None or flip is None or stretch is None:
+            return None
+        stretch_end = stretch["end_date"] or stretch["start_date"]
+        if flower_start > stretch_end or bed_veg["start_date"] >= flower_start:
+            return None
+        delta = (flower_start - flip["start_date"]).days
+        if delta == 0 or (forward_only and delta < 0):
+            return None
+        phase_order = CalendarRepository.parse_metadata(bed_veg["metadata"]).get("phase_order")
+        if not isinstance(phase_order, int) or isinstance(phase_order, bool):
+            return None
+        return bed_veg["id"], phase_order, delta
+
+    async def align_flower_start(
+        self, grow_plan_id: uuid.UUID, flower_start: date, *, forward_only: bool
+    ) -> list[dict[str, Any]] | None:
+        """Move a waiting plan's flip to ``flower_start``, or leave it unchanged."""
+        async with self.pool.acquire() as conn:
+            if (
+                await self._pending_flower_alignment(
+                    conn, grow_plan_id, flower_start, forward_only=forward_only
+                )
+                is None
+            ):
+                return None
+        for _ in range(4):
+            try:
+                async with self.pool.acquire() as conn, self._mutation_transaction(conn):
+                    datasets = await self._lock_plan_for_shift(conn, grow_plan_id)
+                    alignment = await self._pending_flower_alignment(
+                        conn, grow_plan_id, flower_start, forward_only=forward_only
+                    )
+                    if alignment is None:
+                        return None
+                    bed_veg_id, phase_order, delta = alignment
+                    await conn.execute(
+                        "UPDATE calendar_event SET end_date=$2,sync_status='pending_push',"
+                        "updated_at=clock_timestamp() WHERE id=$1",
+                        bed_veg_id,
+                        flower_start - timedelta(days=1),
+                    )
+                    await self._shift_phases_locked(conn, grow_plan_id, phase_order, delta)
+                    return await self._finish_shift(conn, grow_plan_id, datasets)
+            except _RetryRoomLocks:
+                continue
+        raise CalendarMutationError("calendar_event_conflict", 409)
+
+    async def extend_grow_plan_phase(
+        self,
+        grow_plan_id: uuid.UUID,
+        event_id: int,
+        days: int,
+        today: date,
+    ) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
+        """Extend one current stretch/bulk/ripen phase by ``days`` and shift later phases."""
+        for _ in range(4):
+            try:
+                async with self.pool.acquire() as conn, self._mutation_transaction(conn):
+                    datasets = await self._lock_plan_for_shift(conn, grow_plan_id)
+                    before = await conn.fetchrow(
+                        "SELECT * FROM calendar_event WHERE id=$1 AND grow_plan_id=$2 "
+                        "AND deleted_at IS NULL FOR UPDATE",
+                        event_id,
+                        grow_plan_id,
+                    )
+                    if before is None:
+                        raise CalendarMutationError("grow_phase_not_found", 404)
+                    if before["event_type"] not in {
+                        "flower_stretch",
+                        "flower_bulk",
+                        "flower_ripen",
+                    }:
+                        raise CalendarMutationError("grow_phase_not_extendable", 409)
+                    phase_order = self.parse_metadata(before["metadata"]).get("phase_order")
+                    if not isinstance(phase_order, int) or isinstance(phase_order, bool):
+                        raise CalendarMutationError("grow_phase_not_extendable", 409)
+                    current_end = before["end_date"] or before["start_date"]
+                    if current_end < today:
+                        raise CalendarMutationError("grow_phase_ended", 409)
+                    after = await conn.fetchrow(
+                        "UPDATE calendar_event SET end_date=$2,sync_status='pending_push',"
+                        "updated_at=clock_timestamp() WHERE id=$1 RETURNING *",
+                        event_id,
+                        current_end + timedelta(days=days),
+                    )
+                    await self._shift_phases_locked(conn, grow_plan_id, phase_order, days)
+                    events = await self._finish_shift(conn, grow_plan_id, datasets)
+                    return dict(before), dict(after), events
+            except _RetryRoomLocks:
+                continue
+        raise CalendarMutationError("calendar_event_conflict", 409)
+
     @staticmethod
     def _window_arrays(
         windows: Sequence[GrowWindow],
@@ -1773,24 +1938,81 @@ class CalendarRepository(BaseRepository):
             logger.error(f"Failed to get active flower phase event: {e}")
             return None
 
-    async def get_last_ended_plan_end(self, location: str) -> date | None:
-        try:
-            async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """
-                    SELECT MAX(COALESCE(end_date, start_date)) AS last_end
-                    FROM calendar_event
-                    WHERE deleted_at IS NULL
-                      AND location = $1
-                      AND grow_plan_id IS NOT NULL
-                      AND event_type IN ('harvest', 'drying')
-                    """,
-                    location,
+    async def get_latest_flower_plan(self, today: date) -> FlowerPlanDates | None:
+        """The most recently started Flower Room plan (started on or before ``today``).
+
+        Reads the plan's own events with decoded metadata, plus the plan's first
+        and last Toronto dates. Database errors surface instead of a fake
+        "no pending change".
+        """
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                WITH plan AS (
+                  SELECT grow_plan_id, MIN(start_date) AS plan_start,
+                         MAX(COALESCE(end_date, start_date)) AS plan_end
+                  FROM calendar_event
+                  WHERE deleted_at IS NULL AND location = 'Flower Room'
+                    AND cluster = 'main' AND grow_plan_id IS NOT NULL
+                  GROUP BY grow_plan_id
+                  HAVING MIN(start_date) <= $1
+                  ORDER BY plan_start DESC, grow_plan_id DESC
+                  LIMIT 1
                 )
-                return row["last_end"] if row and row["last_end"] else None
-        except Exception as e:
-            logger.error(f"Failed to get last ended plan end for {location}: {e}")
+                SELECT e.id, e.event_type, e.start_date, e.end_date, e.metadata,
+                       plan.plan_start, plan.plan_end
+                FROM calendar_event e JOIN plan USING (grow_plan_id)
+                WHERE e.deleted_at IS NULL AND e.location = 'Flower Room'
+                  AND e.cluster = 'main'
+                ORDER BY e.start_date, e.id
+                """,
+                today,
+            )
+        if not rows:
             return None
+        events = tuple(
+            {
+                "id": row["id"],
+                "event_type": row["event_type"],
+                "start_date": row["start_date"],
+                "end_date": row["end_date"],
+                "metadata": self.parse_metadata(row["metadata"]),
+            }
+            for row in rows
+        )
+        return FlowerPlanDates(
+            events=events,
+            start_date=rows[0]["plan_start"],
+            end_date=rows[0]["plan_end"],
+        )
+
+    async def get_expected_harvest(
+        self, location: str, cluster: str, today: date
+    ) -> dict[str, Any] | None:
+        """The last ripen day of the plan occupying the room, when it is still ahead."""
+        run = await self.get_current_run(location, today)
+        if run is None:
+            return None
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT id, COALESCE(end_date, start_date) AS harvest_date, grow_plan_id
+                FROM calendar_event
+                WHERE deleted_at IS NULL
+                  AND grow_plan_id = $1
+                  AND location = $2
+                  AND cluster = $3
+                  AND event_type = 'flower_ripen'
+                ORDER BY COALESCE(end_date, start_date) DESC, id DESC
+                LIMIT 1
+                """,
+                run.grow_plan_id,
+                location,
+                cluster,
+            )
+        if row is None or row["harvest_date"] < today:
+            return None
+        return dict(row)
 
     async def get_current_run(
         self, location: str, today: date | None = None

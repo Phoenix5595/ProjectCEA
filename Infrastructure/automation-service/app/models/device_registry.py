@@ -264,4 +264,12 @@ class RegistryDeviceUpdate(_DisplayNameInput):
         return self
 
 
+class RelayMoveRequest(BaseModel):
+    """Request body for moving one relay binding onto another channel."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    channel: int = Field(ge=0, le=15)
+
+
 RegistryDeviceCreate = DeviceCreate | LightDeviceCreate

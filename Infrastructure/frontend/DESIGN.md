@@ -166,10 +166,10 @@ Chart regions and tables retain the existing single-column rule below `768px`; s
 
 The monitoring layout guidance above remains unchanged. Dashboard `/` uses a separate viewport layout:
 
-- Dashboard `/` desktop QA covers 1920×1080 and 1280×1440: calendar and inspector share the upper center row, Flower/Veg/Lab cards occupy ordered rows below, the Event Log sits above the square water-tank graphic in the right rail, and Mothernode remains beneath the workspace.
+- Dashboard `/` desktop QA covers 1920×1080 and 1280×1440: calendar and inspector share the upper center row, Flower/Veg/Lab cards occupy ordered rows below, the Event Log sits above a fixed 15rem square water-tank panel snapped to the right rail's bottom-right corner (readings shifted 15 px up), and Mothernode remains beneath the workspace.
 - The existing 768–1099px compact dashboard layout is retained but is outside this pass's focused QA; the 960px redesign is deferred. The web app has no mobile drawer or supported mobile-layout guarantee, and a separate mobile app does not exist yet.
-- At both supported desktop viewports the dashboard does not scroll the document or dashboard panels or overlap. Dialogs/popovers are transient overlays and may scroll independently.
-- The dashboard calendar renders six rows in every month, keeps 44px minimum date targets, and preserves task, note, and phase marker counts in each date's accessible name.
+- **R7 no-scroll:** from 768 px wide up, overview pages (`/`, `/flower`, `/vegetation`, `/laboratory`) keep a 1280×720 minimum layout (`height: max(100dvh, 720px)`, `min-width: calc(1280px - 1.875rem)`) and never document-scroll at ≥1280×720; between 768 px wide and that floor the document scrolls, and phones below 768 px keep today's stacked, unsupported layout. Only three regions scroll internally: the event-log body (`data-testid="event-log-body"`), the dashboard calendar inspector (`.dashboard-inspector`) and a room overview's inline day detail (`.grow-cal-day-detail`). Dialogs/popovers are transient overlays and may scroll independently.
+- The dashboard calendar renders six rows in every month, keeps 44px minimum date targets at viewport heights ≥900px, and preserves task, note, and phase marker counts in each date's accessible name.
 - Desktop navigation uses a permanent 30px icon rail app-wide; there is no mobile drawer.
 
 ## Motion Constraints
@@ -209,17 +209,17 @@ One hue per backend `EventCategory`, owner-approved. Tokens come in triplets: ba
 | `system`                                  | System          | slate      |
 | `sensor` (display-only split of `system`) | Sensors         | orange     |
 
-The `Sensors` bucket is a frontend presentation split: `system`-category events of type `sensor.*` / `device.*` display in the orange Sensors bucket; platform events stay slate. Grouping and expansion use the display bucket; the category filter chips keep operating on the raw backend category, so a `system` filter shows System and Sensors rows.
+The `Sensors` bucket is a frontend presentation split: `system`-category events of type `sensor.*` / `device.*` display in the orange Sensors bucket; platform events stay slate. Grouping and expansion use the display bucket. There is no category filter UI (R8); any raw category outside the backend `EventCategory` set displays in the System card with its raw category and type, keeping it reachable.
 
-- **Colour never alone (WCAG 1.4.1):** every coloured chip is paired with its text label; unknown categories resolve the "Other" fallback instead of crashing.
+- **Colour never alone (WCAG 1.4.1):** every coloured chip is paired with its text label; unknown categories resolve to the System card instead of crashing.
 - **Relay-active emphasis:** relay events with an engaged state (`state: true` / `observed_state: true`) render the state text in the relay green shade (`categoryTheme.relayActiveStateClass`).
 - **Severity honesty:** `critical` uses a filled badge plus a heavier left border; `error` keeps an outline treatment — the two never render identically.
 
 ### Views
 
-- **Dashboard compact console:** grouped by default, with eight category summaries per page. Each two-line summary shows category/count/time then latest label/severity; visible group paging keeps categories beyond the first eight reachable.
-- **Dashboard flat "All events" and expanded-category list:** five newest-first rows per page with visible status and disabled Previous/Next bounds. Filter, view, and category changes reset paging; live result shrink clamps it. A compact row opens an overlay with full recorded source, reason, timestamps, and safe payload, restoring focus on close.
-- **Full-width room log:** remains flat by default with its established filters, full newest-first list, max-height scroll, and inline row details. Dashboard paging and detail dialogs do not change this view.
+- **Dashboard category cards (R8):** one card per canonical category, eight at viewport heights ≥1300 px and six below (Ramp merged into Control, Mutation into System, no events dropped), updating on resize. Each card shows category/count/time, latest label/severity, and exactly one detail line from its latest event; clicking the card opens that category's paged list. No event log carries filter controls, a room selector, a view switch or an event total.
+- **Dashboard category list:** five newest-first rows per page with visible status and disabled Previous/Next bounds; live result shrink clamps paging. A compact row opens an overlay with full recorded source, reason, timestamps, and safe payload, restoring focus on close.
+- **Room log:** a room overview's log is scoped to that room by data (`useEventLog({ location, cluster })`, no UI control), flat and newest-first with inline row details, scrolling only inside the event-log body (R7). The dashboard log shows all rooms as category cards. Server-side `/api/events/history` filters remain for API clients.
 
 ### Recorded reasons
 

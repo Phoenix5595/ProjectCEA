@@ -31,7 +31,7 @@ export interface GrowCalendarProps {
   onDaySelect?: (date: Date | undefined, events: CalendarEventDto[]) => void
   /** Render the built-in inline day detail panel (default true). */
   showInlineDayDetail?: boolean
-  /** Density preset; "dashboard" fits six weeks into a dense upper row. */
+  /** Density preset; "dashboard" fills a bounded parent with six fixed weeks (dashboard and room overviews). */
   density?: 'standard' | 'dashboard'
 }
 

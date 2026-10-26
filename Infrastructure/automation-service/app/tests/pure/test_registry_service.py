@@ -39,6 +39,7 @@ class _MutationRegistry:
     def __init__(self) -> None:
         self.connection = _Connection()
         self.commits = 0
+        self.actuation_lock = asyncio.Lock()
 
     async def mutate(self, mutation):
         result = await mutation(self.connection)
@@ -47,16 +48,17 @@ class _MutationRegistry:
 
 
 class _Relay:
-    def __init__(self, succeeds: bool = True) -> None:
+    def __init__(self, succeeds: bool = True, fails_on: set[int] | None = None) -> None:
         self.succeeds = succeeds
+        self.fails_on = fails_on or set()
         self.commands: list[tuple[int, int]] = []
 
     async def set_channel_state(self, channel: int, state: int) -> bool:
         self.commands.append((channel, state))
         return self.succeeds
 
-    def is_channel_observed_off(self, _channel: int) -> bool:
-        return self.succeeds
+    def is_channel_observed_off(self, channel: int) -> bool:
+        return self.succeeds and channel not in self.fails_on
 
     async def command_channel_off_and_observe(self, channel: int) -> bool:
         await self.set_channel_state(channel, 0)
@@ -225,9 +227,7 @@ class _Repository:
         self, _connection: Any, device_id: int, fields: dict[str, Any]
     ) -> LightDevice:
         mapping = {"relay_channel": "channel", "room": "location"}
-        self.rows[device_id].update(
-            {mapping[key] if key in mapping else key: value for key, value in fields.items()}
-        )
+        self.rows[device_id].update({mapping.get(key, key): value for key, value in fields.items()})
         updated = self._model(self.rows[device_id])
         assert isinstance(updated, LightDevice)
         return updated
@@ -327,6 +327,100 @@ async def test_light_move_and_delete_zero_old_dfr_and_turn_off_relay() -> None:
     assert dfr.commands == [(0, 0, 0.0), (1, 1, 0.0)]
     assert relay.commands == [(7, 0)]
     assert registry.commits == 2
+
+
+@pytest.mark.asyncio
+async def test_move_relay_onto_empty_channel_turns_target_then_source_off() -> None:
+    repository = _Repository()
+    relay = _Relay()
+    service, registry = _service(repository, relay)
+    move = await service.move_relay(1, 9)
+    assert relay.commands == [(9, 0), (2, 0)]
+    assert repository.rows[1]["channel"] == 9
+    assert move.device.device_id == 1
+    assert move.swapped_device is None
+    assert registry.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_move_relay_onto_occupied_channel_swaps_both_owners() -> None:
+    repository = _Repository()
+    relay = _Relay()
+    service, registry = _service(repository, relay)
+    move = await service.move_relay(1, 5)
+    assert relay.commands == [(5, 0), (2, 0)]
+    assert repository.rows[1]["channel"] == 5
+    assert repository.rows[2]["channel"] == 2
+    assert move.device.device_id == 1
+    assert move.swapped_device is not None and move.swapped_device.device_id == 2
+    assert registry.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_move_light_relay_onto_occupied_channel_swaps_both_owners() -> None:
+    repository = _Repository()
+    relay = _Relay()
+    service, _registry = _service(repository, relay)
+    move = await service.move_relay(3, 5)
+    assert repository.rows[3]["channel"] == 5
+    assert repository.rows[2]["channel"] == 7
+    assert isinstance(move.device, LightDevice) and move.device.relay_channel == 5
+    assert move.swapped_device is not None and move.swapped_device.device_id == 2
+
+
+@pytest.mark.asyncio
+async def test_move_unbound_device_onto_occupied_channel_unbinds_the_owner() -> None:
+    repository = _Repository()
+    repository.rows[1]["channel"] = None
+    relay = _Relay()
+    service, _registry = _service(repository, relay)
+    move = await service.move_relay(1, 5)
+    assert relay.commands == [(5, 0)]
+    assert repository.rows[1]["channel"] == 5
+    assert repository.rows[2]["channel"] is None
+    assert move.swapped_device is not None and move.swapped_device.device_id == 2
+
+
+@pytest.mark.asyncio
+async def test_move_relay_safe_output_failure_changes_no_row() -> None:
+    repository = _Repository()
+    service, registry = _service(repository, _Relay(fails_on={5}))
+    with pytest.raises(SafeOutputError):
+        await service.move_relay(1, 5)
+    assert repository.rows[1]["channel"] == 2
+    assert repository.rows[2]["channel"] == 5
+    assert registry.commits == 0
+
+
+@pytest.mark.asyncio
+async def test_move_relay_to_its_own_channel_writes_and_switches_nothing() -> None:
+    repository = _Repository()
+    relay = _Relay()
+    service, registry = _service(repository, relay)
+    move = await service.move_relay(1, 2)
+    assert relay.commands == []
+    assert repository.rows[1]["channel"] == 2
+    assert move.device.device_id == 1 and move.swapped_device is None
+    assert registry.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_move_relay_waits_for_the_actuation_lock() -> None:
+    repository = _Repository()
+    relay = _Relay()
+    service, registry = _service(repository, relay)
+    await registry.actuation_lock.acquire()
+    try:
+        pending = asyncio.create_task(service.move_relay(1, 5))
+        await asyncio.sleep(0)
+        assert relay.commands == []
+        assert registry.commits == 0
+    finally:
+        registry.actuation_lock.release()
+    move = await pending
+    assert move.device.device_id == 1
+    assert relay.commands == [(5, 0), (2, 0)]
+    assert registry.commits == 1
 
 
 class _Pool:

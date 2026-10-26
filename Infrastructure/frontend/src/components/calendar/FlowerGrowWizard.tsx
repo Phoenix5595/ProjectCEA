@@ -1,5 +1,6 @@
-import { format } from 'date-fns'
-import { useId, useMemo, useState } from 'react'
+import { addDays, format } from 'date-fns'
+import { toZonedTime } from 'date-fns-tz'
+import { useId, useState } from 'react'
 import { toast } from 'sonner'
 
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
@@ -13,9 +14,14 @@ import {
 } from '@/components/ui/select'
 
 import { apiClient } from '../../services/api'
+import { extractErrorMessage } from '../../utils/errors'
 import {
   buildFlowerGrowPlanPreview,
-  isFlowerEndInPast,
+  CALENDAR_TZ,
+  defaultBedVegStart,
+  flowerStartFor,
+  shiftIsoDate,
+  type FlowerGrowPlanAnchor,
   type FlowerGrowPlanInput,
 } from '../../utils/flowerGrowPlan'
 
@@ -25,49 +31,64 @@ interface FlowerGrowWizardProps {
   onCreated: () => void
 }
 
+const ANCHOR_CHOICES: Array<{ value: FlowerGrowPlanAnchor; label: string }> = [
+  { value: 'bed_veg_start', label: 'Start of veg beds' },
+  { value: 'flower_start', label: 'Start of flower' },
+  { value: 'ripen_end', label: 'End of ripening' },
+]
+
 export default function FlowerGrowWizard({ open, onClose, onCreated }: FlowerGrowWizardProps) {
   const idPrefix = useId()
   const [cropName, setCropName] = useState('Flower cycle')
   const [environment, setEnvironment] = useState<'indoor' | 'outdoor'>('indoor')
-  const [flowerEnd, setFlowerEnd] = useState(format(new Date(), 'yyyy-MM-dd'))
-  const [flowerWeeks, setFlowerWeeks] = useState(9)
-  const [includePot, setIncludePot] = useState(true)
-  const [cloneWeeks, setCloneWeeks] = useState(3)
-  const [potWeeks, setPotWeeks] = useState(2)
-  const [bedWeeks, setBedWeeks] = useState(2)
+  const [anchor, setAnchor] = useState<FlowerGrowPlanAnchor>('flower_start')
+  const [anchorDate, setAnchorDate] = useState(() =>
+    format(addDays(toZonedTime(new Date(), CALENDAR_TZ), 14), 'yyyy-MM-dd')
+  )
+  const [bedVegStartOverride, setBedVegStartOverride] = useState<string | null>(null)
+  const [bedVegDays, setBedVegDays] = useState(14)
   const [stretchDays, setStretchDays] = useState(21)
+  const [bulkDays, setBulkDays] = useState(21)
   const [ripenDays, setRipenDays] = useState(21)
   const [dryingDays, setDryingDays] = useState(7)
-  const [autoMode, setAutoMode] = useState(true)
+  const [potEnabled, setPotEnabled] = useState(false)
+  const [potStart, setPotStart] = useState('')
+  const [cloneEnabled, setCloneEnabled] = useState(false)
+  const [cloneStart, setCloneStart] = useState('')
+  const [autoSubmode, setAutoSubmode] = useState(true)
   const [saving, setSaving] = useState(false)
 
-  const planInput: FlowerGrowPlanInput = useMemo(
-    () => ({
-      flowerEnd,
-      flowerWeeks,
-      includePotPhases: includePot,
-      cloneWeeks,
-      potWeeks,
-      bedWeeks,
-      stretchDays,
-      ripenDays,
-      dryingDays,
-    }),
-    [
-      flowerEnd,
-      flowerWeeks,
-      includePot,
-      cloneWeeks,
-      potWeeks,
-      bedWeeks,
-      stretchDays,
-      ripenDays,
-      dryingDays,
-    ]
-  )
+  const flowerStart = flowerStartFor({
+    anchor,
+    anchorDate,
+    bedVegDays,
+    stretchDays,
+    bulkDays,
+    ripenDays,
+  })
+  const bedVegStart =
+    anchor === 'bed_veg_start'
+      ? anchorDate
+      : (bedVegStartOverride ??
+        defaultBedVegStart({ anchor, anchorDate, bedVegDays, stretchDays, bulkDays, ripenDays }))
 
-  const preview = useMemo(() => buildFlowerGrowPlanPreview(planInput), [planInput])
-  const pastWarning = isFlowerEndInPast(flowerEnd)
+  const planInput: FlowerGrowPlanInput = {
+    anchor,
+    anchorDate,
+    bedVegStart,
+    bedVegDays,
+    stretchDays,
+    bulkDays,
+    ripenDays,
+    dryingDays,
+    potStart: potEnabled && potStart ? potStart : null,
+    cloneStart: cloneEnabled && cloneStart ? cloneStart : null,
+  }
+
+  let preview = buildFlowerGrowPlanPreview(planInput)
+  if (potEnabled && !potStart) preview = { phases: [], error: 'Pot start is required' }
+  else if (cloneEnabled && !cloneStart) preview = { phases: [], error: 'Clone start is required' }
+  const flowerStartInPast = flowerStart < format(toZonedTime(new Date(), CALENDAR_TZ), 'yyyy-MM-dd')
 
   const handleSubmit = async () => {
     if (preview.error) {
@@ -80,26 +101,23 @@ export default function FlowerGrowWizard({ open, onClose, onCreated }: FlowerGro
         idempotency_key: crypto.randomUUID(),
         crop_name: cropName,
         environment,
-        flower_end: flowerEnd,
-        flower_weeks: flowerWeeks,
-        include_pot_phases: includePot,
-        clone_weeks: cloneWeeks,
-        pot_weeks: potWeeks,
-        bed_weeks: bedWeeks,
+        anchor,
+        anchor_date: anchorDate,
+        bed_veg_start: bedVegStart,
+        bed_veg_days: bedVegDays,
         stretch_days: stretchDays,
+        bulk_days: bulkDays,
         ripen_days: ripenDays,
         drying_days: dryingDays,
-        auto_mode_transition: autoMode,
+        pot_start: planInput.potStart,
+        clone_start: planInput.cloneStart,
+        auto_mode_transition: autoSubmode,
       })
       toast.success('Grow plan created')
       onCreated()
       onClose()
     } catch (e: unknown) {
-      const msg =
-        e && typeof e === 'object' && 'response' in e
-          ? String((e as { response?: { data?: { detail?: string } } }).response?.data?.detail)
-          : 'Failed to create plan'
-      toast.error(msg)
+      toast.error(extractErrorMessage(e, 'Failed to create plan'))
     } finally {
       setSaving(false)
     }
@@ -138,94 +156,90 @@ export default function FlowerGrowWizard({ open, onClose, onCreated }: FlowerGro
           </SelectContent>
         </Select>
 
+        <fieldset className="mb-3">
+          <legend className="block text-sm text-text-secondary mb-1">Anchor</legend>
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm text-text-default">
+            {ANCHOR_CHOICES.map(choice => (
+              <label key={choice.value} className="flex items-center gap-1.5">
+                <input
+                  type="radio"
+                  name={`${idPrefix}-anchor`}
+                  value={choice.value}
+                  checked={anchor === choice.value}
+                  onChange={() => setAnchor(choice.value)}
+                />
+                {choice.label}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
         <label
-          htmlFor={`${idPrefix}-flower-end`}
+          htmlFor={`${idPrefix}-anchor-date`}
           className="block text-sm text-text-secondary mb-1"
         >
-          Flower end (last day of ripen)
+          Anchor date
         </label>
         <input
-          id={`${idPrefix}-flower-end`}
+          id={`${idPrefix}-anchor-date`}
           type="date"
+          required
           className="w-full mb-1 px-2 py-1 rounded border border-border-default bg-surface-secondary text-text-default"
-          value={flowerEnd}
-          onChange={e => setFlowerEnd(e.target.value)}
+          value={anchorDate}
+          onChange={e => setAnchorDate(e.target.value)}
         />
-        {pastWarning && (
-          <p className="text-amber-500 text-xs mb-3">
-            This date is in the past — OK for retroactive logging.
-          </p>
+        {flowerStartInPast && (
+          <p className="text-amber-500 text-xs mb-3">Flower start is in the past.</p>
         )}
 
         <label
-          htmlFor={`${idPrefix}-flower-weeks`}
+          htmlFor={`${idPrefix}-bed-veg-start`}
           className="block text-sm text-text-secondary mb-1"
         >
-          Flower length (weeks)
+          Bed veg start
         </label>
-        <Input
-          id={`${idPrefix}-flower-weeks`}
-          type="number"
-          min={1}
-          max={52}
-          className="mb-3"
-          value={flowerWeeks}
-          onChange={e => setFlowerWeeks(Number(e.target.value))}
+        <input
+          id={`${idPrefix}-bed-veg-start`}
+          type="date"
+          required
+          readOnly={anchor === 'bed_veg_start'}
+          className="w-full mb-3 px-2 py-1 rounded border border-border-default bg-surface-secondary text-text-default read-only:opacity-70"
+          value={bedVegStart}
+          onChange={e => setBedVegStartOverride(e.target.value)}
         />
 
-        <label className="flex items-center gap-2 mb-3 text-sm text-text-default">
-          <input
-            type="checkbox"
-            checked={includePot}
-            onChange={e => setIncludePot(e.target.checked)}
-          />
-          Include pot phases (clone + pot veg)
-        </label>
-
-        <div className="grid grid-cols-3 gap-2 mb-3 text-sm">
-          {includePot && (
-            <>
-              <label>
-                Clone (w)
-                <input
-                  type="number"
-                  min={1}
-                  className="w-full px-1 py-0.5 rounded border border-border-default bg-surface-secondary"
-                  value={cloneWeeks}
-                  onChange={e => setCloneWeeks(Number(e.target.value))}
-                />
-              </label>
-              <label>
-                Pot (w)
-                <input
-                  type="number"
-                  min={1}
-                  className="w-full px-1 py-0.5 rounded border border-border-default bg-surface-secondary"
-                  value={potWeeks}
-                  onChange={e => setPotWeeks(Number(e.target.value))}
-                />
-              </label>
-            </>
-          )}
+        <div className="grid grid-cols-2 gap-2 mb-3 text-sm">
           <label>
-            Bed (w)
-            <select
-              value={bedWeeks}
-              onChange={e => setBedWeeks(Number(e.target.value))}
+            Bed veg (d)
+            <input
+              type="number"
+              min={1}
+              max={84}
               className="w-full px-1 py-0.5 rounded border border-border-default bg-surface-secondary"
-            >
-              <option value={2}>2 weeks</option>
-              <option value={3}>3 weeks</option>
-            </select>
+              value={bedVegDays}
+              onChange={e => setBedVegDays(Number(e.target.value))}
+            />
           </label>
           <label>
             Stretch (d)
             <input
               type="number"
               min={1}
+              max={60}
               className="w-full px-1 py-0.5 rounded border border-border-default bg-surface-secondary"
               value={stretchDays}
               onChange={e => setStretchDays(Number(e.target.value))}
+            />
+          </label>
+          <label>
+            Bulk (d)
+            <input
+              type="number"
+              min={1}
+              max={60}
+              className="w-full px-1 py-0.5 rounded border border-border-default bg-surface-secondary"
+              value={bulkDays}
+              onChange={e => setBulkDays(Number(e.target.value))}
             />
           </label>
           <label>
@@ -233,6 +247,7 @@ export default function FlowerGrowWizard({ open, onClose, onCreated }: FlowerGro
             <input
               type="number"
               min={1}
+              max={60}
               className="w-full px-1 py-0.5 rounded border border-border-default bg-surface-secondary"
               value={ripenDays}
               onChange={e => setRipenDays(Number(e.target.value))}
@@ -251,9 +266,63 @@ export default function FlowerGrowWizard({ open, onClose, onCreated }: FlowerGro
           </label>
         </div>
 
+        <label className="flex items-center gap-2 mb-2 text-sm text-text-default">
+          <input
+            type="checkbox"
+            checked={potEnabled}
+            onChange={e => {
+              setPotEnabled(e.target.checked)
+              if (e.target.checked && !potStart) setPotStart(shiftIsoDate(bedVegStart, -14))
+            }}
+          />
+          Veg pot
+        </label>
+        {potEnabled && (
+          <label className="mb-3 block text-sm text-text-secondary">
+            Pot start
+            <input
+              type="date"
+              required
+              className="w-full px-2 py-1 rounded border border-border-default bg-surface-secondary text-text-default"
+              value={potStart}
+              onChange={e => setPotStart(e.target.value)}
+            />
+          </label>
+        )}
+
+        <label className="flex items-center gap-2 mb-2 text-sm text-text-default">
+          <input
+            type="checkbox"
+            checked={cloneEnabled}
+            onChange={e => {
+              setCloneEnabled(e.target.checked)
+              if (e.target.checked && !cloneStart) {
+                setCloneStart(shiftIsoDate(potEnabled && potStart ? potStart : bedVegStart, -21))
+              }
+            }}
+          />
+          Cloning
+        </label>
+        {cloneEnabled && (
+          <label className="mb-3 block text-sm text-text-secondary">
+            Clone start
+            <input
+              type="date"
+              required
+              className="w-full px-2 py-1 rounded border border-border-default bg-surface-secondary text-text-default"
+              value={cloneStart}
+              onChange={e => setCloneStart(e.target.value)}
+            />
+          </label>
+        )}
+
         <label className="flex items-center gap-2 mb-3 text-sm text-text-default">
-          <input type="checkbox" checked={autoMode} onChange={e => setAutoMode(e.target.checked)} />
-          Apply mode changes automatically
+          <input
+            type="checkbox"
+            checked={autoSubmode}
+            onChange={e => setAutoSubmode(e.target.checked)}
+          />
+          Automatic submode changes
         </label>
 
         {preview.error && <p className="text-red-500 text-sm mb-2">{preview.error}</p>}

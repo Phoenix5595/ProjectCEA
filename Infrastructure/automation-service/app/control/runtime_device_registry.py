@@ -50,6 +50,11 @@ class RuntimeDeviceRegistry:
         self._consumers: list[SnapshotConsumer] = []
         self._next_version = 1
         self._mutation_lock = asyncio.Lock()
+        # Serializes every relay actuation path with registry writes: the control
+        # tick, manual device commands, raw channel writes, relay tests and
+        # registry mutations (lock order: actuation, then any service lock).
+        # Never re-acquire it inside the tick.
+        self.actuation_lock = asyncio.Lock()
 
     @property
     def snapshot(self) -> RuntimeDeviceSnapshot:

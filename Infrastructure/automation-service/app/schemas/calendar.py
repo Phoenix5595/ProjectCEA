@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, validator
@@ -77,16 +77,40 @@ class FlowerGrowPlanRequest(BaseModel):
     idempotency_key: UUID
     crop_name: str = "Flower cycle"
     environment: str = "indoor"
-    flower_end: date
-    flower_weeks: int = Field(ge=1, le=52)
-    include_pot_phases: bool = True
-    clone_weeks: int = Field(default=3, ge=1, le=12)
-    pot_weeks: int = Field(default=2, ge=1, le=12)
-    bed_weeks: int = Field(default=2, ge=1, le=12)
+    anchor: Literal["bed_veg_start", "flower_start", "ripen_end"]
+    anchor_date: date
+    bed_veg_start: date
+    bed_veg_days: int = Field(default=14, ge=1, le=84)
     stretch_days: int = Field(default=21, ge=1, le=60)
+    bulk_days: int = Field(default=21, ge=1, le=60)
     ripen_days: int = Field(default=21, ge=1, le=60)
     drying_days: int = Field(default=7, ge=1, le=14)
+    pot_start: date | None = None
+    clone_start: date | None = None
     auto_mode_transition: bool = True
+
+
+class PendingModeChangeResponse(BaseModel):
+    """The manual mode change the owner still has to trigger for Flower Room."""
+
+    from_mode: str | None
+    to_mode: str
+    to_submode: str | None
+    event_id: int | None
+    since: date
+
+
+class ExpectedHarvestResponse(BaseModel):
+    """The last ripen day of the plan occupying the room."""
+
+    harvest_date: date
+    grow_plan_id: UUID
+    event_id: int
+
+
+class GrowPlanExtendRequest(BaseModel):
+    event_id: StrictInt
+    days: StrictInt = Field(default=7, ge=1, le=60)
 
 
 class CalendarCurrentRunResponse(BaseModel):

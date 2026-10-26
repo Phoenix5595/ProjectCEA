@@ -24,6 +24,7 @@ from app.models.device_registry import (
     LightDeviceCreate,
     RegistryDeviceCreate,
     RegistryDeviceUpdate,
+    RelayMoveRequest,
 )
 from app.services.device_registry_service import (
     DeviceMutation,
@@ -122,6 +123,39 @@ async def unbind_registry_relay(
     return _mutation_response(mutation)
 
 
+@router.put("/api/devices/registry/{device_id}/relay")
+@emits_operational_mutation
+async def move_registry_relay(
+    device_id: int,
+    body: RelayMoveRequest,
+    service: DeviceRegistryService = Depends(get_device_registry_service),
+    context: MutationRequestContext = Depends(get_mutation_request_context),
+    sink: OperationalEventSink = Depends(get_mutation_event_sink),
+) -> dict[str, Any]:
+    """Move a relay binding, swapping owners when the target channel is occupied."""
+    devices = await service.list_devices()
+    previous = _find_registry_device(devices, device_id)
+    try:
+        move = await service.move_relay(device_id, body.channel)
+    except (RegistryNotFoundError, SafeOutputError) as error:
+        raise _registry_http_error(error) from error
+    _emit_registry_mutation(sink, context, "update", DeviceMutation(device=move.device), previous)
+    if move.swapped_device is not None:
+        _emit_registry_mutation(
+            sink,
+            context,
+            "update",
+            DeviceMutation(device=move.swapped_device),
+            _find_registry_device(devices, move.swapped_device.device_id),
+        )
+    return {
+        "device_id": device_id,
+        "channel": _device_channel(move.device),
+        "swapped_device_id": move.swapped_device.device_id if move.swapped_device else None,
+        "swapped_channel": _device_channel(move.swapped_device),
+    }
+
+
 @router.delete("/api/devices/registry/{device_id}")
 @emits_operational_mutation
 async def delete_registry_device(
@@ -192,6 +226,14 @@ def _emit_registry_mutation(
         ),
         context,
     )
+
+
+def _device_channel(device: Device | LightDevice | None) -> int | None:
+    if device is None:
+        return None
+    if isinstance(device, LightDevice):
+        return device.relay_channel
+    return device.channel
 
 
 def _device_event_values(device: Device | LightDevice | None) -> dict[str, str | int | None]:

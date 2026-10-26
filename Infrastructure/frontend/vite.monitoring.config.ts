@@ -227,6 +227,8 @@ type ModeProfileFixtureState = {
   rooms: Map<string, FixtureRoomState>
   profiles: Map<string, FixtureProfile>
   light_targets: Record<string, number>
+  /** Session-owned relay bindings: device id → MCP channel (null = unbound). */
+  relay_channels: Map<number, number | null>
   mutations: Array<Record<string, unknown>>
   counters: Map<string, number>
 }
@@ -247,6 +249,7 @@ function modeProfileState(session: string, scenario: string | null): ModeProfile
       global_revision: MODE_PROFILE_SCENARIOS[scenario ?? ''] ? 37 : 9,
       registry_version: MODE_PROFILE_SCENARIOS[scenario ?? ''] ? 9 : 1,
       rooms: new Map(), profiles: new Map(), light_targets: {}, mutations: [], counters: new Map(),
+      relay_channels: new Map(DASHBOARD_DEVICES.map(device => [device.device_id, device.channel])),
     }
     modeProfileSessions.set(key, state)
   }
@@ -259,7 +262,7 @@ function fixtureRoom(
   const key = fixtureRoomKey(location, cluster)
   let room = state.rooms.get(key)
   if (!room) {
-    const active = location === 'Veg Room'
+    const active = location === 'Veg Room' || scenario === 'calendar-mode-change'
       ? { mode_id: 1, submode_id: null }
       : scenario === 'sleep-scheduled-flag'
         ? { mode_id: 4, submode_id: null }
@@ -435,9 +438,24 @@ function profileFixtureReply(
       (newScenario || (req.referer ?? '').includes('/control'))) ||
     (scenario !== 'relay-pid-timeline' &&
       (pathname === '/api/devices/control-snapshot' || pathname === '/api/devices/registry' ||
-        /^\/api\/devices\/[^/]+\/[^/]+$/.test(pathname)))
+        /^\/api\/devices\/registry\/\d+\/relay$/.test(pathname) ||
+        /^\/api\/devices\/[^/]+\/[^/]+$/.test(pathname))) ||
+    /^\/api\/calendar\/pending-mode-change\//.test(pathname)
   if (!relevant) return null
   const state = modeProfileState(session, scenario)
+  if (pathname.startsWith('/api/calendar/pending-mode-change/')) {
+    if (method !== 'GET') return fixtureError(405, 'read_only_fixture', 'Pending change is read-only')
+    const pendingLocation = parts[3] ?? '', pendingCluster = parts[4] ?? ''
+    const activeMode = fixtureRoom(state, pendingLocation, pendingCluster, scenario).active.mode_id
+    const pending = scenario === 'calendar-mode-change' && pendingLocation === 'Flower Room' &&
+      pendingCluster === 'main' && activeMode === 1
+    return { body: pending ? {
+      from_mode: 'veg', to_mode: 'flower', to_submode: 'stretch', event_id: 500,
+      since: new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Toronto', year: 'numeric', month: '2-digit', day: '2-digit',
+      }).format(new Date()),
+    } : null }
+  }
   const location = parts[1] === 'room-modes' ? parts[3] ?? 'Flower Room'
     : parts[1] === 'monitoring' ? parts[3] ?? 'Flower Room' : parts[2] ?? 'Flower Room'
   const cluster = parts[1] === 'room-modes' ? parts[4] ?? 'main'
@@ -457,10 +475,42 @@ function profileFixtureReply(
         : scenario === 'sleep-scheduled-flag' && mode.id === 4 ? false : mode.is_constant,
     })) }
   if (pathname === '/api/room-modes/submodes') return { body: PROFILE_SUBMODES }
-  if (pathname === '/api/devices/registry') return { body: DASHBOARD_DEVICES }
+  if (pathname === '/api/devices/registry')
+    return { body: DASHBOARD_DEVICES.map(device => ({
+      ...device, channel: state.relay_channels.get(device.device_id) ?? null,
+    })) }
   if (pathname === '/api/devices/control-snapshot') {
     fixtureRoom(state, 'Flower Room', 'main', scenario)
-    return { body: { ...dashboardControlSnapshotFixture(), registry_version: state.registry_version } }
+    return { body: {
+      ...dashboardControlSnapshotFixture(device => state.relay_channels.get(device.device_id) ?? null),
+      registry_version: state.registry_version,
+    } }
+  }
+  if (/^\/api\/devices\/registry\/\d+\/relay$/.test(pathname)) {
+    if (method !== 'PUT') return fixtureError(405, 'read_only_inventory', 'Relay moves require PUT')
+    const deviceId = Number(parts[3])
+    if (!DASHBOARD_DEVICES.some(candidate => candidate.device_id === deviceId))
+      return fixtureError(404, 'device_not_found', 'Unknown fixture device')
+    const parsed = z.object({ channel: z.number().int().min(0).max(15) })
+      .safeParse(parseFixtureBody(req.body))
+    if (!parsed.success) return fixtureError(422, 'invalid_request', parsed.error.message)
+    if (scenario === 'relay-move-unsafe')
+      return { status: 503, body: { detail: 'Unable to make relay channel 13 safe' } }
+    const target = parsed.data.channel
+    const source = state.relay_channels.get(deviceId) ?? null
+    // A drop onto an occupied channel swaps the two owners; both were OFF.
+    const owner = source === target ? null : [...state.relay_channels.entries()]
+      .find(([id, channel]) => id !== deviceId && channel === target)?.[0] ?? null
+    if (source !== target) {
+      state.relay_channels.set(deviceId, target)
+      if (owner !== null) state.relay_channels.set(owner, source)
+      state.registry_version += 1
+    }
+    state.mutations.push({ method, path: pathname, device_id: deviceId, channel: target, success: true })
+    return { body: {
+      device_id: deviceId, channel: target, swapped_device_id: owner,
+      swapped_channel: owner === null ? null : source,
+    } }
   }
   if (/^\/api\/devices\/[^/]+\/[^/]+$/.test(pathname)) {
     if (method !== 'GET') return fixtureError(405, 'read_only_inventory', 'Device inventory is read-only')
@@ -1460,6 +1510,12 @@ const FIXTURE_ROUTES: FixtureRoute[] = [
     handler: () => ({ enabled: true }),
   },
   {
+    // The calendar-mode-change scenario owns this read in
+    // calendarLifecycleFixtures; every other session has no expected harvest.
+    re: /^\/api\/calendar\/expected-harvest\//,
+    handler: () => null,
+  },
+  {
     re: /^\/api\/calendar\/events$/,
     handler: (req, scenario) => {
       const method = req.method ?? 'GET'
@@ -1696,6 +1752,7 @@ function monitoringPreviewPlugin(): Plugin {
               /^\/api\/calendar\/(?:events|sync\/|grow-plans\/)/.test(pathname) ||
               /^\/api\/archives\//.test(pathname))) ||
           (req.method === 'PUT' && /^\/api\/lights\//.test(pathname)) ||
+          (req.method === 'PUT' && /^\/api\/devices\/registry\/\d+\/relay$/.test(pathname)) ||
           (req.method === 'PATCH' && /^\/api\/calendar\/events/.test(pathname)) ||
           (req.method === 'DELETE' && /^\/api\/archives\//.test(pathname))
         const isSensorBulkRead = req.method === 'POST' && pathname === '/api/sensor-data'

@@ -4,7 +4,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import UUID
@@ -13,6 +13,7 @@ from fastapi import FastAPI, HTTPException
 from httpx import ASGITransport, AsyncClient
 import pytest
 
+from app.calendar.flower_grow_plan import LOCAL_TZ
 from app.events import ConfigChangeEvent, ConfigEventType
 from app.events.mutation_context import MutationRequestContext
 from app.events.operational_models import OperationalEvent
@@ -308,6 +309,103 @@ async def test_room_mode_emits_nothing_when_transition_persistence_fails(
     assert sink.events == []
 
 
+@dataclass(frozen=True)
+class _AlignmentCall:
+    grow_plan_id: object
+    flower_start: date
+    forward_only: bool
+
+
+class _AlignmentCalendarRepository:
+    """Records the plan alignment a manual Flower activation triggers."""
+
+    def __init__(self, run: object | None) -> None:
+        self._run = run
+        self.alignments: list[_AlignmentCall] = []
+
+    async def get_current_run(self, location: str, today: date | None = None) -> object | None:
+        del location, today
+        return self._run
+
+    async def align_flower_start(
+        self, grow_plan_id: object, flower_start: date, *, forward_only: bool
+    ) -> list[object] | None:
+        self.alignments.append(_AlignmentCall(grow_plan_id, flower_start, forward_only))
+        return []
+
+
+async def _submodes_with_stretch() -> list[dict[str, object]]:
+    return [{"id": 3, "name": "stretch"}, {"id": 4, "name": "bulk"}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("old_mode", "new_submode", "expected_alignments"),
+    [
+        ({"mode_name": "veg", "submode_name": None}, "stretch", 1),
+        ({"mode_name": "flower", "submode_name": "stretch"}, "bulk", 0),
+        ({"mode_name": "drying", "submode_name": None}, None, 0),
+    ],
+)
+async def test_flower_activation_aligns_the_waiting_plan_only_from_veg(
+    monkeypatch: pytest.MonkeyPatch,
+    old_mode: dict[str, object],
+    new_submode: str | None,
+    expected_alignments: int,
+) -> None:
+    # Given: a manual Flower activation from the parametrized previous mode.
+    plan_id = UUID("a3c09f0e-2b7b-4d1e-9a41-1f9f2fd8b0c7")
+    calendar_repo = _AlignmentCalendarRepository(SimpleNamespace(grow_plan_id=plan_id))
+    sink = _RecordingSink()
+    database = SimpleNamespace(
+        room_mode_repo=SimpleNamespace(
+            get_mode_by_name=_mode_by_name,
+            get_flower_submodes=_submodes_with_stretch,
+        ),
+        calendar_repo=calendar_repo,
+    )
+    enriched = {
+        "success": True,
+        "old_mode": old_mode,
+        "new_mode": {"mode_name": "flower", "submode_name": new_submode},
+        "identity": {
+            "mode_id": 2,
+            "submode_id": 3 if new_submode else None,
+            "mode_name": "flower",
+            "submode_name": new_submode,
+            "is_constant": False,
+        },
+        "parameters": None,
+        "config_revision": "0000009",
+        "runtime_ready": True,
+        "warning": None,
+    }
+    monkeypatch.setattr(room_modes, "ensure_configured_cluster", _do_nothing)
+    monkeypatch.setattr(room_modes, "broadcast_mode_update", AsyncMock())
+
+    # When: the mode route applies the activation.
+    response = await room_modes.set_room_mode(
+        "Flower Room",
+        "main",
+        SetModeRequest(mode_name="flower", submode_name=new_submode),
+        database,
+        SimpleNamespace(),
+        SimpleNamespace(),
+        None,
+        MutationRequestContext.create(),
+        sink,
+        _ModeTransitionService(enriched),
+    )
+
+    # Then: only a Veg -> Flower activation moves the plan's flip to today.
+    assert response.mode_name == "flower"
+    assert len(calendar_repo.alignments) == expected_alignments
+    if expected_alignments:
+        assert calendar_repo.alignments[0] == _AlignmentCall(
+            plan_id, datetime.now(tz=LOCAL_TZ).date(), False
+        )
+
+
 @pytest.mark.asyncio
 async def test_calendar_event_emits_only_after_a_changed_persisted_update() -> None:
     # Given: an existing calendar event with the same requested title.
@@ -423,6 +521,7 @@ async def test_calendar_sync_event_redacts_credentials_and_urls(
         app_password="calendar-password",
         target_calendar_url="https://calendar.example.test/team",
     )
+
     async def discover(_base_url: str, _username: str, _password: str) -> SimpleNamespace:
         return SimpleNamespace(
             calendars=[{"url": "https://calendar.example.test/team/", "name": "Culture"}],

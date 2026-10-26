@@ -152,7 +152,9 @@ class CalendarSnapshotSource:
     the destination identity resolved through the read-only scheduler
     expectation source (``get_expected_transition``), so the pure projection
     consumes exactly the configured transitions the runtime applies, including
-    the enabled and opt-out flags. Names are never turned into invented IDs.
+    the enabled and opt-out flags. The projection applies only same-mode
+    (submode) transitions: a destination in another mode is never projected as
+    the room's identity (R11). Names are never turned into invented IDs.
     """
 
     def __init__(self, calendar_repo: Any, scheduler: CalendarModeScheduler) -> None:

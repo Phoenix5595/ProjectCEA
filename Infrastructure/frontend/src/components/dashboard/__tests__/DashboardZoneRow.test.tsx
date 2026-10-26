@@ -11,13 +11,34 @@ import {
 } from '../../../../tests/monitoring/dashboardDeviceFixtures'
 
 const missingMainStatuses: Record<string, RoomSensorStatus> = {
-  main: { quality: 'missing', newestAgeMs: null, source: null, cluster: 'main' },
+  main: {
+    quality: 'missing',
+    newestAgeMs: null,
+    newestObservedAtMs: null,
+    source: null,
+    cluster: 'main',
+  },
 }
 
 const missingFlowerStatuses: Record<string, RoomSensorStatus> = {
-  front: { quality: 'missing', newestAgeMs: null, source: null, cluster: 'front' },
-  back: { quality: 'missing', newestAgeMs: null, source: null, cluster: 'back' },
+  front: {
+    quality: 'missing',
+    newestAgeMs: null,
+    newestObservedAtMs: null,
+    source: null,
+    cluster: 'front',
+  },
+  back: {
+    quality: 'missing',
+    newestAgeMs: null,
+    newestObservedAtMs: null,
+    source: null,
+    cluster: 'back',
+  },
 }
+
+/** A fixed Toronto wall clock instant: 2026-09-23T16:00:00Z is 12:00 EDT. */
+const OBSERVED_AT_MS = Date.parse('2026-09-23T16:00:00.000Z')
 
 const makeDevice = (overrides: Partial<Device> = {}): Device => ({
   device_name: 'light_1',
@@ -54,7 +75,7 @@ describe('DashboardZoneRow', () => {
     expect(wide().getByText('🌱')).toBeInTheDocument()
   })
 
-  it('renders climate mini section', () => {
+  it('renders climate mini section with a missing alert theme', () => {
     const { wide } = renderWithRouter(
       <DashboardZoneRow
         location="Veg Room"
@@ -66,12 +87,21 @@ describe('DashboardZoneRow', () => {
       />
     )
     expect(wide().getByText('Climate')).toBeInTheDocument()
-    expect(wide().getByText('Climate NO DATA · — · —')).toBeInTheDocument()
+    const climate = wide().getByTestId('climate-cluster-main')
+    expect(climate).toHaveAttribute('data-alert', 'true')
+    expect(climate).toHaveAttribute('title', 'No reading received')
+    expect(climate).toHaveClass('border-status-danger', 'bg-status-danger/10')
   })
 
-  it('shows one freshness badge for an unsplit room', () => {
+  it('shows one fresh, non-alerting climate cluster for an unsplit room', () => {
     const sensorStatuses: Record<string, RoomSensorStatus> = {
-      main: { quality: 'live', newestAgeMs: 2_000, source: 'websocket', cluster: 'main' },
+      main: {
+        quality: 'live',
+        newestAgeMs: 2_000,
+        newestObservedAtMs: OBSERVED_AT_MS,
+        source: 'websocket',
+        cluster: 'main',
+      },
     }
     const { wide } = renderWithRouter(
       <DashboardZoneRow
@@ -84,8 +114,13 @@ describe('DashboardZoneRow', () => {
       />
     )
 
-    expect(wide().getByText('Climate LIVE · 2s · WS')).toBeInTheDocument()
-    expect(wide().getAllByText(/Climate (?:LIVE|STALE|BAD VALUE|NO DATA)/)).toHaveLength(1)
+    const climate = wide().getByTestId('climate-cluster-main')
+    expect(climate).toHaveAttribute('data-alert', 'false')
+    expect(climate).toHaveAttribute(
+      'title',
+      'Last good reading 12:00:00 (Toronto) · 2s ago · WebSocket'
+    )
+    expect(wide().getAllByTestId(/^climate-cluster-/)).toHaveLength(1)
   })
 
   it('renders setpoints section', () => {
@@ -173,8 +208,20 @@ describe('DashboardZoneRow', () => {
 
   it('shows separate Front and Back freshness beside their own readings', () => {
     const sensorStatuses: Record<string, RoomSensorStatus> = {
-      front: { quality: 'stale', newestAgeMs: 46_000, source: 'poll', cluster: 'front' },
-      back: { quality: 'live', newestAgeMs: 2_000, source: 'websocket', cluster: 'back' },
+      front: {
+        quality: 'stale',
+        newestAgeMs: 46_000,
+        newestObservedAtMs: OBSERVED_AT_MS - 46_000,
+        source: 'poll',
+        cluster: 'front',
+      },
+      back: {
+        quality: 'live',
+        newestAgeMs: 2_000,
+        newestObservedAtMs: OBSERVED_AT_MS - 2_000,
+        source: 'websocket',
+        cluster: 'back',
+      },
     }
     const { container, wide } = renderWithRouter(
       <DashboardZoneRow
@@ -190,31 +237,41 @@ describe('DashboardZoneRow', () => {
       />
     )
 
-    const frontBadge = wide().getByText('Front STALE · 46s · POLL')
-    const backBadge = wide().getByText('Back LIVE · 2s · WS')
-    const frontClimate = frontBadge.closest('[title*="sensor readings"]')
-    const backClimate = backBadge.closest('[title*="sensor readings"]')
+    const frontClimate = wide().getByTestId('climate-cluster-front')
+    const backClimate = wide().getByTestId('climate-cluster-back')
     expect(frontClimate).toHaveTextContent('20.00°C')
     expect(frontClimate).not.toHaveTextContent('25.00°C')
     expect(backClimate).toHaveTextContent('25.00°C')
     expect(backClimate).not.toHaveTextContent('20.00°C')
-    expect(frontBadge).toHaveAttribute(
+    expect(frontClimate).toHaveAttribute('data-alert', 'true')
+    expect(frontClimate).toHaveAttribute(
       'title',
-      expect.stringContaining(
-        'Latest valid sample in front; not a claim that every metric is current.'
-      )
+      'Last good reading 11:59:14 (Toronto) · 46s ago · polling'
     )
-    expect(frontBadge).toHaveAttribute(
+    expect(backClimate).toHaveAttribute('data-alert', 'false')
+    expect(backClimate).toHaveAttribute(
       'title',
-      expect.stringContaining('Retained values are not treated as current')
+      'Last good reading 11:59:58 (Toronto) · 2s ago · WebSocket'
     )
     expect(container.querySelector('[title="Sensor offline or missing"]')).toBeNull()
   })
 
   it('keeps a bad Front value separate from a live Back cluster', () => {
     const sensorStatuses: Record<string, RoomSensorStatus> = {
-      front: { quality: 'bad', newestAgeMs: null, source: null, cluster: 'front' },
-      back: { quality: 'live', newestAgeMs: 2_000, source: 'websocket', cluster: 'back' },
+      front: {
+        quality: 'bad',
+        newestAgeMs: null,
+        newestObservedAtMs: null,
+        source: null,
+        cluster: 'front',
+      },
+      back: {
+        quality: 'live',
+        newestAgeMs: 2_000,
+        newestObservedAtMs: OBSERVED_AT_MS - 2_000,
+        source: 'websocket',
+        cluster: 'back',
+      },
     }
     const { wide } = renderWithRouter(
       <DashboardZoneRow
@@ -227,17 +284,29 @@ describe('DashboardZoneRow', () => {
       />
     )
 
-    expect(wide().getByText('Front BAD VALUE · — · —')).toHaveAttribute(
-      'title',
-      expect.stringContaining('none were valid finite numbers')
-    )
-    expect(wide().getByText('Back LIVE · 2s · WS')).toBeInTheDocument()
+    const frontClimate = wide().getByTestId('climate-cluster-front')
+    expect(frontClimate).toHaveAttribute('data-alert', 'false')
+    expect(frontClimate).toHaveAttribute('title', 'No valid reading received')
+    expect(frontClimate).toHaveTextContent('⚠')
+    expect(wide().getByTestId('climate-cluster-back')).toHaveAttribute('data-alert', 'false')
   })
 
-  it('shows NO DATA for an empty Front without borrowing Back age or source', () => {
+  it('shows the missing alert for an empty Front without borrowing Back age or source', () => {
     const sensorStatuses: Record<string, RoomSensorStatus> = {
-      front: { quality: 'missing', newestAgeMs: null, source: null, cluster: 'front' },
-      back: { quality: 'live', newestAgeMs: 2_000, source: 'websocket', cluster: 'back' },
+      front: {
+        quality: 'missing',
+        newestAgeMs: null,
+        newestObservedAtMs: null,
+        source: null,
+        cluster: 'front',
+      },
+      back: {
+        quality: 'live',
+        newestAgeMs: 2_000,
+        newestObservedAtMs: OBSERVED_AT_MS - 2_000,
+        source: 'websocket',
+        cluster: 'back',
+      },
     }
     const { wide } = renderWithRouter(
       <DashboardZoneRow
@@ -250,13 +319,11 @@ describe('DashboardZoneRow', () => {
       />
     )
 
-    const frontBadge = wide().getByText('Front NO DATA · — · —')
-    expect(frontBadge).toHaveAttribute(
-      'title',
-      expect.stringContaining('NO DATA: no usable live samples are available for this cluster')
-    )
-    expect(frontBadge).not.toHaveTextContent('2s')
-    expect(wide().getByText('Back LIVE · 2s · WS')).toBeInTheDocument()
+    const frontClimate = wide().getByTestId('climate-cluster-front')
+    expect(frontClimate).toHaveAttribute('data-alert', 'true')
+    expect(frontClimate).toHaveAttribute('title', 'No reading received')
+    expect(frontClimate).not.toHaveTextContent('2s')
+    expect(wide().getByTestId('climate-cluster-back')).toHaveAttribute('data-alert', 'false')
     expect(screen.queryByTitle('Sensor offline or missing')).not.toBeInTheDocument()
   })
 
@@ -390,7 +457,13 @@ describe('DashboardZoneRow', () => {
         sensorData={{ Lab_main_lab_temp: 24.6, Lab_main_water_temperature: 19.5 }}
         icon="🧪"
         sensorStatuses={{
-          main: { quality: 'live', newestAgeMs: 3_000, source: 'poll', cluster: 'main' },
+          main: {
+            quality: 'live',
+            newestAgeMs: 3_000,
+            newestObservedAtMs: OBSERVED_AT_MS,
+            source: 'poll',
+            cluster: 'main',
+          },
         }}
         trendData={{
           main: {
@@ -406,7 +479,11 @@ describe('DashboardZoneRow', () => {
     for (const readings of within(lab).getAllByRole('group', { name: 'Lab sensor readings' })) {
       expect(readings).toHaveTextContent('T 24.60°C')
       expect(readings).toHaveTextContent('Water 19.50°C')
-      expect(readings).toHaveTextContent('LIVE · 3s')
+      expect(readings).toHaveAttribute('data-alert', 'false')
+      expect(readings).toHaveAttribute(
+        'title',
+        'Last good reading 12:00:00 (Toronto) · 3s ago · polling'
+      )
     }
     expect(lab).not.toHaveTextContent(/Mode:|Decision|AUTO|Setpoints|Lights|CO₂|VPD|RH|Δ10m/)
     expect(lab.querySelector('[title*="trailing 60-minute sensor history"]')).not.toBeInTheDocument()
@@ -456,9 +533,9 @@ describe('DashboardZoneRow', () => {
       />
     )
 
-    expect(wide().getByText('Climate NO DATA · — · —')).toHaveAttribute(
+    expect(wide().getByTestId('climate-cluster-main')).toHaveAttribute(
       'title',
-      expect.stringContaining('no usable live samples')
+      'No reading received'
     )
     expect(wide().getByText('Mode:').closest('[title]')).toHaveAttribute(
       'title',
@@ -539,5 +616,41 @@ describe('DashboardZoneRow', () => {
       expect(variant(1).getByText('Lights')).toBeInTheDocument()
       expect(variant(1).getByRole('status')).toBeInTheDocument()
     }
+  })
+
+  it('appends the room-tied expected harvest to both mode lines', () => {
+    const { wide, narrow } = renderWithRouter(
+      <>
+        <DashboardZoneRow
+          location="Flower Room"
+          cluster="main"
+          devices={[]}
+          sensorData={{}}
+          icon="🌸"
+          sensorStatuses={missingFlowerStatuses}
+          activeMode={{
+            location: 'Flower Room',
+            cluster: 'main',
+            mode_name: 'flower',
+            submode_name: 'bulk',
+          }}
+          expectedHarvestDate="2027-01-03"
+        />
+        <DashboardZoneRow
+          location="Veg Room"
+          cluster="main"
+          devices={[]}
+          sensorData={{}}
+          icon="🌱"
+          sensorStatuses={missingMainStatuses}
+        />
+      </>
+    )
+
+    expect(wide(0).getByText(/Harvest ~Jan 3/)).toHaveTextContent('Mode: Flower / Bulk')
+    expect(narrow(0).getByText(/Harvest ~Jan 3/)).toHaveTextContent('Mode: Flower / Bulk')
+    expect(screen.getAllByText(/Harvest ~Jan 3/)).toHaveLength(2)
+    expect(wide(1).queryByText(/Harvest ~/)).not.toBeInTheDocument()
+    expect(narrow(1).queryByText(/Harvest ~/)).not.toBeInTheDocument()
   })
 })

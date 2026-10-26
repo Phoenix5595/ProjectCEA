@@ -319,6 +319,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/calendar/expected-harvest/{location}/{cluster}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Expected Harvest
+         * @description The last ripen day of the plan occupying the room, only while it is ahead.
+         */
+        get: operations["get_api_calendar_expected-harvest_{location}_{cluster}"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/calendar/flower-mode-transitions": {
         parameters: {
             query?: never;
@@ -405,6 +425,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/calendar/grow-plans/{grow_plan_id}/extend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Extend Grow Plan Phase
+         * @description Extend one current stretch/bulk/ripen phase by a whole number of days.
+         */
+        post: operations["post_api_calendar_grow-plans_{grow_plan_id}_extend"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/calendar/grow-plans/{grow_plan_id}/lifecycle": {
         parameters: {
             query?: never;
@@ -448,6 +488,26 @@ export interface paths {
         };
         /** Mode Schedule */
         get: operations["get_api_calendar_mode-schedule_{location}_{cluster}"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/calendar/pending-mode-change/{location}/{cluster}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Pending Mode Change
+         * @description The manual mode change Flower Room's latest plan still expects (R11).
+         */
+        get: operations["get_api_calendar_pending-mode-change_{location}_{cluster}"];
         put?: never;
         post?: never;
         delete?: never;
@@ -877,7 +937,11 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        put?: never;
+        /**
+         * Move Registry Relay
+         * @description Move a relay binding, swapping owners when the target channel is occupied.
+         */
+        put: operations["put_api_devices_registry_{device_id}_relay"];
         post?: never;
         delete?: never;
         options?: never;
@@ -2777,6 +2841,24 @@ export interface components {
          * @enum {string}
          */
         EventSource: "automation" | "api" | "operator" | "system" | "transport";
+        /**
+         * ExpectedHarvestResponse
+         * @description The last ripen day of the plan occupying the room.
+         */
+        ExpectedHarvestResponse: {
+            /** Event Id */
+            event_id: number;
+            /**
+             * Grow Plan Id
+             * Format: uuid
+             */
+            grow_plan_id: string;
+            /**
+             * Harvest Date
+             * Format: date
+             */
+            harvest_date: string;
+        };
         /** ExpectedRevision */
         ExpectedRevision: {
             /** Expected Revision */
@@ -2855,20 +2937,37 @@ export interface components {
         /** FlowerGrowPlanRequest */
         FlowerGrowPlanRequest: {
             /**
+             * Anchor
+             * @enum {string}
+             */
+            anchor: "bed_veg_start" | "flower_start" | "ripen_end";
+            /**
+             * Anchor Date
+             * Format: date
+             */
+            anchor_date: string;
+            /**
              * Auto Mode Transition
              * @default true
              */
             auto_mode_transition: boolean;
             /**
-             * Bed Weeks
-             * @default 2
+             * Bed Veg Days
+             * @default 14
              */
-            bed_weeks: number;
+            bed_veg_days: number;
             /**
-             * Clone Weeks
-             * @default 3
+             * Bed Veg Start
+             * Format: date
              */
-            clone_weeks: number;
+            bed_veg_start: string;
+            /**
+             * Bulk Days
+             * @default 21
+             */
+            bulk_days: number;
+            /** Clone Start */
+            clone_start?: string | null;
             /**
              * Crop Name
              * @default Flower cycle
@@ -2885,27 +2984,12 @@ export interface components {
              */
             environment: string;
             /**
-             * Flower End
-             * Format: date
-             */
-            flower_end: string;
-            /** Flower Weeks */
-            flower_weeks: number;
-            /**
              * Idempotency Key
              * Format: uuid
              */
             idempotency_key: string;
-            /**
-             * Include Pot Phases
-             * @default true
-             */
-            include_pot_phases: boolean;
-            /**
-             * Pot Weeks
-             * @default 2
-             */
-            pot_weeks: number;
+            /** Pot Start */
+            pot_start?: string | null;
             /**
              * Ripen Days
              * @default 21
@@ -3017,6 +3101,16 @@ export interface components {
             start_at: string;
             /** Start Date */
             start_date: string;
+        };
+        /** GrowPlanExtendRequest */
+        GrowPlanExtendRequest: {
+            /**
+             * Days
+             * @default 7
+             */
+            days: number;
+            /** Event Id */
+            event_id: number;
         };
         /** GrowRevisionRequest */
         GrowRevisionRequest: {
@@ -3552,6 +3646,8 @@ export interface components {
             /** Interval Seconds */
             interval_seconds?: number | null;
             range: components["schemas"]["MonitoringRange"];
+            /** Requested Interval Seconds */
+            requested_interval_seconds?: number | null;
             /** Requested Max Points */
             requested_max_points?: number | null;
             room: components["schemas"]["RoomMetadata"];
@@ -3711,6 +3807,25 @@ export interface components {
             source: string;
             /** Updated By */
             updated_by?: string | null;
+        };
+        /**
+         * PendingModeChangeResponse
+         * @description The manual mode change the owner still has to trigger for Flower Room.
+         */
+        PendingModeChangeResponse: {
+            /** Event Id */
+            event_id: number | null;
+            /** From Mode */
+            from_mode: string | null;
+            /**
+             * Since
+             * Format: date
+             */
+            since: string;
+            /** To Mode */
+            to_mode: string;
+            /** To Submode */
+            to_submode: string | null;
         };
         /**
          * PeriodIdentity
@@ -3890,6 +4005,14 @@ export interface components {
             stale: boolean;
             /** Syncing */
             syncing: boolean;
+        };
+        /**
+         * RelayMoveRequest
+         * @description Request body for moving one relay binding onto another channel.
+         */
+        RelayMoveRequest: {
+            /** Channel */
+            channel: number;
         };
         /** RelayPayload */
         RelayPayload: {
@@ -5250,6 +5373,38 @@ export interface operations {
             };
         };
     };
+    "get_api_calendar_expected-harvest_{location}_{cluster}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                location: string;
+                cluster: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpectedHarvestResponse"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     "get_api_calendar_flower-mode-transitions": {
         parameters: {
             query?: never;
@@ -5437,6 +5592,41 @@ export interface operations {
             };
         };
     };
+    "post_api_calendar_grow-plans_{grow_plan_id}_extend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                grow_plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GrowPlanExtendRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     "get_api_calendar_grow-plans_{grow_plan_id}_lifecycle": {
         parameters: {
             query?: never;
@@ -5524,6 +5714,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "get_api_calendar_pending-mode-change_{location}_{cluster}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                location: string;
+                cluster: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingModeChangeResponse"] | null;
                 };
             };
             /** @description Validation Error */
@@ -6326,6 +6548,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    "put_api_devices_registry_{device_id}_relay": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                device_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RelayMoveRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

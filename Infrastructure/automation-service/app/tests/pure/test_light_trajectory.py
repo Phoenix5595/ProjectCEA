@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 
@@ -15,8 +14,8 @@ from app.monitoring_publication.projection import (
 from app.monitoring_publication.rich import project_saved_trajectory
 from app.repositories.climate_timeline_snapshot import (
     ClimateSchedule,
-    ClimateScheduleSnapshot,
     ClimateScheduleSlice,
+    ClimateScheduleSnapshot,
     TimelineWindow,
 )
 from app.repositories.monitoring_snapshot_builder import MonitoringSnapshotRequest
@@ -407,9 +406,61 @@ def test_running_light_profile_wins_over_an_already_applied_calendar_day() -> No
     assert light[0].quality == "estimated"
 
 
-def test_known_calendar_transition_stops_unresolvable_light_authority() -> None:
-    # Given: a Flower-room calendar transition tomorrow into a non-moon destination.
+def test_cross_mode_calendar_target_keeps_the_executing_light_schedule() -> None:
+    # Given: a Flower-room calendar target in another mode (veg) tomorrow.
     flower_event = dict(_MOON_EVENT, target_mode_name="veg", target_mode_id=3)
+    start = datetime(2026, 1, 5, 20, tzinfo=UTC)
+    result = project_light_segments(
+        _snapshot(
+            start=start,
+            end=start + timedelta(days=1),
+            location="Flower Room",
+            calendar_events=[flower_event],
+        ),
+        "0000000",
+    )
+    light = _by_metric(result.segments, "light.intensity.light_1")
+
+    # Then: only the active mode's submodes are authority, so coverage continues.
+    assert all(segment.shape != "unavailable" for segment in light)
+    assert not any(warning.code == "light_identity_unresolved" for warning in result.warnings)
+    photoperiod = _by_metric(result.segments, "light.photoperiod")
+    assert all(segment.shape != "unavailable" for segment in photoperiod)
+
+
+def test_cross_mode_drying_target_keeps_the_executing_light_schedule() -> None:
+    # Given: a Flower-room calendar target into drying tomorrow.
+    start = datetime(2026, 1, 5, 20, tzinfo=UTC)
+    result = project_light_segments(
+        _snapshot(
+            start=start,
+            end=start + timedelta(days=1),
+            location="Flower Room",
+            calendar_events=[_MOON_EVENT],
+        ),
+        "0000000",
+    )
+    light = _by_metric(result.segments, "light.intensity.light_1")
+
+    # Then: the executing profile continues instead of a forced-off moon day.
+    probe = datetime(2026, 1, 6, 12, 0, tzinfo=UTC)
+    covering = [segment for segment in light if segment.start <= probe < segment.end]
+    assert covering
+    assert all(segment.shape != "unavailable" for segment in light)
+    assert all(segment.shape != "step" or segment.value != 0.0 for segment in covering)
+    assert not any(warning.code == "light_phase_unresolved" for warning in result.warnings)
+    photoperiod = _by_metric(result.segments, "light.photoperiod")
+    assert all(segment.shape != "unavailable" for segment in photoperiod)
+
+
+def test_same_mode_submode_destination_without_frozen_authority_is_unavailable() -> None:
+    # Given: a Flower-room transition into another submode of the active mode.
+    flower_event = dict(
+        _MOON_EVENT,
+        target_mode_id=1,
+        target_submode_id=2,
+        target_mode_name="Flower",
+    )
     start = datetime(2026, 1, 5, 20, tzinfo=UTC)
     result = project_light_segments(
         _snapshot(
@@ -430,35 +481,6 @@ def test_known_calendar_transition_stops_unresolvable_light_authority() -> None:
     photoperiod = _by_metric(result.segments, "light.photoperiod")
     assert any(
         segment.shape == "unavailable" and segment.start == switch_probe.start
-        for segment in photoperiod
-    )
-
-
-def test_moon_destination_day_keeps_frozen_zero_light_authority() -> None:
-    # Given: a Flower-room calendar transition into drying tomorrow.
-    start = datetime(2026, 1, 5, 20, tzinfo=UTC)
-    result = project_light_segments(
-        _snapshot(
-            start=start,
-            end=start + timedelta(days=1),
-            location="Flower Room",
-            calendar_events=[_MOON_EVENT],
-        ),
-        "0000000",
-    )
-    light = _by_metric(result.segments, "light.intensity.light_1")
-
-    # Then: the moon destination day publishes one zero step while phase stays a gap.
-    destination = [
-        segment for segment in light if segment.start == datetime(2026, 1, 6, 5, 0, tzinfo=UTC)
-    ]
-    assert len(destination) == 1
-    assert destination[0].value == 0.0
-    assert destination[0].source.period.label == "Moon authority"
-    assert any(warning.code == "light_phase_unresolved" for warning in result.warnings)
-    photoperiod = _by_metric(result.segments, "light.photoperiod")
-    assert any(
-        segment.shape == "unavailable" and segment.start >= datetime(2026, 1, 6, 5, 0, tzinfo=UTC)
         for segment in photoperiod
     )
 

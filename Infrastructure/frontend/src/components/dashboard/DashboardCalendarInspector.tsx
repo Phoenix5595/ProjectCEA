@@ -10,9 +10,12 @@ import type {
   CalendarEventCreate,
   CalendarEventDto,
   CalendarEventUpdate,
+  ExpectedHarvest,
   GrowLifecycle,
   GrowClosePreview,
+  PendingModeChange,
 } from '../../types/calendar'
+import { MODE_DISPLAY_NAMES } from '../../types/modes'
 import {
   buildCalendarDayMarkers,
   calendarDayKey,
@@ -20,6 +23,8 @@ import {
   calendarEventOccursOnDay,
   isGrowPlanPhase,
 } from '../../utils/calendarDayMarkers'
+import { extractErrorMessage } from '../../utils/errors'
+import { formatHarvestDay } from '../../utils/expectedHarvest'
 import { CALENDAR_TZ } from '../../utils/flowerGrowPlan'
 import { Dialog, DialogContent, DialogTitle } from '../ui/dialog'
 
@@ -31,7 +36,8 @@ function calendarErrorCode(error: unknown): string | undefined {
   if (!data || typeof data !== 'object') return undefined
   const detail = 'detail' in data ? data.detail : data
   return detail && typeof detail === 'object' && 'code' in detail && typeof detail.code === 'string'
-    ? detail.code : undefined
+    ? detail.code
+    : undefined
 }
 
 export interface DashboardCalendarInspectorProps {
@@ -41,6 +47,11 @@ export interface DashboardCalendarInspectorProps {
   selectedDateEvents: CalendarEventDto[]
   onRefresh: () => void | Promise<void>
   onOpenGrowPlan: () => void
+  /** Flower Room mode the calendar expects but the owner has not triggered yet. */
+  pendingModeChange: PendingModeChange | null
+  /** Last ripen day of the plan occupying the Flower Room, while today or later. */
+  expectedHarvest: ExpectedHarvest | null
+  onCalendarStatusChange: () => Promise<void>
 }
 
 /** Views that can remain visible behind a detail overlay. */
@@ -105,6 +116,18 @@ function eventIsEditable(ev: CalendarEventDto): boolean {
   return ev.source === 'manual' && ev.editable && typeof ev.numericId === 'number'
 }
 
+/** Wire mode name → display label; null reads as an em dash. */
+function modeLabel(name: string | null): string {
+  return name === null ? '—' : (MODE_DISPLAY_NAMES[name] ?? name)
+}
+
+/** Flower phases the owner may stretch by one week. */
+const EXTENDABLE_PHASE_EVENT_TYPES: Record<string, true> = {
+  flower_stretch: true,
+  flower_bulk: true,
+  flower_ripen: true,
+}
+
 function locationOptions(edited?: string): string[] {
   const rooms = DASHBOARD_ROW_ZONES.map(z => z.location)
   if (edited && edited.trim() && !rooms.includes(edited)) rooms.push(edited)
@@ -118,6 +141,9 @@ export default function DashboardCalendarInspector({
   selectedDateEvents,
   onRefresh,
   onOpenGrowPlan,
+  pendingModeChange,
+  expectedHarvest,
+  onCalendarStatusChange,
 }: DashboardCalendarInspectorProps) {
   const [view, setView] = useState<InspectorView>(() =>
     selectedDate ? { kind: 'day' } : { kind: 'overview' }
@@ -125,6 +151,7 @@ export default function DashboardCalendarInspector({
   const [form, setForm] = useState<EventFormState | null>(null)
   const [validation, setValidation] = useState<string | null>(null)
   const [apiError, setApiError] = useState<string | null>(null)
+  const [modeChangeError, setModeChangeError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const [lifecycle, setLifecycle] = useState<GrowLifecycle | null>(null)
   const [closePreview, setClosePreview] = useState<GrowClosePreview | null>(null)
@@ -170,9 +197,12 @@ export default function DashboardCalendarInspector({
     setLifecycle(null)
     setClosePreview(null)
     if (!selectedGrowId) return
-    void apiClient.getGrowLifecycle(selectedGrowId).then(setLifecycle).catch(error => {
-      setApiError(error?.response?.data?.detail ?? 'Unable to load grow lifecycle.')
-    })
+    void apiClient
+      .getGrowLifecycle(selectedGrowId)
+      .then(setLifecycle)
+      .catch(error => {
+        setApiError(error?.response?.data?.detail ?? 'Unable to load grow lifecycle.')
+      })
   }, [selectedGrowId])
 
   const markers = useMemo(() => buildCalendarDayMarkers(events), [events])
@@ -197,6 +227,23 @@ export default function DashboardCalendarInspector({
   const todayTasks = markers.get(dayKeyNow)?.tasks ?? []
 
   const selectedDateKey = selectedDate ? calendarDayKey(selectedDate) : undefined
+
+  const handleModeChange = async () => {
+    if (!pendingModeChange || pending) return
+    setModeChangeError(null)
+    setPending(true)
+    try {
+      await apiClient.setRoomMode('Flower Room', 'main', {
+        mode_name: pendingModeChange.to_mode,
+        ...(pendingModeChange.to_submode ? { submode_name: pendingModeChange.to_submode } : {}),
+      })
+      await Promise.all([onRefresh(), onCalendarStatusChange()])
+    } catch (error) {
+      setModeChangeError(extractErrorMessage(error, 'Mode change failed'))
+    } finally {
+      setPending(false)
+    }
+  }
 
   const openForm = (next: InspectorView & { kind: 'form' }, trigger: HTMLElement) => {
     dialogTriggerRef.current = trigger
@@ -529,188 +576,286 @@ export default function DashboardCalendarInspector({
     </ul>
   )
 
-  const renderEvent = (ev: CalendarEventDto) => (
-    <div className="flex flex-col gap-2">
-      <h3 className="text-sm font-bold text-text-default break-words">{ev.title}</h3>
-      <dl className="text-xs space-y-1">
-        <div>
-          <dt className="inline text-text-muted">Type: </dt>
-          <dd className="inline text-text-default">{ev.eventType}</dd>
-        </div>
-        <div>
-          <dt className="inline text-text-muted">Source: </dt>
-          <dd className="inline text-text-default">{ev.source}</dd>
-        </div>
-        <div>
-          <dt className="inline text-text-muted">Room: </dt>
-          <dd className="inline text-text-default">{ev.location}</dd>
-        </div>
-        <div>
-          <dt className="inline text-text-muted">Dates: </dt>
-          <dd className="inline text-text-default font-mono tabular-nums">{dateRangeLabel(ev)}</dd>
-        </div>
-        {ev.notes && (
+  const renderEvent = (ev: CalendarEventDto) => {
+    const growPlanId = ev.growPlanId
+    const numericId = ev.numericId
+    const extendable =
+      typeof growPlanId === 'string' &&
+      typeof numericId === 'number' &&
+      EXTENDABLE_PHASE_EVENT_TYPES[ev.eventType] === true &&
+      calendarEventDayKey(ev.end ?? ev.start) >= dayKeyNow
+    return (
+      <div className="flex flex-col gap-2">
+        <h3 className="text-sm font-bold text-text-default break-words">{ev.title}</h3>
+        <dl className="text-xs space-y-1">
           <div>
-            <dt className="text-text-muted">Notes:</dt>
-            <dd className="text-text-default whitespace-pre-wrap break-words">{ev.notes}</dd>
+            <dt className="inline text-text-muted">Type: </dt>
+            <dd className="inline text-text-default">{ev.eventType}</dd>
           </div>
+          <div>
+            <dt className="inline text-text-muted">Source: </dt>
+            <dd className="inline text-text-default">{ev.source}</dd>
+          </div>
+          <div>
+            <dt className="inline text-text-muted">Room: </dt>
+            <dd className="inline text-text-default">{ev.location}</dd>
+          </div>
+          <div>
+            <dt className="inline text-text-muted">Dates: </dt>
+            <dd className="inline text-text-default font-mono tabular-nums">
+              {dateRangeLabel(ev)}
+            </dd>
+          </div>
+          {ev.notes && (
+            <div>
+              <dt className="text-text-muted">Notes:</dt>
+              <dd className="text-text-default whitespace-pre-wrap break-words">{ev.notes}</dd>
+            </div>
+          )}
+        </dl>
+        {ev.sync_status && (
+          <p role="status" className="text-xs text-text-secondary">
+            {ev.sync_status === 'synced'
+              ? `Confirmed by Nextcloud${ev.last_synced_at ? ` · ${ev.last_synced_at}` : ''}`
+              : ev.sync_status === 'pending_push' || ev.sync_status === 'pending_delete'
+                ? 'Saved locally—awaiting Nextcloud'
+                : ev.sync_status === 'conflict'
+                  ? `Nextcloud conflict${ev.sync_error_code ? ` · ${ev.sync_error_code}` : ''}`
+                  : `Nextcloud unavailable${ev.sync_error_code ? ` · ${ev.sync_error_code}` : ''}`}
+          </p>
         )}
-      </dl>
-      {ev.sync_status && (
-        <p role="status" className="text-xs text-text-secondary">
-          {ev.sync_status === 'synced'
-            ? `Confirmed by Nextcloud${ev.last_synced_at ? ` · ${ev.last_synced_at}` : ''}`
-            : ev.sync_status === 'pending_push' || ev.sync_status === 'pending_delete'
-              ? 'Saved locally—awaiting Nextcloud'
-              : ev.sync_status === 'conflict'
-                ? `Nextcloud conflict${ev.sync_error_code ? ` · ${ev.sync_error_code}` : ''}`
-                : `Nextcloud unavailable${ev.sync_error_code ? ` · ${ev.sync_error_code}` : ''}`}
-        </p>
-      )}
-      {selectedGrowId === ev.growPlanId && lifecycle && (
-        <section className="flex flex-col gap-2 border-t border-border-subtle pt-2">
-          <h4 className="text-xs font-semibold text-text-default">Grow lifecycle: {lifecycle.state}</h4>
-          {lifecycle.state === 'closed' ? (
-            <button
-              type="button"
-              disabled={pending}
-              className="grow-cal-toolbar-btn"
-              onClick={async () => {
-                setPending(true)
-                try {
-                  setLifecycle(await apiClient.reopenGrow(ev.growPlanId!, lifecycle.calendar_revision))
-                  setClosePreview(null)
-                  await onRefresh()
-                } catch (error) {
-                  setApiError(calendarErrorCode(error) ?? 'Unable to reopen grow.')
-                } finally {
-                  setPending(false)
-                }
-              }}
-            >
-              Reopen grow
-            </button>
-          ) : (
-            <>
+        {selectedGrowId === ev.growPlanId && lifecycle && (
+          <section className="flex flex-col gap-2 border-t border-border-subtle pt-2">
+            <h4 className="text-xs font-semibold text-text-default">
+              Grow lifecycle: {lifecycle.state}
+            </h4>
+            {lifecycle.state === 'closed' ? (
               <button
                 type="button"
                 disabled={pending}
                 className="grow-cal-toolbar-btn"
                 onClick={async () => {
                   setPending(true)
-                  setApiError(null)
                   try {
-                    setClosePreview(await apiClient.previewGrowClose(ev.growPlanId!))
+                    setLifecycle(
+                      await apiClient.reopenGrow(ev.growPlanId!, lifecycle.calendar_revision)
+                    )
+                    setClosePreview(null)
+                    await onRefresh()
                   } catch (error) {
-                    setApiError(calendarErrorCode(error) ?? 'Unable to preview closure.')
+                    setApiError(calendarErrorCode(error) ?? 'Unable to reopen grow.')
                   } finally {
                     setPending(false)
                   }
                 }}
               >
-                Preview close
+                Reopen grow
               </button>
-              {closePreview && (
-                <div className="text-xs text-text-secondary space-y-1">
-                  <p>Drying ends: {closePreview.drying_end ?? 'Missing'}</p>
-                  <p>Observation counts: {Object.entries(closePreview.affected_counts).map(([name, count]) => `${name}: ${JSON.stringify(count)}`).join(', ') || 'None reported'}</p>
-                  {closePreview.gaps.map((gap, index) => (
-                    <p key={index}>Coverage gap: {JSON.stringify(gap)}</p>
-                  ))}
-                  {closePreview.scope_unresolved.map((scope, index) => (
-                    <p key={index} role="alert">Unresolved scope: {JSON.stringify(scope)}</p>
-                  ))}
-                  {closePreview.scope_unresolved.length > 0 && (
-                    <form
-                      className="space-y-1 border-t border-border-subtle pt-1"
-                      onSubmit={async event => {
-                        event.preventDefault()
-                        const identityId = Number(scopeIdentity)
-                        if (!Number.isInteger(identityId) || identityId <= 0 || !scopeStart || !scopeEnd || scopeEnd <= scopeStart) {
-                          setApiError('Enter a valid source ID and date-bounded half-open interval.')
-                          return
-                        }
+            ) : (
+              <>
+                <button
+                  type="button"
+                  disabled={pending}
+                  className="grow-cal-toolbar-btn"
+                  onClick={async () => {
+                    setPending(true)
+                    setApiError(null)
+                    try {
+                      setClosePreview(await apiClient.previewGrowClose(ev.growPlanId!))
+                    } catch (error) {
+                      setApiError(calendarErrorCode(error) ?? 'Unable to preview closure.')
+                    } finally {
+                      setPending(false)
+                    }
+                  }}
+                >
+                  Preview close
+                </button>
+                {closePreview && (
+                  <div className="text-xs text-text-secondary space-y-1">
+                    <p>Drying ends: {closePreview.drying_end ?? 'Missing'}</p>
+                    <p>
+                      Observation counts:{' '}
+                      {Object.entries(closePreview.affected_counts)
+                        .map(([name, count]) => `${name}: ${JSON.stringify(count)}`)
+                        .join(', ') || 'None reported'}
+                    </p>
+                    {closePreview.gaps.map((gap, index) => (
+                      <p key={index}>Coverage gap: {JSON.stringify(gap)}</p>
+                    ))}
+                    {closePreview.scope_unresolved.map((scope, index) => (
+                      <p key={index} role="alert">
+                        Unresolved scope: {JSON.stringify(scope)}
+                      </p>
+                    ))}
+                    {closePreview.scope_unresolved.length > 0 && (
+                      <form
+                        className="space-y-1 border-t border-border-subtle pt-1"
+                        onSubmit={async event => {
+                          event.preventDefault()
+                          const identityId = Number(scopeIdentity)
+                          if (
+                            !Number.isInteger(identityId) ||
+                            identityId <= 0 ||
+                            !scopeStart ||
+                            !scopeEnd ||
+                            scopeEnd <= scopeStart
+                          ) {
+                            setApiError(
+                              'Enter a valid source ID and date-bounded half-open interval.'
+                            )
+                            return
+                          }
+                          setPending(true)
+                          try {
+                            await apiClient.createArchiveScopeCorrection({
+                              dataset_id: closePreview.lifecycle.dataset_id,
+                              expected_revision: closePreview.lifecycle.dataset_id
+                                ? closePreview.lifecycle.data_revision
+                                : null,
+                              source_table: 'measurement',
+                              source_identity: { sensor_id: identityId },
+                              start: new Date(scopeStart).toISOString(),
+                              end: new Date(scopeEnd).toISOString(),
+                              room: scopeRoom,
+                            })
+                            setClosePreview(await apiClient.previewGrowClose(ev.growPlanId!))
+                          } catch (error) {
+                            setApiError(calendarErrorCode(error) ?? 'Scope correction failed.')
+                          } finally {
+                            setPending(false)
+                          }
+                        }}
+                      >
+                        <p>
+                          Correct unresolved room assignment (reopen first for grow-associated
+                          changes).
+                        </p>
+                        <input
+                          aria-label="Source identity ID"
+                          inputMode="numeric"
+                          value={scopeIdentity}
+                          onChange={event => setScopeIdentity(event.target.value)}
+                        />
+                        <label>
+                          Start{' '}
+                          <input
+                            type="datetime-local"
+                            required
+                            value={scopeStart}
+                            onChange={event => setScopeStart(event.target.value)}
+                          />
+                        </label>
+                        <label>
+                          End{' '}
+                          <input
+                            type="datetime-local"
+                            required
+                            value={scopeEnd}
+                            onChange={event => setScopeEnd(event.target.value)}
+                          />
+                        </label>
+                        <select
+                          aria-label="Assigned room"
+                          value={scopeRoom}
+                          onChange={event => setScopeRoom(event.target.value)}
+                        >
+                          <option>Flower Room</option>
+                          <option>Veg Room</option>
+                        </select>
+                        <button type="submit" disabled={pending} className="grow-cal-toolbar-btn">
+                          Save scope correction
+                        </button>
+                      </form>
+                    )}
+                    {closePreview.conflicts.map((conflict, index) => (
+                      <p key={index} role="alert">
+                        Conflict: {JSON.stringify(conflict)}
+                      </p>
+                    ))}
+                    <button
+                      type="button"
+                      disabled={
+                        pending ||
+                        closePreview.conflicts.length > 0 ||
+                        closePreview.scope_unresolved.length > 0
+                      }
+                      className="grow-cal-toolbar-btn grow-cal-toolbar-btn--primary"
+                      onClick={async () => {
                         setPending(true)
+                        setApiError(null)
                         try {
-                          await apiClient.createArchiveScopeCorrection({
-                            dataset_id: closePreview.lifecycle.dataset_id,
-                            expected_revision: closePreview.lifecycle.dataset_id ? closePreview.lifecycle.data_revision : null,
-                            source_table: 'measurement',
-                            source_identity: { sensor_id: identityId },
-                            start: new Date(scopeStart).toISOString(),
-                            end: new Date(scopeEnd).toISOString(),
-                            room: scopeRoom,
-                          })
-                          setClosePreview(await apiClient.previewGrowClose(ev.growPlanId!))
+                          setLifecycle(
+                            await apiClient.closeGrow(ev.growPlanId!, closePreview.revision)
+                          )
+                          setClosePreview(null)
+                          await onRefresh()
                         } catch (error) {
-                          setApiError(calendarErrorCode(error) ?? 'Scope correction failed.')
+                          setApiError(calendarErrorCode(error) ?? 'Unable to close grow.')
                         } finally {
                           setPending(false)
                         }
                       }}
                     >
-                      <p>Correct unresolved room assignment (reopen first for grow-associated changes).</p>
-                      <input aria-label="Source identity ID" inputMode="numeric" value={scopeIdentity} onChange={event => setScopeIdentity(event.target.value)} />
-                      <label>Start <input type="datetime-local" required value={scopeStart} onChange={event => setScopeStart(event.target.value)} /></label>
-                      <label>End <input type="datetime-local" required value={scopeEnd} onChange={event => setScopeEnd(event.target.value)} /></label>
-                      <select aria-label="Assigned room" value={scopeRoom} onChange={event => setScopeRoom(event.target.value)}>
-                        <option>Flower Room</option>
-                        <option>Veg Room</option>
-                      </select>
-                      <button type="submit" disabled={pending} className="grow-cal-toolbar-btn">Save scope correction</button>
-                    </form>
-                  )}
-                  {closePreview.conflicts.map((conflict, index) => (
-                    <p key={index} role="alert">Conflict: {JSON.stringify(conflict)}</p>
-                  ))}
-                  <button
-                    type="button"
-                    disabled={pending || closePreview.conflicts.length > 0 || closePreview.scope_unresolved.length > 0}
-                    className="grow-cal-toolbar-btn grow-cal-toolbar-btn--primary"
-                    onClick={async () => {
-                      setPending(true)
-                      setApiError(null)
-                      try {
-                        setLifecycle(await apiClient.closeGrow(ev.growPlanId!, closePreview.revision))
-                        setClosePreview(null)
-                        await onRefresh()
-                      } catch (error) {
-                        setApiError(calendarErrorCode(error) ?? 'Unable to close grow.')
-                      } finally {
-                        setPending(false)
-                      }
-                    }}
-                  >
-                    Close grow
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-        </section>
-      )}
-      {eventIsEditable(ev) && (
-        <button
-          type="button"
-          className="grow-cal-toolbar-btn mt-auto"
-          onClick={event =>
-            openForm(
-              {
-                kind: 'form',
-                mode: 'edit',
-                event: ev,
-                date: ev.start.slice(0, 10),
-                returnTo: view.kind === 'event' ? view : { kind: 'day' },
-              },
-              event.currentTarget
-            )
-          }
-        >
-          Edit
-        </button>
-      )}
-    </div>
-  )
+                      Close grow
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+        )}
+        {extendable && (
+          <button
+            type="button"
+            className="grow-cal-toolbar-btn"
+            disabled={pending}
+            onClick={async () => {
+              if (typeof growPlanId !== 'string' || typeof numericId !== 'number') return
+              setPending(true)
+              setApiError(null)
+              try {
+                await apiClient.extendGrowPlanPhase(growPlanId, numericId, 7)
+                await Promise.all([onRefresh(), onCalendarStatusChange()])
+                closeDialog()
+              } catch (error) {
+                setApiError(calendarErrorCode(error) ?? 'Unable to extend phase.')
+              } finally {
+                setPending(false)
+              }
+            }}
+          >
+            +1 week
+          </button>
+        )}
+        {view.kind === 'event' && apiError && (
+          <p role="alert" className="text-xs text-status-danger-text">
+            {apiError}
+          </p>
+        )}
+        {eventIsEditable(ev) && (
+          <button
+            type="button"
+            className="grow-cal-toolbar-btn mt-auto"
+            onClick={event =>
+              openForm(
+                {
+                  kind: 'form',
+                  mode: 'edit',
+                  event: ev,
+                  date: ev.start.slice(0, 10),
+                  returnTo: view.kind === 'event' ? view : { kind: 'day' },
+                },
+                event.currentTarget
+              )
+            }
+          >
+            Edit
+          </button>
+        )}
+      </div>
+    )
+  }
 
   const renderForm = () => {
     if (view.kind !== 'form' || !form) return null
@@ -827,6 +972,30 @@ export default function DashboardCalendarInspector({
         aria-label="Calendar inspector"
         className="dashboard-inspector flex flex-col bg-surface-primary border border-border-subtle rounded-lg p-2 gap-1"
       >
+        {(pendingModeChange || expectedHarvest) && (
+          <section aria-label="Flower Room status" className="flex flex-col gap-1">
+            {expectedHarvest && (
+              <p data-testid="inspector-expected-harvest" className="text-xs text-text-secondary">
+                Harvest ~{formatHarvestDay(expectedHarvest.harvest_date)}
+              </p>
+            )}
+            {pendingModeChange && (
+              <button
+                type="button"
+                disabled={pending}
+                className="grow-cal-toolbar-btn grow-cal-toolbar-btn--primary font-bold disabled:opacity-50"
+                onClick={() => void handleModeChange()}
+              >
+                {`${modeLabel(pendingModeChange.from_mode)} → ${modeLabel(pendingModeChange.to_mode)}`}
+              </button>
+            )}
+            {modeChangeError && (
+              <p role="alert" className="text-xs text-status-danger-text">
+                {modeChangeError}
+              </p>
+            )}
+          </section>
+        )}
         {baseView.kind === 'overview' && renderOverview()}
         {baseView.kind === 'day' && renderDay()}
       </div>

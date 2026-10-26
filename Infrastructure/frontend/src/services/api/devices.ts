@@ -41,6 +41,14 @@ export type DeviceCommandBody =
   | { action: 'MANUAL_OFF'; reason?: string }
   | { action: 'TIMED_ON'; duration_seconds: number; reason?: string }
 
+/** Four-key body returned by the relay-move route (hand-typed: the generated client types bodies as dicts). */
+export interface RelayMoveResponse {
+  device_id: number
+  channel: number | null
+  swapped_device_id: number | null
+  swapped_channel: number | null
+}
+
 /** Opaque JSON object returned by backend endpoints that don't have a typed contract yet. */
 type JsonObject = Record<string, unknown>
 
@@ -71,6 +79,7 @@ export interface DeviceApi {
     body: RegistryDeviceUpdateBody,
     confirmedRelaySteal?: boolean
   ): Promise<RegistryDeviceResponse & { displaced_device_id?: number | null }>
+  moveDeviceRelay(deviceId: number, channel: number): Promise<RelayMoveResponse>
   deleteDevice(
     device_id: number
   ): Promise<{ success: boolean; device_id: number; displaced_device_id?: number | null }>
@@ -141,6 +150,17 @@ export const deviceMethods = {
     return response.data
   },
 
+  async moveDeviceRelay(
+    this: ApiClientCore,
+    deviceId: number,
+    channel: number
+  ): Promise<RelayMoveResponse> {
+    const response = await this.automationClient.put(`/api/devices/registry/${deviceId}/relay`, {
+      channel,
+    })
+    return response.data
+  },
+
   async deleteDevice(
     this: ApiClientCore,
     device_id: number
@@ -159,7 +179,6 @@ export const deviceMethods = {
     const response = await this.automationClient.get(`/api/devices/${location}/${cluster}`)
     return response.data
   },
-
 
   async getLightsForZone(
     this: ApiClientCore,
@@ -209,7 +228,6 @@ export const deviceMethods = {
     return response.data
   },
 
-
   async controlChannel(
     this: ApiClientCore,
     channel: number,
@@ -222,5 +240,4 @@ export const deviceMethods = {
     )
     return response.data
   },
-
 }

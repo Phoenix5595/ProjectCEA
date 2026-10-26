@@ -9,7 +9,11 @@ from typing import Any, Protocol
 
 from pydantic import ValidationError
 
-from app.control.runtime_device_registry import RuntimeDeviceRegistry
+from app.control.runtime_device_registry import (
+    Mutation,
+    MutationResult,
+    RuntimeDeviceRegistry,
+)
 from app.hardware.dfr0971 import DFR0971Manager
 from app.models.device_registry import (
     Device,
@@ -59,6 +63,17 @@ class DeviceMutation:
     displaced_device_id: int | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class RelayMove:
+    """The two devices whose relay bindings changed during one move.
+
+    `swapped_device` took the mover's previous channel (None when it was unbound).
+    """
+
+    device: Device | LightDevice
+    swapped_device: Device | LightDevice | None
+
+
 class DeviceRegistryService:
     """Owns every registry write and its required safe-output transition."""
 
@@ -78,12 +93,20 @@ class DeviceRegistryService:
         """Return the typed read projection without giving routes repository access."""
         return await self._device_repo.get_all_devices_flat()
 
+    async def _mutate_outputs(self, mutation: Mutation[MutationResult]) -> MutationResult:
+        """Run one registry mutation while every relay actuation path waits.
+
+        Lock order: actuation, then the registry mutation lock.
+        """
+        async with self._runtime_device_registry.actuation_lock:
+            return await self._runtime_device_registry.mutate(mutation)
+
     async def create_device(
         self, create: DeviceCreate, *, confirmed_relay_steal: bool = False
     ) -> DeviceMutation:
         """Create a non-light after atomically reserving its optional relay channel."""
         _room_prefix(create.room)
-        return await self._runtime_device_registry.mutate(
+        return await self._mutate_outputs(
             lambda connection: self._create_device(connection, create, confirmed_relay_steal)
         )
 
@@ -92,7 +115,7 @@ class DeviceRegistryService:
     ) -> DeviceMutation:
         """Create a light, its room-scoped targets, and optional relay assignment."""
         _room_prefix(create.room)
-        return await self._runtime_device_registry.mutate(
+        return await self._mutate_outputs(
             lambda connection: self._create_light(connection, create, confirmed_relay_steal)
         )
 
@@ -104,7 +127,7 @@ class DeviceRegistryService:
         confirmed_relay_steal: bool = False,
     ) -> DeviceMutation:
         """Update one non-light using locked current assignments."""
-        return await self._runtime_device_registry.mutate(
+        return await self._mutate_outputs(
             lambda connection: self._update_device(
                 connection, device_id, update, confirmed_relay_steal
             )
@@ -118,7 +141,7 @@ class DeviceRegistryService:
         confirmed_relay_steal: bool = False,
     ) -> DeviceMutation:
         """Update one light using locked relay and DFR assignments."""
-        return await self._runtime_device_registry.mutate(
+        return await self._mutate_outputs(
             lambda connection: self._update_light(
                 connection, device_id, update, confirmed_relay_steal
             )
@@ -132,7 +155,7 @@ class DeviceRegistryService:
         confirmed_relay_steal: bool = False,
     ) -> DeviceMutation:
         """Parse a route update against its locked device kind before mutating it."""
-        return await self._runtime_device_registry.mutate(
+        return await self._mutate_outputs(
             lambda connection: self._update_registry_device(
                 connection, device_id, fields, confirmed_relay_steal
             )
@@ -140,25 +163,25 @@ class DeviceRegistryService:
 
     async def delete_device(self, device_id: int) -> DeviceMutation:
         """Safely disable and delete a non-light and its current state."""
-        return await self._runtime_device_registry.mutate(
+        return await self._mutate_outputs(
             lambda connection: self._delete_device(connection, device_id, expected_type="non-light")
         )
 
     async def delete_light(self, device_id: int) -> DeviceMutation:
         """Safely disable and delete a light and its current state."""
-        return await self._runtime_device_registry.mutate(
+        return await self._mutate_outputs(
             lambda connection: self._delete_device(connection, device_id, expected_type="light")
         )
 
     async def delete_registry_device(self, device_id: int) -> DeviceMutation:
         """Delete the locked row using its canonical device kind."""
-        return await self._runtime_device_registry.mutate(
+        return await self._mutate_outputs(
             lambda connection: self._delete_registry_device(connection, device_id)
         )
 
     async def unbind_relay(self, device_id: int) -> DeviceMutation:
         """Turn an existing relay off before atomically clearing its binding."""
-        return await self._runtime_device_registry.mutate(
+        return await self._mutate_outputs(
             lambda connection: self._unbind_relay(connection, device_id)
         )
 
@@ -317,6 +340,48 @@ class DeviceRegistryService:
                 connection, device_id, DeviceUpdate()
             )
         return DeviceMutation(device=updated)
+
+    async def move_relay(self, device_id: int, channel: int) -> RelayMove:
+        """Move a relay binding; an occupied target swaps owners after both channels confirm OFF."""
+        return await self._mutate_outputs(
+            lambda connection: self._move_relay(connection, device_id, channel)
+        )
+
+    async def _move_relay(self, connection: Any, device_id: int, channel: int) -> RelayMove:
+        current = await self._locked_device(connection, device_id, "any")
+        source = current.get("channel")
+        if source == channel:
+            if current["device_type"] == "light":
+                device = await self._device_repo.update_light_locked(connection, device_id, {})
+            else:
+                device = await self._device_repo.update_device_locked(
+                    connection, device_id, DeviceUpdate()
+                )
+            if device is None:
+                raise RegistryNotFoundError(device_id)
+            return RelayMove(device=device, swapped_device=None)
+        owner = await self._device_repo.find_relay_owner_for_update(connection, channel, device_id)
+        await self._safe_turn_off_relay(channel)
+        await self._safe_turn_off_relay(source)
+        moved = await self._bind_relay(connection, current, channel)
+        swapped = await self._bind_relay(connection, owner, source) if owner is not None else None
+        return RelayMove(device=moved, swapped_device=swapped)
+
+    async def _bind_relay(
+        self, connection: Any, row: dict[str, Any], channel: int | None
+    ) -> Device | LightDevice:
+        """Write one locked row's relay binding; an explicit None unbinds it."""
+        if row["device_type"] == "light":
+            device = await self._device_repo.update_light_locked(
+                connection, row["device_id"], {"relay_channel": channel}
+            )
+        else:
+            device = await self._device_repo.update_device_locked(
+                connection, row["device_id"], DeviceUpdate(channel=channel)
+            )
+        if device is None:
+            raise RegistryNotFoundError(row["device_id"])
+        return device
 
     async def _locked_device(
         self, connection: Any, device_id: int, expected_type: str

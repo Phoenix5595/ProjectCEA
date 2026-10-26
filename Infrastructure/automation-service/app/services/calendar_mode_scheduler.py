@@ -21,7 +21,11 @@ from app.events.operational_models import (
 from app.events.operational_ports import OperationalEventSink
 from shared.infra_logging import get_logger
 
-from ..repositories.calendar import CalendarRepository
+from ..repositories.calendar import (
+    CalendarMutationError,
+    CalendarRepository,
+    GrowPlanCurrentRunAmbiguousError,
+)
 
 if TYPE_CHECKING:
     from app.services.mode_transition_service import ModeTransitionService
@@ -69,6 +73,10 @@ class CalendarModeScheduler:
 
     async def _apply_for_date(self, on_date: date, triggered_by: str) -> None:
         repo = self._db.calendar_repo
+        active = await self._db.room_mode_repo.get_active_mode("Flower Room", "main")
+        active_mode = (active or {}).get("mode_name")
+        if active_mode != "flower":
+            await self._extend_waiting_bed_veg(on_date)
         if not await repo.flower_calendar_mode_transitions_enabled():
             return
         event = await repo.get_active_flower_phase_event(on_date)
@@ -90,6 +98,9 @@ class CalendarModeScheduler:
                     event["id"], on_date, mode_name, None, "unknown_submode"
                 )
                 return
+            # Mode changes are manual (R11); GET /pending-mode-change surfaces them.
+            if mode_name != active_mode:
+                return
             await self._set_mode(
                 mode_name,
                 submode_name,
@@ -99,11 +110,27 @@ class CalendarModeScheduler:
             )
             return
 
-        last_end = await repo.get_last_ended_plan_end("Flower Room")
-        if last_end and on_date > last_end:
-            active = await self._db.room_mode_repo.get_active_mode("Flower Room", "main")
-            if active and active.get("mode_name") == "drying":
-                await self._set_mode("veg", None, None, on_date, "calendar_scheduler_idle")
+    async def _extend_waiting_bed_veg(self, on_date: date) -> None:
+        """Keep a waiting plan's flip on today until Flower is activated manually.
+
+        Idempotent: a plan already flipped today is left untouched, so this runs
+        on every 60 s tick and on startup catch-up with no per-day state.
+        """
+        repo = self._db.calendar_repo
+        try:
+            run = await repo.get_current_run("Flower Room", on_date)
+        except GrowPlanCurrentRunAmbiguousError:
+            logger.warning("Bed veg extension skipped: ambiguous Flower Room plan for %s", on_date)
+            return
+        if run is None:
+            return
+        try:
+            changed = await repo.align_flower_start(run.grow_plan_id, on_date, forward_only=True)
+        except CalendarMutationError as error:
+            logger.warning("Bed veg extension rejected for plan %s: %s", run.grow_plan_id, error)
+            return
+        if changed is not None:
+            logger.info("Bed veg extended: plan %s flowers %s", run.grow_plan_id, on_date)
 
     async def _set_mode(
         self,

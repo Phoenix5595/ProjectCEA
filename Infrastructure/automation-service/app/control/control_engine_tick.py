@@ -25,31 +25,34 @@ class TickMixin:
         get_binary_hysteresis = getattr(self.config, "get_binary_hysteresis", None)
         if callable(get_binary_hysteresis):
             self.device_controller.binary_hysteresis = float(get_binary_hysteresis())
-        snapshot = self.runtime_device_registry.snapshot
-        snapshot_token = self.relay_manager.bind_snapshot(snapshot)
-        scheduler_snapshot_token = self.scheduler.bind_snapshot(snapshot)
-        self._tick_effective_setpoints.clear()
-        self._photoperiod_phases.clear()
-        try:
-            await self.relay_manager.retry_unresolved()
-            await self._run_control_loop_with_snapshot(snapshot)
-            self._mark_removed_rooms_unavailable(snapshot)
-        except Exception:
-            # Before the existing failure handling, every snapshot room loses its
-            # resolved-phase offer, so history records the outage explicitly.
-            self._mark_snapshot_rooms_unavailable(snapshot)
-            raise
-        finally:
+        async with self.runtime_device_registry.actuation_lock:
+            # Capture under the lock: a tick that waited on a relay move must act on
+            # the snapshot that move installed, never on the binding it replaced.
+            snapshot = self.runtime_device_registry.snapshot
+            snapshot_token = self.relay_manager.bind_snapshot(snapshot)
+            scheduler_snapshot_token = self.scheduler.bind_snapshot(snapshot)
             self._tick_effective_setpoints.clear()
             self._photoperiod_phases.clear()
-            if self.relay_board_state_manager is not None:
-                await self.relay_board_state_manager.sample()
-                if self.alarm_manager is not None:
-                    await self.relay_manager.evaluate_observation(
-                        self.alarm_manager, self.device_command_service
-                    )
-            self.scheduler.release_snapshot(scheduler_snapshot_token)
-            self.relay_manager.release_snapshot(snapshot_token)
+            try:
+                await self.relay_manager.retry_unresolved()
+                await self._run_control_loop_with_snapshot(snapshot)
+                self._mark_removed_rooms_unavailable(snapshot)
+            except Exception:
+                # Before the existing failure handling, every snapshot room loses its
+                # resolved-phase offer, so history records the outage explicitly.
+                self._mark_snapshot_rooms_unavailable(snapshot)
+                raise
+            finally:
+                self._tick_effective_setpoints.clear()
+                self._photoperiod_phases.clear()
+                if self.relay_board_state_manager is not None:
+                    await self.relay_board_state_manager.sample()
+                    if self.alarm_manager is not None:
+                        await self.relay_manager.evaluate_observation(
+                            self.alarm_manager, self.device_command_service
+                        )
+                self.scheduler.release_snapshot(scheduler_snapshot_token)
+                self.relay_manager.release_snapshot(snapshot_token)
 
     async def _run_control_loop_with_snapshot(self, snapshot: RuntimeDeviceSnapshot) -> None:
         """Run one tick against the snapshot reference captured at entry."""

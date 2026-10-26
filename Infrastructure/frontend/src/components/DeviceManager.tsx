@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { normalizeDeviceControlCluster } from '../config/zones'
 import { useControlSnapshot } from '../hooks/useControlSnapshot'
 import { apiClient } from '../services/api'
+import { extractErrorMessage } from '../utils/errors'
 import { logger } from '../utils/logger'
 
 import DeviceTable from './devices/DeviceTable'
@@ -29,6 +30,7 @@ export default function DeviceManager() {
   const handleSharedRefresh = useCallback(() => setRefreshKey(k => k + 1), [])
   const { snapshot, mcpConnected, refreshNow } = useControlSnapshot()
   const [menuOpenChannel, setMenuOpenChannel] = useState<number | null>(null)
+  const [movingChannels, setMovingChannels] = useState<ReadonlySet<number>>(new Set<number>())
   const [nowMs, setNowMs] = useState(Date.now())
 
   function selectTab(tab: DeviceTab) {
@@ -130,6 +132,23 @@ export default function DeviceManager() {
     }
   }
 
+  async function handleRelayMove(deviceId: number, source: number, target: number) {
+    setMovingChannels(new Set([source, target]))
+    try {
+      await apiClient.moveDeviceRelay(deviceId, target)
+      await refreshNow({ forceRegistry: true })
+    } catch (error) {
+      const status = (error as { response?: { status?: number } })?.response?.status
+      if (status === 503) {
+        toast.error('Relay did not confirm OFF — no assignment changed')
+      } else {
+        toast.error(extractErrorMessage(error, 'Relay move failed'))
+      }
+    } finally {
+      setMovingChannels(new Set<number>())
+    }
+  }
+
   const relayStatusLabel = mcpConnected ? 'Connected' : 'Unavailable'
 
   const relayStatusClasses = mcpConnected
@@ -215,6 +234,8 @@ export default function DeviceManager() {
                   setMenuOpenChannel(previous => (previous === channel ? null : channel))
                 }
                 onMenuAction={handleRelayMenuAction}
+                onMoveRelay={handleRelayMove}
+                movingChannels={movingChannels}
               />
             </div>
           </div>

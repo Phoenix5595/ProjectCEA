@@ -63,7 +63,7 @@ export default function CalendarSettings() {
     try {
       const setting = await apiClient.updateFlowerCalendarModeTransitions(enabled)
       setFlowerCalendarTransitionsEnabled(setting.enabled)
-      toast.success(`Flower calendar mode transitions ${setting.enabled ? 'enabled' : 'disabled'}`)
+      toast.success(`Automatic submode changes ${setting.enabled ? 'enabled' : 'disabled'}`)
     } catch (error) {
       toast.error(extractErrorMessage(error, 'Failed to save Flower calendar control'))
     } finally {
@@ -162,15 +162,16 @@ export default function CalendarSettings() {
       <h1 className="text-2xl font-bold text-text-default mb-4">Calendar sync (Nextcloud)</h1>
       <div className="mb-4 flex items-center justify-between gap-3 text-sm text-text-default">
         <div>
-          <p className="font-medium">Flower calendar mode transitions</p>
+          <p className="font-medium">Automatic submode changes</p>
           <p className="text-text-secondary">
-            Let the Flower grow calendar change the active mode.
+            Let the Flower grow calendar change the submode (stretch, bulk, ripen) of the active
+            Flower mode.
           </p>
         </div>
         <label className="flex items-center gap-2">
           <span>{flowerCalendarTransitionsEnabled ? 'Enabled' : 'Disabled'}</span>
           <input
-            aria-label="Flower calendar mode transitions"
+            aria-label="Automatic submode changes"
             type="checkbox"
             checked={flowerCalendarTransitionsEnabled}
             disabled={savingFlowerCalendarTransitions}

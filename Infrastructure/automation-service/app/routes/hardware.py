@@ -64,6 +64,7 @@ async def relay_test(
     body: RelayTestRequest,
     relay_manager: RelayManager = Depends(get_relay_manager),
     relay_board_state_manager: RelayBoardStateManager = Depends(get_relay_board_state_manager),
+    device_command_service: DeviceCommandService = Depends(get_device_command_service),
 ) -> dict[str, Any]:
     """Run relay channel test: toggle each channel, read back, report pass/fail.
 
@@ -90,23 +91,25 @@ async def relay_test(
     results: list[dict[str, Any]] = []
 
     for ch in channels_to_test:
-        # Set ON, wait, read back
-        if not await relay_manager.set_channel_state(ch, 1):
-            results.append({"channel": ch, "ok": False})
-            continue
-        await asyncio.sleep(duration_s)
-        on_snapshot = relay_board_state_manager.get_snapshot()
-        ok_on = on_snapshot.channels is not None and on_snapshot.channels[ch] is True
+        # One channel per lock span: the control tick waits at most one test.
+        async with device_command_service.actuation_lock:
+            # Set ON, wait, read back
+            if not await relay_manager.set_channel_state(ch, 1):
+                results.append({"channel": ch, "ok": False})
+                continue
+            await asyncio.sleep(duration_s)
+            on_snapshot = relay_board_state_manager.get_snapshot()
+            ok_on = on_snapshot.channels is not None and on_snapshot.channels[ch] is True
 
-        # Set OFF, short wait, read back
-        if not await relay_manager.set_channel_state(ch, 0):
-            results.append({"channel": ch, "ok": False})
-            continue
-        await asyncio.sleep(0.05)
-        off_snapshot = relay_board_state_manager.get_snapshot()
-        ok_off = off_snapshot.channels is not None and off_snapshot.channels[ch] is False
+            # Set OFF, short wait, read back
+            if not await relay_manager.set_channel_state(ch, 0):
+                results.append({"channel": ch, "ok": False})
+                continue
+            await asyncio.sleep(0.05)
+            off_snapshot = relay_board_state_manager.get_snapshot()
+            ok_off = off_snapshot.channels is not None and off_snapshot.channels[ch] is False
 
-        results.append({"channel": ch, "ok": ok_on and ok_off})
+            results.append({"channel": ch, "ok": ok_on and ok_off})
 
     return {
         "results": results,
@@ -147,49 +150,52 @@ async def set_relay_channel_state(
 
     override_key = relay_raw_override_key(channel)
     redis_client = automation_redis.redis_client
-    previous_override = (
-        await asyncio.to_thread(redis_client.get, override_key)
-        if redis_client is not None
-        else None
-    )
-    before = _raw_override_values(previous_override)
+    async with device_command_service.actuation_lock:
+        previous_override = (
+            await asyncio.to_thread(redis_client.get, override_key)
+            if redis_client is not None
+            else None
+        )
+        before = _raw_override_values(previous_override)
 
-    if body.state == 1:
-        if body.duration_seconds is None:
-            raise HTTPException(status_code=400, detail="Raw ON requires a duration_seconds value")
-        if device_command_service.is_assigned_channel(channel):
-            raise HTTPException(
-                status_code=409,
-                detail="Raw ON is forbidden for an assigned relay channel",
-            )
-        expires_at = datetime.now(UTC) + timedelta(seconds=body.duration_seconds)
-        success = await relay_manager.set_channel_state(channel, 1)
-        if not success:
-            raise HTTPException(
-                status_code=503,
-                detail=f"Failed to set channel {channel} to ON",
-            )
-        if redis_client is not None:
-            persisted_override = {"expires_at": expires_at.isoformat(), "state": 1}
-            await asyncio.to_thread(
-                redis_client.setex,
-                override_key,
-                body.duration_seconds + 86400,
-                json.dumps(persisted_override),
-            )
-    else:
-        persisted_override = {}
-        if redis_client is not None:
-            await asyncio.to_thread(
-                redis_client.delete,
-                override_key,
-            )
-        success = await relay_manager.set_channel_state(channel, 0)
-        if not success:
-            raise HTTPException(
-                status_code=503,
-                detail=f"Failed to set channel {channel} to OFF",
-            )
+        if body.state == 1:
+            if body.duration_seconds is None:
+                raise HTTPException(
+                    status_code=400, detail="Raw ON requires a duration_seconds value"
+                )
+            if device_command_service.is_assigned_channel(channel):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Raw ON is forbidden for an assigned relay channel",
+                )
+            expires_at = datetime.now(UTC) + timedelta(seconds=body.duration_seconds)
+            success = await relay_manager.set_channel_state(channel, 1)
+            if not success:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Failed to set channel {channel} to ON",
+                )
+            if redis_client is not None:
+                persisted_override = {"expires_at": expires_at.isoformat(), "state": 1}
+                await asyncio.to_thread(
+                    redis_client.setex,
+                    override_key,
+                    body.duration_seconds + 86400,
+                    json.dumps(persisted_override),
+                )
+        else:
+            persisted_override = {}
+            if redis_client is not None:
+                await asyncio.to_thread(
+                    redis_client.delete,
+                    override_key,
+                )
+            success = await relay_manager.set_channel_state(channel, 0)
+            if not success:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Failed to set channel {channel} to OFF",
+                )
 
     if redis_client is not None and before is not None:
         emit_persisted_mutation(

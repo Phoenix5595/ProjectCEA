@@ -34,15 +34,15 @@ describe('CalendarSettings', () => {
     expect(screen.getByLabelText('Target calendar URL')).toBeInTheDocument()
   })
 
-  it('persists disabling Flower calendar mode transitions', async () => {
-    // Given: Flower calendar control is initially enabled.
+  it('persists disabling automatic submode changes', async () => {
+    // Given: calendar-driven Flower submodes are initially enabled.
     mocks.apiClient.updateFlowerCalendarModeTransitions.mockResolvedValue({ enabled: false })
     const user = userEvent.setup()
     render(<CalendarSettings />)
 
     // When: the operator turns the Flower-only control off.
     const control = await screen.findByRole('checkbox', {
-      name: 'Flower calendar mode transitions',
+      name: 'Automatic submode changes',
     })
     await user.click(control)
 
@@ -63,7 +63,7 @@ describe('CalendarSettings', () => {
 
     // When: the operator tries to disable the control.
     const control = await screen.findByRole('checkbox', {
-      name: 'Flower calendar mode transitions',
+      name: 'Automatic submode changes',
     })
     await user.click(control)
 
@@ -80,7 +80,10 @@ describe('CalendarSettings', () => {
   }
 
   async function submitTest(user: ReturnType<typeof userEvent.setup>) {
-    await user.type(screen.getByLabelText('CalDAV base URL'), 'https://nc.tail.ts.net/remote.php/dav/')
+    await user.type(
+      screen.getByLabelText('CalDAV base URL'),
+      'https://nc.tail.ts.net/remote.php/dav/'
+    )
     await user.type(screen.getByLabelText('Username'), 'grower')
     await user.type(screen.getByLabelText('App password'), 'secret')
     await user.click(screen.getByRole('button', { name: 'Test' }))
@@ -126,8 +129,13 @@ describe('CalendarSettings', () => {
     const message =
       'Nextcloud rejected the user name or app password. Create a new app password and use your Nextcloud login name.'
     await waitFor(() => expect(mocks.toast.error).toHaveBeenCalledWith(message))
-    expect(screen.getByRole('alert')).toHaveTextContent('Nextcloud rejected the user name or app password')
-    expect(document.getElementById('nextcloud-guide-app-password')).toHaveAttribute('aria-current', 'step')
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Nextcloud rejected the user name or app password'
+    )
+    expect(document.getElementById('nextcloud-guide-app-password')).toHaveAttribute(
+      'aria-current',
+      'step'
+    )
     expect(guideDetails()).toHaveAttribute('open')
   })
 

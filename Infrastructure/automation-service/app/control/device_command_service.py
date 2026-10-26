@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -119,6 +120,11 @@ class DeviceCommandService:
         self._lock = anyio.Lock()
         self._runtime_device_registry.subscribe(self.install_snapshot)
 
+    @property
+    def actuation_lock(self) -> asyncio.Lock:
+        """Expose the registry actuation lock that orders every relay write."""
+        return self._runtime_device_registry.actuation_lock
+
     def install_snapshot(self, snapshot: RuntimeDeviceSnapshot) -> None:
         """Retain valid command state and initialize newly assigned identities as AUTO."""
         self._states = {
@@ -156,37 +162,38 @@ class DeviceCommandService:
         command: DeviceCommand,
     ) -> DeviceCommandResult:
         """Apply exactly one typed command after resolving the installed identity."""
-        key, channel = self._assigned_identity(location, cluster, device_name)
-        async with self._lock:
-            previous = self._states.get(key, DeviceCommandState(mode="auto"))
-            match command:
-                case AutoCommand(reason=reason):
-                    return await self._release_to_auto(key, channel, previous, reason)
-                case ManualOffCommand(reason=reason):
-                    return await self._write_command(
-                        key,
-                        channel,
-                        previous,
-                        state=0,
-                        next_state=DeviceCommandState(mode="manual_off"),
-                        reason=reason,
-                    )
-                case TimedOnCommand(duration_seconds=duration_seconds, reason=reason):
-                    expiry = self._now() + timedelta(seconds=duration_seconds)
-                    return await self._write_command(
-                        key,
-                        channel,
-                        previous,
-                        state=1,
-                        next_state=DeviceCommandState(
-                            mode="timed_on",
-                            prior_mode=previous.prior_mode
-                            if previous.mode == "timed_on"
-                            else previous.mode,
-                            expires_at=expiry,
-                        ),
-                        reason=reason,
-                    )
+        async with self._runtime_device_registry.actuation_lock:
+            key, channel = self._assigned_identity(location, cluster, device_name)
+            async with self._lock:
+                previous = self._states.get(key, DeviceCommandState(mode="auto"))
+                match command:
+                    case AutoCommand(reason=reason):
+                        return await self._release_to_auto(key, channel, previous, reason)
+                    case ManualOffCommand(reason=reason):
+                        return await self._write_command(
+                            key,
+                            channel,
+                            previous,
+                            state=0,
+                            next_state=DeviceCommandState(mode="manual_off"),
+                            reason=reason,
+                        )
+                    case TimedOnCommand(duration_seconds=duration_seconds, reason=reason):
+                        expiry = self._now() + timedelta(seconds=duration_seconds)
+                        return await self._write_command(
+                            key,
+                            channel,
+                            previous,
+                            state=1,
+                            next_state=DeviceCommandState(
+                                mode="timed_on",
+                                prior_mode=previous.prior_mode
+                                if previous.mode == "timed_on"
+                                else previous.mode,
+                                expires_at=expiry,
+                            ),
+                            reason=reason,
+                        )
 
     async def expire_commands(self) -> None:
         """Restore every elapsed timed command's captured mode without a database lookup."""

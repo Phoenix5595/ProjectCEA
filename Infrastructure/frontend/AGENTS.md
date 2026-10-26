@@ -61,8 +61,8 @@ surfaces a pending-identity badge. Registry wire contracts live in
 - Event log store: `src/features/event-log/state/eventLogStore.ts`. One global store merges history and live rows by Redis ID and event UUID, caps resident rows at 5,000, and supports cursor reset, reconnect, and auth pause.
 - Event log transport: `src/features/event-log/state/eventLogTransport.ts`. Loads the latest 200 rows, tails `/api/events/stream`, reconnects with backoff, and halts retries on 401/403.
 - Presentation registry: `src/features/event-log/presentation/eventRegistry.ts` maps known event types to labels and severity.
- - Dashboard integration: `src/pages/Dashboard.tsx` mounts the shared log with all-room filters. `DashboardZoneRow.tsx` does NOT mount the event log.
-- Room overview integration: `CalendarOverviewPage.tsx` (and the wrappers for Flower, Vegetation, Laboratory) mount the same shared log with a fixed room filter.
+ - Dashboard integration: `src/pages/Dashboard.tsx` mounts the shared log for all rooms as category cards (no filters, room selector, view switch or event total; R8). `DashboardZoneRow.tsx` does NOT mount the event log.
+- Room overview integration: `CalendarOverviewPage.tsx` (and the wrappers for Flower, Vegetation, Laboratory) mount the same shared log scoped to that room through `useEventLog({ location, cluster })` data, as a flat newest-first list with no UI filter.
 - Climate timeline feature: `src/features/climate-timeline/` owns the shared draft controller (`state/`), the table↔timeline adapter (`adapters/`), and the uPlot chart mount + plugins (`charts/`: pure envelope→series transforms, period labels, drag handles). ZoneConfig hoists the draft controller; header Save routes dirty drafts through review→apply. Series colors are `--tl-*` tokens; series transforms keep monitoring parity (`__tests__/monitoringParity.test.ts`); drag commits coalesce through rAF.
 
 ## Monitoring light-chart semantics
@@ -126,18 +126,18 @@ npx vitest run src/features/event-log/__tests__
 
 - **Preserve existing layout and component sizes. Internal content may change only within that geometry.**
 - **Ask the owner before changing any layout or component size. Never assume permission to redesign, grow, or shrink components.**
-- **NEVER introduce scrolling inside a component, card, panel, list, dialog, or popover. No exceptions.**
-- Only the page/document may scroll. Content MUST fit within the existing component size without internal scrolling; if it cannot, ask before choosing a layout or sizing tradeoff.
-- NEVER use `overflow: auto` / `overflow: scroll` (including axis-specific variants) on component containers.
+- **NEVER introduce scrolling inside a component, card, panel, list, dialog, or popover** except the three owner-approved regions of R7 (the event-log body, the dashboard calendar inspector and a room overview's inline day detail). Dialogs and popovers stay transient overlays.
+- The page/document is the only scroll container outside those three regions; from 768 px wide up, overview pages (`/`, `/flower`, `/vegetation`, `/laboratory`) keep a 1280×720 minimum layout and never document-scroll at ≥ 1280×720 (phones below 768 px keep today's stacked, unsupported layout). Content MUST fit within the existing component size without internal scrolling; if it cannot, ask before choosing a layout or sizing tradeoff.
+- NEVER use `overflow: auto` / `overflow: scroll` (including axis-specific variants) on component containers outside those three regions.
 - NEVER hide overflow, clamp text, or shrink essential information to disguise a layout failure.
 - On the control page, live light panels are mutually exclusive: running Veg/Flower shows intensity sliders; running Sleep/Drying shows manual override and no sliders. Merely inspecting an inactive profile never changes the live panel.
 - Keep chart source/status details in the header's non-scrolling popover, not added rows that enlarge the chart. Save feedback uses a marker inside the existing Save button; full warnings remain available in that popover.
 - Activation-button text stays compact so the unchanged ribbon fits both desktop viewports. Preserve the full save-before-activate and confirmation wording in its accessible name, tooltip, and source-details popover; do not shorten the actual workflow.
 - Flower submode choices come only from the catalogue: Stretch, Bulk and Ripen. Never synthesize a “Base” choice from a NULL submode ID. Selecting Flower retains the inspected, running or configured catalogue submode, then falls back to the first catalogue option; it never selects a new NULL profile. Keep existing NULL records readable without inventing a submode label or modifying stored data.
-- Calendar event names stay inside the existing allocation: full-room days show up to three 12px title chips beside the date; the Dashboard shows one chip per day. A `+N` marker and paginated day detail expose the remainder without nested scrolling. Accessible day names retain every event, room, date range, note and sync state.
+- Calendar event names stay inside the existing allocation: full-room days show up to three 12px title chips beside the date; the Dashboard shows one chip per day. A `+N` marker and paginated day detail expose the remainder without nested scrolling; the one exception is a room overview's inline day detail, which scrolls inside its bounded region (R7). Accessible day names retain every event, room, date range, note and sync state.
 - Closing inline Calendar detail with Escape restores focus to its day, including after the final pagination button disables and focus falls to the document body. Do not intercept Escape from another focused widget or the Dashboard inspector.
 - Calendar desktop QA compares the same fixture date at both required viewports. Verify the actual `data-theme` palette, not a guessed local-storage key; explicit light-token overrides are QA only, not evidence of a shipped light palette.
 
 ---
 
-*Last updated: 2026-10-18*
+*Last updated: 2026-10-25*

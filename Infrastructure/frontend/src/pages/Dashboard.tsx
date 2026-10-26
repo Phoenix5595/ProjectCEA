@@ -134,6 +134,9 @@ export default function Dashboard() {
           nextTransition: isGrowRoom
             ? nextRoomTransition(schedule.schedules, zone.location, zone.cluster, now)
             : null,
+          expectedHarvestDate: isGrowRoom
+            ? (schedule.expectedHarvests[`${zone.location}:${zone.cluster}`]?.harvest_date ?? null)
+            : null,
           trendData: trends.byRoom[zone.location] ?? {},
         }
       }),
@@ -145,6 +148,7 @@ export default function Dashboard() {
       live.sensorMeta,
       live.transport,
       now,
+      schedule.expectedHarvests,
       schedule.modeErrors,
       schedule.modes,
       schedule.schedules,
@@ -284,6 +288,9 @@ export default function Dashboard() {
                   selectedDateEvents={selectedDateEvents}
                   onRefresh={refreshCalendar}
                   onOpenGrowPlan={() => setWizardOpen(true)}
+                  pendingModeChange={schedule.pendingModeChange}
+                  expectedHarvest={schedule.expectedHarvests['Flower Room:main'] ?? null}
+                  onCalendarStatusChange={schedule.refresh}
                 />
               </div>
             </div>
@@ -314,7 +321,6 @@ export default function Dashboard() {
                 now={now}
                 compact
                 bucketCount={eventBucketCount}
-                primaryRooms={ROOM_MAP_ZONES.map(zone => zone.location)}
               />
             </div>
             <div className="dashboard-water-panel">

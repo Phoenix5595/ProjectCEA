@@ -2,46 +2,47 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
-import asyncio
 
 import pytest
 
-from app.repositories.monitoring_snapshot_types import (
-    AnchorFingerprint,
-    MonitoringSnapshot,
-    ProjectionRevision,
-    RuntimeSnapshotVersion,
-    frozen,
-    frozen_rows,
+from app.monitoring_publication.projection import (
+    ProjectionPublicationError,
+    ProjectionPublicationRequest,
+    ProjectionPublisher,
 )
 from app.repositories.monitoring_snapshot_builder import (
     MonitoringSnapshotBuilder,
     MonitoringSnapshotRepositories,
     MonitoringSnapshotRequest,
 )
-from app.schemas.monitoring_models import MonitoringRange, Quality
-from app.monitoring_publication.projection import (
-    ProjectionPublicationError,
-    ProjectionPublicationRequest,
-    ProjectionPublisher,
+from app.repositories.monitoring_snapshot_sources import CalendarSnapshotSource
+from app.repositories.monitoring_snapshot_types import (
+    AnchorFingerprint,
+    MonitoringSnapshot,
+    RuntimeSnapshotVersion,
+    frozen,
+    frozen_rows,
 )
+from app.schemas.monitoring_models import MonitoringRange, Quality
 from app.services.future_projection import (
     project_future_intervals,
     snapshot_publication_version,
     unavailable_future_intervals,
 )
-from app.repositories.monitoring_snapshot_sources import CalendarSnapshotSource
 from shared.monitoring_contracts import (
     ConfigVersion,
     FutureProjection,
     ProjectionRevision,
     ProjectionSeriesPoint,
     PublicationVersion,
-    Quality as ProjectionQuality,
     SemanticSeriesId,
+)
+from shared.monitoring_contracts import (
+    Quality as ProjectionQuality,
 )
 
 
@@ -134,17 +135,17 @@ def test_future_intervals_scoped_to_exact_active_profile() -> None:
 
 
 def test_calendar_destination_future_projects_its_exact_profile() -> None:
-    # Given: a configured calendar destination (2, base) stored heating 18 for the
-    # second local day; its exact profile is projectable from stored authority.
-    periods = (*_periods(1, None, 22), *_periods(2, None, 18))
+    # Given: a configured same-mode calendar destination (1, 2) stored heating 18
+    # for the second local day; only the active mode's submodes are authority.
+    periods = (*_periods(1, None, 22), *_periods(1, 2, 18))
     events = [
         {
             "id": 5,
             "start_date": date(2026, 6, 2),
             "end_date": date(2026, 6, 2),
             "phase_order": 4,
-            "target_mode_id": 2,
-            "target_submode_id": None,
+            "target_mode_id": 1,
+            "target_submode_id": 2,
             "auto_mode_transition": True,
             "destination_configured": True,
         }

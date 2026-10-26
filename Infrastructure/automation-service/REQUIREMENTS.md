@@ -18,6 +18,7 @@ Local verification runs the automation pure tests against fakes for database, Re
 `device_registry` is the sole source of truth for device identity, relay bindings, and DFR bindings. No YAML device definitions or commissioning subsystem participate. `automation_config.yaml` must not define devices, relay channels, or DFR assignments.
 
 - Relay channel conflicts return HTTP 409. A confirmed steal commands and observes the old relay OFF before committing, and the response includes `displaced_device_id`.
+- **R10 relay moves.** `PUT /api/devices/registry/{device_id}/relay` with `{channel}` moves a binding onto an empty channel or swaps owners with an occupied one. Both channels must confirm OFF before any binding write; a failed safe-off returns HTTP 503 `Unable to make relay channel N safe` with no binding changed. The shared `actuation_lock` serializes the control tick, manual device commands, raw channel writes, relay tests and registry mutations against each other and against a move.
 - DFR `(dimming_board_id, dimming_channel)` pairs are globally unique; conflicts return HTTP 409 without a steal path.
 
 ## Climate
@@ -56,6 +57,27 @@ After any write that changes schedules, invalidate the cache keys that `schedule
 
 - `ModeTransitionService` must not call `sync_room_schedule_from_mode_parameters` on submode-only transitions. Light schedules stay tied to the parent mode.
 - Mode parameters use `light_ramp_up_minutes` / `light_ramp_down_minutes`, which map to `schedules.ramp_up_duration` / `ramp_down_duration` for light rows.
+
+## Grow Calendar
+
+Flower grow plans (`POST /api/calendar/grow-plans/flower`) take `anchor` (`bed_veg_start`, `flower_start` or `ripen_end`), `anchor_date`, `bed_veg_start`, `bed_veg_days`, `stretch_days`, `bulk_days`, `ripen_days`, `drying_days`, optional `pot_start` and `clone_start`, and `auto_mode_transition`. For the `bed_veg_start` anchor, `anchor_date` must equal `bed_veg_start`.
+
+- Fixed phase orders: 1 clone (Veg Room, optional), 2 pot veg (Veg Room, optional), 3 bed veg (Flower Room), 4 flip to flower, 5 stretch, 6 bulk, 7 ripen, 8 harvest on the last ripen day, 9 drying. Rows without a target mode store `auto_mode_transition = false`.
+- Defaults: bed veg 14 days, stretch 21, bulk 21, ripen 21, drying 7. Stretch, bulk and ripen can each be extended by +1 week with `POST /api/calendar/grow-plans/{id}/extend` (`{event_id, days}`, 1–60): that phase's end grows by `days` and every later phase with a higher `phase_order` shifts by the same amount.
+- **R11 Manual modes, automatic submodes.** Mode changes (Veg/Flower/Drying/Sleep) happen only through the room-mode API. `CalendarModeScheduler` changes only the submode of the active mode: a scheduled target that names a different mode returns without an event or an application, and `GET /api/calendar/pending-mode-change/{location}/{cluster}` surfaces the change instead. The "Automatic submode changes" toggle (`GET/PUT /api/calendar/flower-mode-transitions`) gates submode automation only.
+- **Bed veg auto-extension.** While Flower Room is not in Flower, every scheduler tick and startup catch-up calls `align_flower_start(plan, today, forward_only=True)` on the current run. A plan whose flip has passed and whose stretch has not ended moves its flip to today: bed veg ends yesterday and every later phase shifts by the same delta; a flip already today is a no-op. Manual Flower activation from Veg calls it with `forward_only=False`, moving the flip to the activation day under the same stretch-not-ended condition. Both shifts write no operational event; a failed shift logs a warning and never fails the committed mode change.
+- **Expected harvest.** `GET /api/calendar/expected-harvest/{location}/{cluster}` returns the last `flower_ripen` end date of the plan occupying the room (null once that day is past) with its `grow_plan_id` and ripen `event_id`. It is derived on read and never stored.
+
+The pending change is derived and never stored. The expected mode for today is `veg-post` after the plan's last date, else `drying` from the drying start, else `flower` from the flip, else `veg-pre`. Non-empty combinations, by active mode:
+
+| Expected mode today \ active mode | `veg` | `flower` | `drying` |
+|---|---|---|---|
+| before the flip (`veg-pre`) | — | — | → veg |
+| flower window | → flower | — | → flower |
+| drying window | → flower | → drying | — |
+| after the plan's last date (`veg-post`) | — | → drying | → veg |
+
+Other active modes (including `sleep`) and a missing plan yield no button; a still-active mode keeps its button after its window passed.
 
 ## Time and State
 

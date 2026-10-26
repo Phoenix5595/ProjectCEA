@@ -5,9 +5,9 @@
 1. Home dashboard (/) shows one shared month calendar; events color-coded by room (Flower / Veg / Lab).
 2. Sector Overview pages (/flower, /vegetation, /laboratory) show full calendar filtered to that room.
 3. calendar_event uses soft-delete (deleted_at); sync_status pending_delete until Nextcloud CalDAV DELETE ack.
-4. Grow plan wizard (flower) creates crop_batch + linked calendar_event rows with grow_plan_id and phase_order 1-9.
-5. Flower length splits into stretch (default 21d), bulk (computed), ripen (default 21d); minimum 6 weeks total flower.
-6. CalendarModeScheduler applies Flower Room mode/submode on phase start dates; catch-up on startup; idle -> veg after harvest.
+4. Grow plan wizard (flower) creates crop_batch + linked calendar_event rows with grow_plan_id and fixed phase_orders 1–9: 1 clone (optional), 2 pot veg (optional), 3 bed veg, 4 flip, 5 stretch, 6 bulk, 7 ripen, 8 harvest on the last ripen day, 9 drying. Plans anchor at bed veg start, flower start or ripen end; pot and clone dates are optional.
+5. Defaults: bed veg 14d, stretch 21d, bulk 21d, ripen 21d, drying 7d. Stretch, bulk and ripen each extend by +1 week (`POST /api/calendar/grow-plans/{id}/extend` with `{event_id, days}`; every later phase shifts). Expected harvest = the last ripen day of the plan occupying the room, derived and never stored, shown only while today or later (`GET /api/calendar/expected-harvest/{location}/{cluster}`).
+6. Mode changes (Veg/Flower/Drying/Sleep) are manual only (R11); CalendarModeScheduler changes only the submode of the active mode, gated by the "Automatic submode changes" toggle, with catch-up on startup. `GET /api/calendar/pending-mode-change/{location}/{cluster}` surfaces a bold "X → Y" button while the room is behind its plan (Veg → Flower from the flip, Flower → Drying from the drying start, Drying → Veg from the day after the plan's last date). While Flower Room is not in Flower, a plan whose flip has passed and whose stretch has not ended shifts daily so its flip is today (bed veg ends yesterday); manual Flower activation from Veg moves the flip to the activation day under the same condition.
 7. GET /api/calendar/events supports pagination (limit, cursor) and optional location filter.
 8. POST grow-plans/flower requires idempotency_key; rejects overlapping Flower phases with HTTP 409.
 9. DELETE grow-plans/{id} soft-deletes all linked events (required).

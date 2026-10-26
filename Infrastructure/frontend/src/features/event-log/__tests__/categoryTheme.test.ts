@@ -36,12 +36,12 @@ describe('display category split', () => {
 
   it('keeps platform events in the System bucket in both policies', () => {
     for (const bucketCount of BUCKET_COUNTS) {
-      expect(displayCategoryOf({ category: 'system', type: 'system.failsafe_raised' }, bucketCount)).toBe(
-        'system'
-      )
-      expect(displayCategoryOf({ category: 'system', type: 'transport.degraded' }, bucketCount)).toBe(
-        'system'
-      )
+      expect(
+        displayCategoryOf({ category: 'system', type: 'system.failsafe_raised' }, bucketCount)
+      ).toBe('system')
+      expect(
+        displayCategoryOf({ category: 'system', type: 'transport.degraded' }, bucketCount)
+      ).toBe('system')
     }
   })
 
@@ -76,7 +76,7 @@ describe('display category split', () => {
     ])
   })
 
-  it('passes all other categories through untouched in both policies', () => {
+  it('keeps raw categories and funnels unknown ones into System in both policies', () => {
     for (const bucketCount of BUCKET_COUNTS) {
       expect(displayCategoryOf({ category: 'relay', type: 'relay.commanded' }, bucketCount)).toBe(
         'relay'
@@ -84,7 +84,7 @@ describe('display category split', () => {
       expect(
         displayCategoryOf({ category: 'control', type: 'control.setpoint_changed' }, bucketCount)
       ).toBe('control')
-      expect(displayCategoryOf({ category: 'nonsense', type: 'x.y' }, bucketCount)).toBe('nonsense')
+      expect(displayCategoryOf({ category: 'nonsense', type: 'x.y' }, bucketCount)).toBe('system')
     }
   })
 })

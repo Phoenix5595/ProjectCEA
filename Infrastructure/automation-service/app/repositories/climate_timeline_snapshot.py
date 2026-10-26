@@ -263,10 +263,13 @@ def _resolve_identity(
 ) -> tuple[int, int | None] | None:
     identity = active
     if (
-        transition is not None
+        active is not None
+        and transition is not None
+        and transition.get("target_mode_id") == active.get("mode_id")
         and transition.get("auto_mode_transition") is not False
         and transition.get("calendar_mode_transitions_enabled") is not False
     ):
+        # Calendar transitions change only the active mode's submode (R11).
         identity = transition
     if identity is None:
         return None

@@ -102,7 +102,8 @@ def test_calendar_phase_uses_highest_phase_order_at_local_midnight() -> None:
             "start_date": date(2026, 3, 8),
             "end_date": date(2026, 3, 10),
             "phase_order": 1,
-            "target_mode_id": 2,
+            "target_mode_id": 1,
+            "target_submode_id": 3,
             "destination_configured": True,
         },
         {
@@ -110,13 +111,42 @@ def test_calendar_phase_uses_highest_phase_order_at_local_midnight() -> None:
             "start_date": date(2026, 3, 8),
             "end_date": date(2026, 3, 10),
             "phase_order": 2,
-            "target_mode_id": 3,
+            "target_mode_id": 1,
+            "target_submode_id": 4,
             "destination_configured": True,
         },
     ]
-    point = _point(_snapshot(events=events), "heating", when)
-    assert point.mode == "3"
-    assert point.provenance.quality is Quality.UNAVAILABLE
+    periods = [
+        {
+            "id": 1,
+            "mode_id": 1,
+            "submode_id": 3,
+            "period_name": "day",
+            "start_time": "00:00",
+            "end_time": "23:59",
+            "heating_setpoint": 21,
+            "ramp_minutes": 0,
+        },
+        {
+            "id": 2,
+            "mode_id": 1,
+            "submode_id": 4,
+            "period_name": "day",
+            "start_time": "00:00",
+            "end_time": "23:59",
+            "heating_setpoint": 23,
+            "ramp_minutes": 0,
+        },
+    ]
+    snapshot = _snapshot(
+        active={"mode_id": 1, "submode_id": 1, "mode_name": "flower"},
+        events=events,
+        periods=periods,
+    )
+    point = _point(snapshot, "heating", when)
+    assert point.mode == "1"
+    assert point.value == 23
+    assert point.provenance.quality is Quality.EXACT
 
 
 def test_disabled_auto_does_not_transition_mode() -> None:
@@ -160,23 +190,6 @@ def test_same_mode_noop_keeps_configured_period() -> None:
     )
     assert point.value == 20
     assert point.provenance.quality is Quality.EXACT
-
-
-def test_drying_fallback_transitions_to_veg_after_last_plan() -> None:
-    when = datetime(2026, 3, 10, 12, tzinfo=UTC)
-    events = [
-        {
-            "id": 1,
-            "start_date": date(2026, 3, 1),
-            "end_date": date(2026, 3, 9),
-            "target_mode_id": 2,
-            "target_mode_name": "veg",
-            "destination_configured": True,
-        }
-    ]
-    point = _point(_snapshot(events=events), "heating", when)
-    assert point.mode == "2"
-    assert point.provenance.quality is Quality.UNAVAILABLE
 
 
 def test_veg_stays_current_despite_flower_calendar_events() -> None:
@@ -309,13 +322,13 @@ def test_unscoped_rows_never_substitute_known_active_identity() -> None:
     assert point.provenance.quality is Quality.UNAVAILABLE
 
 
-def test_calendar_destination_projects_its_exact_stored_profile() -> None:
-    # Given: a configured calendar destination (2, base) with stored heating 18;
-    # the active-only gate is gone, so its exact profile is projectable.
+def test_calendar_destination_projects_its_exact_stored_submode_profile() -> None:
+    # Given: a configured same-mode calendar destination (2, 3) with stored
+    # heating 18; its exact profile is projectable while the active one is (2, base).
     periods = [
         {
             "id": 1,
-            "mode_id": 1,
+            "mode_id": 2,
             "submode_id": None,
             "period_name": "day",
             "start_time": "06:00",
@@ -326,7 +339,7 @@ def test_calendar_destination_projects_its_exact_stored_profile() -> None:
         {
             "id": 2,
             "mode_id": 2,
-            "submode_id": None,
+            "submode_id": 3,
             "period_name": "day",
             "start_time": "06:00",
             "end_time": "18:00",
@@ -335,7 +348,7 @@ def test_calendar_destination_projects_its_exact_stored_profile() -> None:
         },
     ]
     snapshot = _snapshot(
-        active={"mode_id": 1, "submode_id": None, "mode_name": "veg"},
+        active={"mode_id": 2, "submode_id": None, "mode_name": "flower"},
         events=[
             {
                 "id": 5,
@@ -343,7 +356,7 @@ def test_calendar_destination_projects_its_exact_stored_profile() -> None:
                 "end_date": date(2026, 6, 2),
                 "phase_order": 4,
                 "target_mode_id": 2,
-                "target_submode_id": None,
+                "target_submode_id": 3,
                 "auto_mode_transition": True,
                 "destination_configured": True,
             }
@@ -355,6 +368,31 @@ def test_calendar_destination_projects_its_exact_stored_profile() -> None:
     point = _point(snapshot, "heating", datetime(2026, 6, 2, 10, 0, tzinfo=UTC))
     assert point.mode == "2"
     assert point.value == 18
+
+
+def test_cross_mode_calendar_target_keeps_the_active_profile() -> None:
+    # Given: a calendar target in another mode; only the active mode's submodes
+    # are projection authority, so the active profile continues.
+    when = datetime(2026, 3, 9, 12, tzinfo=UTC)
+    point = _point(
+        _snapshot(
+            events=[
+                {
+                    "id": 1,
+                    "start_date": date(2026, 3, 9),
+                    "end_date": date(2026, 3, 9),
+                    "target_mode_id": 2,
+                    "target_submode_id": None,
+                    "destination_configured": True,
+                }
+            ]
+        ),
+        "heating",
+        when,
+    )
+    assert point.mode == "1"
+    assert point.value == 20
+    assert point.provenance.quality is Quality.EXACT
 
 
 def test_same_mode_different_submode_periods_do_not_cross_match() -> None:
@@ -440,13 +478,19 @@ def test_period_gap_is_unavailable_not_held() -> None:
         end=datetime(2026, 6, 2, 7, tzinfo=UTC),
     )
     covered, quality = _value_at(
-        snapshot, "heating", datetime(2026, 6, 1, 10, 0, tzinfo=UTC), datetime(2026, 6, 1, 10, 0, tzinfo=UTC)
+        snapshot,
+        "heating",
+        datetime(2026, 6, 1, 10, 0, tzinfo=UTC),
+        datetime(2026, 6, 1, 10, 0, tzinfo=UTC),
     )
     assert (covered, quality) == (20, Quality.EXACT)
     # The gap's first instant (day end 12:00 Toronto = 16:00Z) is a boundary and
     # is unavailable; the projection never holds a neighbour row across the gap.
     gap, gap_quality = _value_at(
-        snapshot, "heating", datetime(2026, 6, 1, 16, 0, tzinfo=UTC), datetime(2026, 6, 1, 15, 0, tzinfo=UTC)
+        snapshot,
+        "heating",
+        datetime(2026, 6, 1, 16, 0, tzinfo=UTC),
+        datetime(2026, 6, 1, 15, 0, tzinfo=UTC),
     )
     assert gap is None
     assert gap_quality is Quality.UNAVAILABLE
@@ -482,12 +526,27 @@ def test_scheduled_ramp_midpoint_estimates_between_targets() -> None:
         start=datetime(2026, 6, 1, 10, 0, tzinfo=UTC),
         end=datetime(2026, 6, 2, 10, 0, tzinfo=UTC),
     )
-    midpoint, quality = _value_at(snapshot, "heating", datetime(2026, 6, 1, 10, 15, tzinfo=UTC), datetime(2026, 6, 1, 10, 0, tzinfo=UTC))
+    midpoint, quality = _value_at(
+        snapshot,
+        "heating",
+        datetime(2026, 6, 1, 10, 15, tzinfo=UTC),
+        datetime(2026, 6, 1, 10, 0, tzinfo=UTC),
+    )
     assert midpoint == 22
     assert quality is Quality.EXACT
-    start_value, _ = _value_at(snapshot, "heating", datetime(2026, 6, 1, 10, 0, tzinfo=UTC), datetime(2026, 6, 1, 10, 0, tzinfo=UTC))
+    start_value, _ = _value_at(
+        snapshot,
+        "heating",
+        datetime(2026, 6, 1, 10, 0, tzinfo=UTC),
+        datetime(2026, 6, 1, 10, 0, tzinfo=UTC),
+    )
     assert start_value == 20
-    end_value, _ = _value_at(snapshot, "heating", datetime(2026, 6, 1, 10, 30, tzinfo=UTC), datetime(2026, 6, 1, 10, 0, tzinfo=UTC))
+    end_value, _ = _value_at(
+        snapshot,
+        "heating",
+        datetime(2026, 6, 1, 10, 30, tzinfo=UTC),
+        datetime(2026, 6, 1, 10, 0, tzinfo=UTC),
+    )
     assert end_value == 24
 
 
@@ -523,9 +582,19 @@ def test_overnight_tail_uses_previous_date_start() -> None:
     )
     # Local midnight (06-02 00:00 Toronto = 06:00Z... adjusted for EDT: 04:00Z)
     # is inside the overnight night tail started on the previous local date.
-    tail, _ = _value_at(snapshot, "heating", datetime(2026, 6, 2, 4, 0, tzinfo=UTC), datetime(2026, 6, 1, 10, tzinfo=UTC))
+    tail, _ = _value_at(
+        snapshot,
+        "heating",
+        datetime(2026, 6, 2, 4, 0, tzinfo=UTC),
+        datetime(2026, 6, 1, 10, tzinfo=UTC),
+    )
     assert tail == 18
-    mid_ramp, _ = _value_at(snapshot, "heating", datetime(2026, 6, 1, 22, 15, tzinfo=UTC), datetime(2026, 6, 1, 10, tzinfo=UTC))
+    mid_ramp, _ = _value_at(
+        snapshot,
+        "heating",
+        datetime(2026, 6, 1, 22, 15, tzinfo=UTC),
+        datetime(2026, 6, 1, 10, tzinfo=UTC),
+    )
     assert mid_ramp == 19
 
 
@@ -564,7 +633,7 @@ def test_ramp_threshold_skips_heating_but_interpolates_vpd() -> None:
     assert _point(snapshot, "vpd", when).value == 1.01
 
 
-def test_missing_coverage_unavailable_for_future_mode_transition() -> None:
+def test_missing_coverage_unavailable_for_future_submode_transition() -> None:
     when = datetime(2026, 3, 9, 12, tzinfo=UTC)
     point = _point(
         _snapshot(
@@ -573,8 +642,8 @@ def test_missing_coverage_unavailable_for_future_mode_transition() -> None:
                     "id": 1,
                     "start_date": date(2026, 3, 9),
                     "end_date": date(2026, 3, 9),
-                    "target_mode_id": 2,
-                    "target_submode_id": None,
+                    "target_mode_id": 1,
+                    "target_submode_id": 2,
                     "destination_configured": True,
                 }
             ]
@@ -660,9 +729,7 @@ def test_live_anchor_governs_until_end_then_holds_nominal() -> None:
     assert held == 24
     # The next local occurrence keeps its own scheduled ramp; the completed
     # anchor never leaks into it.
-    next_day, _ = _value_at(
-        snapshot, "heating", datetime(2026, 6, 2, 10, 15, tzinfo=UTC), when
-    )
+    next_day, _ = _value_at(snapshot, "heating", datetime(2026, 6, 2, 10, 15, tzinfo=UTC), when)
     assert next_day == 22
 
 
@@ -788,8 +855,8 @@ def test_live_anchor_does_not_leak_into_calendar_destination() -> None:
         },
         {
             "id": 2,
-            "mode_id": 2,
-            "submode_id": None,
+            "mode_id": 1,
+            "submode_id": 2,
             "period_name": "day",
             "start_time": "06:00",
             "end_time": "18:00",
@@ -805,8 +872,8 @@ def test_live_anchor_does_not_leak_into_calendar_destination() -> None:
                 "start_date": date(2026, 6, 2),
                 "end_date": date(2026, 6, 2),
                 "phase_order": 4,
-                "target_mode_id": 2,
-                "target_submode_id": None,
+                "target_mode_id": 1,
+                "target_submode_id": 2,
                 "destination_configured": True,
             }
         ],
@@ -814,9 +881,7 @@ def test_live_anchor_does_not_leak_into_calendar_destination() -> None:
         start=datetime(2026, 6, 1, 10, 0, tzinfo=UTC),
         end=datetime(2026, 6, 2, 11, 0, tzinfo=UTC),
     )
-    destination, _ = _value_at(
-        snapshot, "heating", datetime(2026, 6, 2, 10, 0, tzinfo=UTC), when
-    )
+    destination, _ = _value_at(snapshot, "heating", datetime(2026, 6, 2, 10, 0, tzinfo=UTC), when)
     assert destination == 18
 
 

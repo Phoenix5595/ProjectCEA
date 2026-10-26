@@ -21,10 +21,12 @@ blocking service operation.
 
 | Component | Responsibility |
 |---|---|
-| `RuntimeDeviceRegistry` | Builds and atomically installs one immutable `RuntimeDeviceSnapshot` per tick |
-| `DeviceRegistryService` | Sole supported mutation path; performs safe output sequencing and confirmed relay steals |
+| `RuntimeDeviceRegistry` | Builds and atomically installs one immutable `RuntimeDeviceSnapshot` per tick; owns the shared `actuation_lock` |
+| `DeviceRegistryService` | Sole supported mutation path; performs safe output sequencing, confirmed relay steals, and relay moves/swaps |
 | `RelayBoardStateManager` | Sole MCP23017 board sampler and owner of `cea:relay:board_snapshot` |
 | `DeviceCommandService` | Assigned-device command state (`AUTO`, `MANUAL_OFF`, `TIMED_ON`) |
+
+**R10 relay moves.** `PUT /api/devices/registry/{device_id}/relay` with `{channel}` moves a binding onto an empty channel or swaps it with the current owner. Both channels must confirm OFF before any binding write; a failed safe-off raises `SafeOutputError` (HTTP 503) and rolls back, leaving every binding unchanged. The control tick, manual device commands, raw channel writes, relay tests and registry mutations all hold `RuntimeDeviceRegistry.actuation_lock` (order: actuation lock, then any service lock), so none of them interleaves with a move; the tick never re-acquires the lock internally.
 
 An empty registry is valid: it installs a ready empty snapshot and emits no relay-ON or nonzero DFR commands.
 
@@ -63,8 +65,19 @@ Repositories live in `app/repositories/` and own all DB access. Routes live in `
 Calendar grow mutations use sorted room advisory locks, then grow/catalog row
 locks, with overlap checks in the same transaction. Phase dates and rooms,
 not creation time or the active lighting schedule, determine membership.
-Generated bed vegetation is two or three weeks in Flower Room; clone/pot
-vegetation stays in Veg Room. Existing/manual dates are not clamped.
+Flower grow plans anchor at bed veg start, flower start or ripen end, with
+optional pot and clone starts; bed vegetation defaults to 14 days in Flower
+Room, while clone/pot vegetation stays in Veg Room. Existing/manual dates are
+not clamped.
+
+Mode changes (Veg/Flower/Drying/Sleep) are manual only (R11): the calendar
+scheduler changes only the submode of the active mode, and a scheduled target
+of another mode is surfaced by `GET /api/calendar/pending-mode-change/{location}/{cluster}`
+instead of applied. While Flower Room is not in Flower, a plan whose flip has
+passed and whose stretch has not ended shifts daily so its flip is today (bed
+veg ends yesterday); manual Flower activation from Veg moves the flip to the
+activation day under the same condition. Expected harvest is the plan's last
+ripen day, derived and never stored.
 
 `/api/calendar/grow-plans/{uuid}/close-preview`, `/close` and `/reopen` expose
 explicit owner closure with Calendar revision checks. Closed phase edits,

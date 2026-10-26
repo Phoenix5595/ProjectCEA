@@ -149,31 +149,72 @@ test.describe('guarded dashboard refactor parity', () => {
 
   test('zero is valid and later null selects a valid polling fallback', async ({ page }, testInfo) => {
     const veg = await start(page, testInfo)
+    const cluster = veg.locator('.dashboard-zone-row__wide [data-testid="climate-cluster-main"]')
     for (const socket of sockets) socket.send(sensorMessage(0))
     await expect(visibleText(veg, '0.00°C')).toBeVisible()
-    await expect(visibleText(veg, /LIVE · \d+s · WS/)).toBeVisible()
-    await expect(visibleText(veg, /BAD VALUE|STALE/)).toHaveCount(0)
+    await expect(cluster).toHaveAttribute('data-alert', 'false')
+    await expect(cluster).toHaveAttribute(
+      'title',
+      /^Last good reading \d{2}:\d{2}:\d{2} \(Toronto\) · \d+s ago · WebSocket$/
+    )
     await page.screenshot({ path: testInfo.outputPath('valid-zero.png') })
     for (const socket of sockets) socket.send(sensorMessage(null))
     await expect(visibleText(veg, '21.00°C')).toBeVisible()
-    await expect(visibleText(veg, /LIVE · \d+s · POLL/)).toBeVisible()
+    await expect(cluster).toHaveAttribute('data-alert', 'false')
+    await expect(cluster).toHaveAttribute('title', /· polling$/)
     await expect(visibleText(veg, '0.00°C')).toHaveCount(0)
-    await expect(visibleText(veg, /BAD VALUE|STALE/)).toHaveCount(0)
   })
 
   test('old observation timestamps become stale on the existing clock and fall back to polling', async ({ page }, testInfo) => {
     const veg = await start(page, testInfo)
+    const cluster = veg.locator('.dashboard-zone-row__wide [data-testid="climate-cluster-main"]')
     for (const socket of sockets) socket.send(sensorMessage(5))
     await expect(visibleText(veg, '5.00°C')).toBeVisible()
     await page.clock.runFor(45_000)
     await expect(visibleText(veg, '5.00°C')).toBeVisible()
-    await expect(visibleText(veg, /BAD VALUE|STALE/)).toHaveCount(0)
+    await expect(cluster).toHaveAttribute('data-alert', 'false')
     await page.clock.runFor(1_000)
     await expect(visibleText(veg, '21.00°C')).toBeVisible()
-    await expect(visibleText(veg, /STALE · \d+s · POLL/)).toBeVisible()
+    await expect(cluster).toHaveAttribute('data-alert', 'true')
+    await expect(cluster).toHaveAttribute(
+      'title',
+      /^Last good reading \d{2}:\d{2}:\d{2} \(Toronto\) · \d+s ago · polling$/
+    )
     for (const socket of sockets) socket.send(sensorMessage(null))
     await expect(visibleText(veg, '21.00°C')).toBeVisible()
-    await expect(visibleText(veg, /STALE · \d+s · POLL/)).toBeVisible()
-    await expect(visibleText(veg, /BAD VALUE/)).toHaveCount(0)
+    await expect(cluster).toHaveAttribute('data-alert', 'true')
+  })
+
+  test('a stale front cluster shows the alert theme with its last good reading', async ({ page }, testInfo) => {
+    const stale = new Date(NOW.getTime() - 5 * 60_000).toISOString()
+    await page.route(/\/api\/sensors\/[^/]+\/front\/live/, route =>
+      route.fulfill({
+        json: {
+          dry_bulb_f: {
+            sensor_type: 'dry_bulb_f',
+            location: 'Flower Room',
+            cluster: 'front',
+            unit: '°C',
+            data: [{ timestamp: stale, value: 16.75 }],
+          },
+          rh_f: {
+            sensor_type: 'rh_f',
+            location: 'Flower Room',
+            cluster: 'front',
+            unit: '%',
+            data: [{ timestamp: stale, value: 48 }],
+          },
+        },
+      })
+    )
+    await page.goto(fixtureUrl('/', testInfo, 'stale-front'))
+    const flower = page.locator('.dashboard-zone-row').filter({ hasText: 'Flower Room' })
+    const front = flower.locator('.dashboard-zone-row__wide [data-testid="climate-cluster-front"]')
+    await expect(front).toHaveAttribute('data-alert', 'true')
+    await expect(front).toHaveAttribute(
+      'title',
+      /^Last good reading \d{2}:\d{2}:\d{2} \(Toronto\) · \d+m \d{2}s ago · polling$/
+    )
+    await expect(front.getByText(/STALE|LIVE/)).toHaveCount(0)
   })
 })

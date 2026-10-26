@@ -125,16 +125,33 @@ export interface FlowerGrowPlanRequest {
   idempotency_key: string
   crop_name: string
   environment: 'indoor' | 'outdoor'
-  flower_end: string
-  flower_weeks: number
-  include_pot_phases: boolean
-  clone_weeks?: number
-  pot_weeks?: number
-  bed_weeks?: number
+  anchor: 'bed_veg_start' | 'flower_start' | 'ripen_end'
+  anchor_date: string
+  bed_veg_start: string
+  bed_veg_days?: number
   stretch_days?: number
+  bulk_days?: number
   ripen_days?: number
   drying_days?: number
+  pot_start?: string | null
+  clone_start?: string | null
   auto_mode_transition?: boolean
+}
+
+/** Whether the Flower Room is behind its calendar plan; a manual mode change is due. */
+export interface PendingModeChange {
+  from_mode: string | null
+  to_mode: string
+  to_submode: string | null
+  event_id: number | null
+  since: string
+}
+
+/** Last ripen day of the plan occupying the room; present only while today or later. */
+export interface ExpectedHarvest {
+  harvest_date: string
+  grow_plan_id: string
+  event_id: number
 }
 
 export interface ModeScheduleResponse {

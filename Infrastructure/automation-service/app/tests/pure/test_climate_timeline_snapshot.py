@@ -80,9 +80,9 @@ def _configuration(
 
 @pytest.mark.anyio
 async def test_saved_snapshot_resolves_next_calendar_mode_submode_and_period_identity() -> None:
-    # Given: an enabled calendar transition with its own saved mode/submode configuration.
+    # Given: an enabled same-mode calendar transition with its own saved submode configuration.
     sources = ReadOnlySchedules(
-        active={"mode_id": 1, "submode_id": None, "mode_name": "Veg"},
+        active={"mode_id": 2, "submode_id": 1, "mode_name": "Flower"},
         transitions={
             date(2026, 3, 8): {
                 "auto_mode_transition": True,
@@ -107,6 +107,35 @@ async def test_saved_snapshot_resolves_next_calendar_mode_submode_and_period_ide
     assert schedule.mode["submode_id"] == 4
     assert schedule.periods[0]["id"] == 44
     assert schedule.periods[0]["period_name"] == "Day"
+
+
+@pytest.mark.anyio
+async def test_saved_snapshot_keeps_the_active_identity_for_a_cross_mode_transition() -> None:
+    # Given: a calendar target in another mode; only same-mode submodes are authority.
+    sources = ReadOnlySchedules(
+        active={"mode_id": 2, "submode_id": 1, "mode_name": "Flower"},
+        transitions={
+            date(2026, 3, 8): {
+                "auto_mode_transition": True,
+                "target_mode_id": 3,
+                "target_submode_id": None,
+                "target_mode_name": "Drying",
+            }
+        },
+        configurations={(2, 1): _configuration(2, 1, 43), (3, None): _configuration(3, None, 44)},
+    )
+
+    # When: a daily saved snapshot is gathered for the transition day.
+    snapshot = await ClimateScheduleSnapshotBuilder(sources).build_saved(
+        "Flower Room", "main", TimelineWindow.daily(datetime(2026, 3, 8, 12, tzinfo=UTC))
+    )
+
+    # Then: the active Flower identity and its period stay authoritative.
+    schedule = snapshot.slices[0].schedule
+    assert schedule is not None
+    assert schedule.mode["mode_id"] == 2
+    assert schedule.mode["submode_id"] == 1
+    assert schedule.periods[0]["id"] == 43
 
 
 @pytest.mark.anyio

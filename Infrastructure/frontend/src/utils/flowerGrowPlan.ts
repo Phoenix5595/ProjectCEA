@@ -1,19 +1,26 @@
 /** Flower grow plan date math — America/Toronto. */
-import { addDays, differenceInCalendarDays, format, parseISO } from 'date-fns'
+import { addDays, format, parseISO } from 'date-fns'
 import { toZonedTime } from 'date-fns-tz'
 
 export const CALENDAR_TZ = 'America/Toronto'
 
-export interface FlowerGrowPlanInput {
-  flowerEnd: string
-  flowerWeeks: number
-  includePotPhases: boolean
-  cloneWeeks: number
-  potWeeks: number
-  bedWeeks: number
+export type FlowerGrowPlanAnchor = 'bed_veg_start' | 'flower_start' | 'ripen_end'
+
+/** Fields shared by the flower-start derivations. */
+export interface FlowerStartInput {
+  anchor: FlowerGrowPlanAnchor
+  anchorDate: string
+  bedVegDays: number
   stretchDays: number
+  bulkDays: number
   ripenDays: number
+}
+
+export interface FlowerGrowPlanInput extends FlowerStartInput {
+  bedVegStart: string
   dryingDays: number
+  potStart: string | null
+  cloneStart: string | null
 }
 
 export interface PlanPhasePreview {
@@ -33,89 +40,104 @@ function fmt(d: Date): string {
   return format(d, 'yyyy-MM-dd')
 }
 
+/** Shift a yyyy-MM-dd date by whole days in the calendar timezone. */
+export function shiftIsoDate(isoDate: string, days: number): string {
+  return fmt(addDays(parseLocalDate(isoDate), days))
+}
+
+/** First day of flower, derived from the plan anchor. */
+export function flowerStartFor(input: FlowerStartInput): string {
+  if (input.anchor === 'flower_start') return input.anchorDate
+  if (input.anchor === 'bed_veg_start') return shiftIsoDate(input.anchorDate, input.bedVegDays)
+  return shiftIsoDate(input.anchorDate, -(input.stretchDays + input.bulkDays + input.ripenDays) + 1)
+}
+
+/** Bed veg start that fills exactly `bedVegDays` before flower start. */
+export function defaultBedVegStart(input: FlowerStartInput): string {
+  return shiftIsoDate(flowerStartFor(input), -input.bedVegDays)
+}
+
 export function buildFlowerGrowPlanPreview(input: FlowerGrowPlanInput): {
   phases: PlanPhasePreview[]
   error?: string
 } {
-  const flowerEnd = parseLocalDate(input.flowerEnd)
-  const flowerDays = input.flowerWeeks * 7
-  const bulkDays = flowerDays - input.stretchDays - input.ripenDays
-  if (bulkDays < 1) {
-    const minWeeks = Math.ceil((input.stretchDays + input.ripenDays + 1) / 7)
+  if (input.anchor === 'bed_veg_start' && input.bedVegStart !== input.anchorDate) {
     return {
       phases: [],
-      error: `Flower length must be at least ${minWeeks} weeks for ${input.stretchDays}d stretch + ${input.ripenDays}d ripen.`,
+      error: 'bed_veg_start must equal anchor_date for the bed_veg_start anchor',
     }
   }
 
-  const flowerStart = addDays(flowerEnd, -(flowerDays - 1))
+  const flowerStartIso = flowerStartFor(input)
+  if (input.bedVegStart >= flowerStartIso) {
+    return { phases: [], error: 'Bed veg must start before flower start' }
+  }
+  if (input.potStart !== null && input.potStart >= input.bedVegStart) {
+    return { phases: [], error: 'pot_start must be before bed_veg_start' }
+  }
+  if (input.cloneStart !== null) {
+    const cloneBound = input.potStart ?? input.bedVegStart
+    if (input.cloneStart >= cloneBound) {
+      return {
+        phases: [],
+        error:
+          input.potStart !== null
+            ? 'clone_start must be before pot_start'
+            : 'clone_start must be before bed_veg_start',
+      }
+    }
+  }
+
+  const flowerStart = parseLocalDate(flowerStartIso)
   const stretchEnd = addDays(flowerStart, input.stretchDays - 1)
-  const ripenStart = addDays(flowerEnd, -(input.ripenDays - 1))
-  const bulkStart = addDays(stretchEnd, 1)
-  const bulkEnd = addDays(ripenStart, -1)
+  const bulkEnd = addDays(stretchEnd, input.bulkDays)
+  const ripenEnd = addDays(bulkEnd, input.ripenDays)
 
   const phases: PlanPhasePreview[] = []
 
-  if (input.includePotPhases) {
-    const bedEnd = addDays(flowerStart, -1)
-    const bedStart = addDays(bedEnd, -(input.bedWeeks * 7 - 1))
-    const potEnd = addDays(bedStart, -1)
-    const potStart = addDays(potEnd, -(input.potWeeks * 7 - 1))
-    const cloneEnd = addDays(potStart, -1)
-    const cloneStart = addDays(cloneEnd, -(input.cloneWeeks * 7 - 1))
-    phases.push(
-      {
-        eventType: 'clone_window',
-        title: 'Clone',
-        location: 'Veg Room',
-        start: fmt(cloneStart),
-        end: fmt(cloneEnd),
-        phaseOrder: 1,
-      },
-      {
-        eventType: 'pot_veg',
-        title: 'Pot veg',
-        location: 'Veg Room',
-        start: fmt(potStart),
-        end: fmt(potEnd),
-        phaseOrder: 2,
-      },
-      {
-        eventType: 'bed_veg',
-        title: 'Bed veg',
-        location: 'Flower Room',
-        start: fmt(bedStart),
-        end: fmt(bedEnd),
-        phaseOrder: 3,
-      }
-    )
-  } else {
-    const bedEnd = addDays(flowerStart, -1)
-    const bedStart = addDays(bedEnd, -(input.bedWeeks * 7 - 1))
+  if (input.cloneStart !== null) {
     phases.push({
-      eventType: 'bed_veg',
-      title: 'Bed veg',
-      location: 'Flower Room',
-      start: fmt(bedStart),
-      end: fmt(bedEnd),
-      phaseOrder: 3,
+      eventType: 'clone_window',
+      title: 'Clone',
+      location: 'Veg Room',
+      start: input.cloneStart,
+      end: shiftIsoDate(input.potStart ?? input.bedVegStart, -1),
+      phaseOrder: 1,
+    })
+  }
+  if (input.potStart !== null) {
+    phases.push({
+      eventType: 'pot_veg',
+      title: 'Pot veg',
+      location: 'Veg Room',
+      start: input.potStart,
+      end: shiftIsoDate(input.bedVegStart, -1),
+      phaseOrder: 2,
     })
   }
 
   phases.push(
     {
+      eventType: 'bed_veg',
+      title: 'Bed veg',
+      location: 'Flower Room',
+      start: input.bedVegStart,
+      end: shiftIsoDate(flowerStartIso, -1),
+      phaseOrder: 3,
+    },
+    {
       eventType: 'flip_to_flower',
       title: 'Flip to flower',
       location: 'Flower Room',
-      start: fmt(flowerStart),
-      end: fmt(flowerStart),
+      start: flowerStartIso,
+      end: flowerStartIso,
       phaseOrder: 4,
     },
     {
       eventType: 'flower_stretch',
       title: 'Stretch',
       location: 'Flower Room',
-      start: fmt(flowerStart),
+      start: flowerStartIso,
       end: fmt(stretchEnd),
       phaseOrder: 5,
     },
@@ -123,7 +145,7 @@ export function buildFlowerGrowPlanPreview(input: FlowerGrowPlanInput): {
       eventType: 'flower_bulk',
       title: 'Bulk',
       location: 'Flower Room',
-      start: fmt(bulkStart),
+      start: fmt(addDays(stretchEnd, 1)),
       end: fmt(bulkEnd),
       phaseOrder: 6,
     },
@@ -131,33 +153,27 @@ export function buildFlowerGrowPlanPreview(input: FlowerGrowPlanInput): {
       eventType: 'flower_ripen',
       title: 'Ripen',
       location: 'Flower Room',
-      start: fmt(ripenStart),
-      end: fmt(flowerEnd),
+      start: fmt(addDays(bulkEnd, 1)),
+      end: fmt(ripenEnd),
       phaseOrder: 7,
-    },
-    {
-      eventType: 'drying',
-      title: 'Drying',
-      location: 'Flower Room',
-      start: fmt(addDays(flowerEnd, 1)),
-      end: fmt(addDays(flowerEnd, input.dryingDays)),
-      phaseOrder: 8,
     },
     {
       eventType: 'harvest',
       title: 'Harvest',
       location: 'Flower Room',
-      start: fmt(addDays(flowerEnd, input.dryingDays)),
-      end: fmt(addDays(flowerEnd, input.dryingDays)),
+      start: fmt(ripenEnd),
+      end: fmt(ripenEnd),
+      phaseOrder: 8,
+    },
+    {
+      eventType: 'drying',
+      title: 'Drying',
+      location: 'Flower Room',
+      start: fmt(addDays(ripenEnd, 1)),
+      end: fmt(addDays(ripenEnd, input.dryingDays)),
       phaseOrder: 9,
     }
   )
 
   return { phases }
-}
-
-export function isFlowerEndInPast(flowerEndIso: string): boolean {
-  const end = parseLocalDate(flowerEndIso)
-  const today = toZonedTime(new Date(), CALENDAR_TZ)
-  return differenceInCalendarDays(end, today) < 0
 }

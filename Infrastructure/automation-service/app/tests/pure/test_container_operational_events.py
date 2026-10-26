@@ -10,9 +10,9 @@ from app.container import ServiceContainer
 from app.database import DatabaseManager
 from app.events.mutation_dependencies import NoopOperationalEventSink
 from app.events.operational_models import OperationalEvent, SystemPayload
+from app.redis_client import AutomationRedisClient
 from app.repositories.calendar import CalendarRepository
 from app.repositories.room_modes import RoomModeRepository
-from app.redis_client import AutomationRedisClient
 from app.services.calendar_mode_scheduler import CalendarModeScheduler
 
 
@@ -25,20 +25,30 @@ class _CalendarRepository(CalendarRepository):
 
     async def get_active_flower_phase_event(self, on_date: date) -> dict[str, object]:
         del on_date
-        return {"id": 7, "metadata": {"target_mode_name": "missing"}}
+        return {"id": 7, "metadata": {"target_mode_name": "veg", "target_submode_name": "missing"}}
 
     async def mode_application_exists(self, event_id: int, applied_date: date) -> bool:
         del event_id, applied_date
         return False
+
+    async def get_current_run(self, location: str, today: date | None = None):
+        del location, today
+        return None
 
 
 class _RoomModeRepository(RoomModeRepository):
     def __init__(self) -> None:
         super().__init__(Mock())
 
-    async def get_room_mode_by_name(self, name: str) -> None:
-        del name
-        return None
+    async def get_active_mode(self, location: str, cluster: str) -> dict[str, object] | None:
+        del location, cluster
+        return {"mode_id": 1, "submode_id": None, "mode_name": "veg"}
+
+    async def get_room_mode_by_name(self, name: str) -> dict[str, object] | None:
+        return {"id": 1, "name": name} if name == "veg" else None
+
+    async def get_flower_submodes(self) -> list[dict[str, object]]:
+        return []
 
 
 class _CalendarDatabase(DatabaseManager):
@@ -93,7 +103,7 @@ async def test_operational_events_use_one_noop_sink_when_redis_is_unavailable() 
 
 @pytest.mark.asyncio
 async def test_calendar_worker_forwards_sink_and_isolates_skip_event_dispatch() -> None:
-    # Given: a worker whose due Flower destination cannot resolve and a failing sink.
+    # Given: a worker whose due same-mode submode cannot resolve and a failing sink.
     recording_sink = _RecordingSink()
     worker = _CalendarWorker(_calendar_database(), recording_sink)
 
@@ -106,13 +116,13 @@ async def test_calendar_worker_forwards_sink_and_isolates_skip_event_dispatch() 
 
     # Then: one complete warning is queued and a sink outage cannot interrupt the scheduler.
     assert [event.event_type for event in recording_sink.events] == ["calendar.transition_skipped"]
-    assert recording_sink.events[0].reason_code == "unknown_mode"
+    assert recording_sink.events[0].reason_code == "unknown_submode"
     match recording_sink.events[0].payload:
         case SystemPayload(details=details):
             assert [(detail.key, detail.value) for detail in details] == [
                 ("phase", "7"),
-                ("destination", "missing/default"),
-                ("resolution_reason", "unknown_mode"),
+                ("destination", "veg/missing"),
+                ("resolution_reason", "unknown_submode"),
             ]
         case payload:
             raise AssertionError(f"unexpected payload: {payload.family}")

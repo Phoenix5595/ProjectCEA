@@ -1,4 +1,4 @@
-import { useState, type FC } from 'react'
+import type { FC } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 
 import { useControlActions } from '../contexts/ControlActionsContext'
@@ -19,8 +19,6 @@ const Layout: FC = () => {
   const location = useLocation()
   const { actions } = useControlActions()
 
-  const [activeTab, setActiveTab] = useState<string>('overview')
-
   // Determine sector from current path
   const sector = getSectorFromPath(location.pathname)
   const showTopRibbon = sector !== null
@@ -35,8 +33,6 @@ const Layout: FC = () => {
         {showTopRibbon && sector && (
           <TopRibbon
             sector={sector}
-            activeTab={activeTab}
-            onTabChange={setActiveTab}
             roomName={actions.roomName}
             showActions={actions.showActions}
             onSave={actions.onSave}

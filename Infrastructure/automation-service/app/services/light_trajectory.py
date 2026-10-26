@@ -17,9 +17,9 @@ Segment conventions (shared with the frontend canonical rich conversion):
 - the per-device cycle budget bounds materialized gate transitions; unrepresented
   cycle coverage becomes an explicit unavailable gap with a warning instead of a
   silently simplified pattern,
-- known calendar/profile identity switches stop the executing profile's light
-  authority; moon-authority destinations keep full frozen authority from the
-  mode name alone, every other destination stays explicitly unavailable.
+- known calendar identity switches (the active mode's submode) never project
+  another mode's profile; days without frozen light authority publish an
+  explicit unavailable gap instead of a fabricated schedule.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ from app.schemas.climate_timeline import (
     UnavailableTrajectorySegment,
 )
 from app.schemas.monitoring_models import Phase, Quality
-from app.services.climate_projection import known_moon_destination_day, mode_identity_at
+from app.services.climate_projection import mode_identity_at
 from app.services.light_projection import light_series_id
 from app.services.light_projection_evaluator import (
     cycle_gate_count,
@@ -74,7 +74,6 @@ class _Authority:
 
     missing_mode: bool
     missing_parameters: bool
-    moon_days: frozenset[date]
     resolvable_days: frozenset[date]
 
 
@@ -111,39 +110,31 @@ def _unique_warnings(warnings: list[TimelineWarning]) -> tuple[TimelineWarning, 
 
 
 def _authority_window(snapshot: MonitoringSnapshot, start: datetime, end: datetime) -> _Authority:
-    """Resolve per-local-day coverage: executing profile, moon destination, unknown.
+    """Resolve per-local-day coverage: the executing profile or unavailable.
 
-    A known calendar/profile identity change stops the executing profile's
-    forecast. Moon-authority destinations stay fully governed by their mode
-    name, so only those days remain forecastable after a switch; every other
-    future identity publishes explicit unavailable coverage.
+    Calendar transitions change only the submode of the active mode (R11), so
+    days whose identity differs from the executing profile have no frozen
+    light authority and publish explicit unavailable coverage.
     """
     if snapshot.active_mode is None:
         return _Authority(
             missing_mode=True,
             missing_parameters=snapshot.mode_parameters is None,
-            moon_days=frozenset(),
             resolvable_days=frozenset(),
         )
     missing_parameters = snapshot.mode_parameters is None
     identity = _active_identity(snapshot)
     first_day = start.astimezone(LOCAL_TZ).date()
     final_day = (end - _WINDOW_MARGIN).astimezone(LOCAL_TZ).date()
-    moon_days: set[date] = set()
     resolvable: set[date] = set()
     day = first_day
     while day <= final_day:
         if _day_identity(snapshot, day) == identity:
             resolvable.add(day)
-        elif known_moon_destination_day(snapshot, day):
-            # The moon destination is fully governed by its frozen mode name.
-            moon_days.add(day)
-            resolvable.add(day)
         day += timedelta(days=1)
     return _Authority(
         missing_mode=False,
         missing_parameters=missing_parameters,
-        moon_days=frozenset(moon_days),
         resolvable_days=frozenset(resolvable),
     )
 
@@ -228,25 +219,6 @@ def _photoperiod_day(
 ) -> tuple[TrajectorySegment, ...]:
     """The photoperiod coverage of one local day under the resolved authority."""
     local_day = start.astimezone(LOCAL_TZ).date()
-    if local_day in authority.moon_days:
-        warnings.append(
-            TimelineWarning(
-                code="light_phase_unresolved",
-                detail=(
-                    "transitioned local day switches into a moon mode; the "
-                    "destination photoperiod stays explicitly unavailable"
-                ),
-            )
-        )
-        return (
-            _unavailable(
-                start,
-                end,
-                _PHOTOPERIOD_SERIES,
-                source,
-                "transitioned local day has no frozen photoperiod authority",
-            ),
-        )
     if local_day not in authority.resolvable_days:
         warnings.append(_identity_warning())
         return (
@@ -361,16 +333,6 @@ def _light_day_segments(
     warnings: list[TimelineWarning],
 ) -> tuple[TrajectorySegment, ...]:
     """Canonical coverage for one light inside a single local day."""
-    if local_day in authority.moon_days:
-        return (
-            _step(
-                start,
-                end,
-                series_id,
-                0.0,
-                _source(snapshot, start, config_revision, "moon_authority", "Moon authority"),
-            ),
-        )
     if local_day not in authority.resolvable_days:
         warnings.append(
             TimelineWarning(

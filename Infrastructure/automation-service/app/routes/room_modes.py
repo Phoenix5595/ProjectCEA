@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
+from datetime import datetime
 import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.calendar.flower_grow_plan import LOCAL_TZ
 from app.cluster_config import ensure_configured_cluster
 from app.config import ConfigLoader
 from app.control.relay_manager import RelayManager
@@ -154,6 +156,35 @@ async def _force_lights_off_for_moon_authority_mode(
                 device_name,
                 reason,
             )
+
+
+async def _align_flower_plan_after_activation(
+    db: DatabaseManager,
+    location: str,
+    cluster: str,
+    mode_name: str,
+    result_data: Mapping[str, Any],
+) -> None:
+    """Move the waiting plan's flip to a manual Veg → Flower activation day (R11).
+
+    Best effort after the committed mode change: every failure is logged and
+    never turns an applied activation into an error.
+    """
+    try:
+        if location != "Flower Room" or cluster != "main" or mode_name != "flower":
+            return
+        if (result_data.get("old_mode") or {}).get("mode_name") != "veg":
+            return
+        calendar_repo = getattr(db, "calendar_repo", None)
+        if calendar_repo is None:
+            return
+        today = datetime.now(tz=LOCAL_TZ).date()
+        run = await calendar_repo.get_current_run("Flower Room", today)
+        if run is None:
+            return
+        await calendar_repo.align_flower_start(run.grow_plan_id, today, forward_only=False)
+    except Exception as error:
+        logger.warning("Flower activation calendar alignment failed: %s", error)
 
 
 @router.get("/modes", response_model=list[RoomMode])
@@ -332,6 +363,8 @@ async def set_room_mode(
     )
 
     logger.info(f"Mode switch: {location}/{cluster} -> {request.mode_name}/{request.submode_name}")
+
+    await _align_flower_plan_after_activation(db, location, cluster, request.mode_name, result_data)
 
     if is_moon_authority_mode(request.mode_name.strip()):
         await _force_lights_off_for_moon_authority_mode(

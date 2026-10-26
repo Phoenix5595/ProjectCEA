@@ -39,7 +39,14 @@ export function dashboardDeviceDetails(location: string, cluster: string) {
   )
 }
 
-export function dashboardControlSnapshotFixture(): ControlSnapshotResponse {
+/**
+ * `channelOf` lets a fixture session own the relay bindings: the registry and
+ * the control snapshot must agree on where each device sits, because a moved
+ * or swapped relay only shows up through the snapshot.
+ */
+export function dashboardControlSnapshotFixture(
+  channelOf: (device: (typeof DASHBOARD_DEVICES)[number]) => number | null = device => device.channel
+): ControlSnapshotResponse {
   const sampledAt = new Date().toISOString()
   const assignment = (device: (typeof DASHBOARD_DEVICES)[number] | undefined) => device ? {
     device_id: device.device_id,
@@ -60,7 +67,7 @@ export function dashboardControlSnapshotFixture(): ControlSnapshotResponse {
     hardware_alarms: [],
     failsafes: [],
     relays: Object.entries(RELAY_TO_CHANNEL).map(([physicalRelay, channel]) => {
-      const device = DASHBOARD_DEVICES.find(candidate => candidate.channel === channel)
+      const device = DASHBOARD_DEVICES.find(candidate => channelOf(candidate) === channel)
       return {
         physical_relay: Number(physicalRelay), channel,
         pin_label: `${channel < 8 ? 'GPA' : 'GPB'}${channel % 8}`,

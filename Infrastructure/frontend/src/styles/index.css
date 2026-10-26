@@ -1023,14 +1023,16 @@ body {
 .grow-calendar-picker .rdp-selected {
   font-size: inherit;
 }
-/* Dashboard desktop contract: page grows with content; only the document scrolls. */
+/* Overview no-scroll contract (R7): one viewport tall, minimum 1280×720 (1.875rem = icon rail / TopRibbon); only the event-log body and the calendar inspector scroll. */
 @media (min-width: 768px) {
   .main-dashboard:has(.dashboard-workspace) {
     display: grid;
-    grid-template-rows: auto auto minmax(min-content, 1fr) auto;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
     width: 100%;
-    height: auto;
-    min-height: 100dvh;
+    height: max(100dvh, 720px);
+    min-height: 0;
+    min-width: calc(1280px - 1.875rem);
+    overflow: hidden;
   }
 
   .main-dashboard:has(.dashboard-workspace) > .dashboard-ribbon {
@@ -1040,39 +1042,40 @@ body {
 
   .dashboard-layout__body {
     display: flex;
-    flex: 1 0 auto;
+    flex: 1 1 auto;
     flex-direction: column;
     gap: 0.5rem;
     min-width: 0;
-    min-height: min-content;
+    min-height: 0;
     padding: 0.5rem;
   }
 
   .dashboard-workspace {
     display: grid;
-    flex: 1 0 auto;
+    flex: 1 1 auto;
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
     gap: 0.5rem;
     min-width: 0;
-    min-height: min-content;
+    min-height: 0;
   }
 
-  /* Room rows stay content-sized; the calendar and inspector follow content. */
+  /* The upper row keeps the calendar; the inspector and room rows follow content. */
   .dashboard-center {
     display: grid;
-    grid-template-rows: minmax(min-content, 1fr) auto;
+    grid-template-rows: minmax(0, 1fr) auto;
     gap: 0.5rem;
     min-width: 0;
-    min-height: min-content;
+    min-height: 0;
   }
 
   .dashboard-upper {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(min-content, 1fr) auto;
+    grid-template-rows: minmax(0, 1fr) auto;
     gap: 0.5rem;
     min-width: 0;
-    min-height: min-content;
+    min-height: 0;
   }
 
   .dashboard-calendar-slot,
@@ -1084,6 +1087,8 @@ body {
 
   .dashboard-calendar-slot {
     display: flex;
+    min-height: 0;
+    overflow: hidden;
   }
 
   .dashboard-calendar-slot > .grow-calendar--dashboard {
@@ -1091,7 +1096,15 @@ body {
   }
 
   .dashboard-inspector-slot {
-    min-height: min-content;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .dashboard-inspector-slot > .dashboard-inspector {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
   }
 
   .dashboard-room-rows {
@@ -1104,20 +1117,28 @@ body {
   }
 
   .dashboard-rail {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
     gap: 0.5rem;
     min-width: 0;
-    min-height: min-content;
+    min-height: 0;
   }
 
   .dashboard-event-log-panel {
     display: flex;
     min-height: 0;
+    overflow: hidden;
   }
 
   .dashboard-water-panel {
-    flex: 0 0 auto;
+    width: 15rem;
+    height: 15rem;
+    justify-self: end;
+    align-self: end;
+  }
+
+  .dashboard-water-panel > * {
+    height: 100%;
   }
 
   .dashboard-inspector__overview {
@@ -1136,6 +1157,57 @@ body {
   .grow-calendar--dashboard .rdp-month {
     height: 100%;
   }
+
+  /* Room overviews (R7): same no-scroll contract, calendar 3fr above events 2fr.
+     `contain: layout` stops the nested event-log scroller's overflow region from
+     propagating to the document; `overflow: hidden` alone does not. */
+  .room-overview {
+    display: grid;
+    grid-template-rows: minmax(0, 3fr) minmax(0, 2fr);
+    gap: 1rem;
+    padding: 1rem;
+    height: calc(max(100dvh, 720px) - 1.875rem);
+    min-width: calc(1280px - 1.875rem);
+    overflow: hidden;
+    contain: layout;
+  }
+
+  .room-overview__calendar,
+  .room-overview__events {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .room-overview__events > section {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  /* The month never shrinks below its content; only the day detail gives way. */
+  .room-overview .grow-calendar--dashboard .grow-cal-panel,
+  .room-overview .grow-calendar--dashboard .rdp-root,
+  .room-overview .grow-calendar--dashboard .rdp-months,
+  .room-overview .grow-calendar--dashboard .rdp-month,
+  .room-overview .grow-calendar--dashboard .rdp-month_grid {
+    flex: 1 0 auto;
+    min-height: auto;
+  }
+
+  .room-overview .grow-cal-day-detail {
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
+}
+
+@media (min-width: 768px) and (max-height: 899.98px) {
+  .grow-calendar--dashboard .rdp-day,
+  .grow-calendar--dashboard .rdp-day_button {
+    min-height: 1.75rem;
+  }
 }
 
 @media (min-width: 1600px) {
@@ -1145,7 +1217,7 @@ body {
 
   .dashboard-upper {
     grid-template-columns: minmax(0, 4fr) minmax(16rem, 1fr);
-    grid-template-rows: minmax(min-content, 1fr);
+    grid-template-rows: minmax(0, 1fr);
   }
 
   .dashboard-inspector__overview {
@@ -1165,7 +1237,7 @@ body {
 
   .dashboard-upper {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(min-content, 1fr) auto;
+    grid-template-rows: minmax(0, 1fr) auto;
   }
 }
 
@@ -1445,24 +1517,6 @@ body {
 }
 
 @media (min-width: 900px) and (max-width: 1099px) {
-  .dashboard-zone-row__narrow-climate > * > div:first-child {
-    flex-wrap: nowrap;
-    gap: 0.05rem;
-    margin-bottom: 0.05rem;
-    font-size: 0.45rem;
-  }
-
-  .dashboard-zone-row__narrow-climate > * > div:first-child > span:first-child {
-    display: none;
-  }
-
-  .dashboard-zone-row__narrow-climate > * > div:first-child > span:nth-child(2) {
-    min-width: 0;
-    padding: 0 0.1rem;
-    font-size: 0.45rem;
-    white-space: nowrap;
-  }
-
   .dashboard-zone-row__narrow-climate > * > div:last-child {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1481,21 +1535,11 @@ body {
     overflow-wrap: anywhere;
   }
 
-  .dashboard-event-log-panel {
-    display: flex;
-    min-height: 0;
-  }
-
   .dashboard-event-log-panel > section {
     display: flex;
-    flex: 1 0 auto;
+    flex: 1 1 auto;
     flex-direction: column;
-    min-height: min-content;
-  }
-
-  .dashboard-event-log-panel > section > .flex.flex-col.gap-2:not([role='toolbar']) {
-    flex: 1 0 auto;
-    min-height: min-content;
+    min-height: 0;
   }
 
   .dashboard-event-log-panel [aria-label='Event list'] {

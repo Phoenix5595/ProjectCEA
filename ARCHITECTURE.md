@@ -85,6 +85,8 @@ Startup installs one immutable `RuntimeDeviceSnapshot` per tick. The snapshot fr
 
 `GET /api/devices/control-snapshot` joins the strict registry snapshot, MCP relay observation, assigned-device command state, and DFR commanded/acknowledged intensity into one read model.
 
+`PUT /api/devices/registry/{device_id}/relay` moves one relay binding; an occupied target swaps owners. Both channels must confirm OFF before any binding changes. One shared `RuntimeDeviceRegistry.actuation_lock` serializes the control tick, manual device commands, raw channel writes, relay tests, and registry mutations, so a move never interleaves with an actuation.
+
 ## Scheduling and Control
 
 Each tick:

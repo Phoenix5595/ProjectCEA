@@ -15,6 +15,14 @@ interface RelayChannelBoxProps {
     channel: number,
     action: 'auto' | 'timer-5m' | 'timer-10m' | 'timer-30m' | 'timer-1h' | 'off'
   ) => void
+  draggable?: boolean
+  dropLabel?: string | null
+  moving?: boolean
+  onDragStart?: (event: React.DragEvent<HTMLElement>) => void
+  onDragOver?: (event: React.DragEvent<HTMLElement>) => void
+  onDragLeave?: (event: React.DragEvent<HTMLElement>) => void
+  onDrop?: (event: React.DragEvent<HTMLElement>) => void
+  onDragEnd?: (event: React.DragEvent<HTMLElement>) => void
 }
 
 interface ButtonState {
@@ -68,6 +76,14 @@ export default function RelayChannelBox({
   isMenuOpen = false,
   onToggleMenu,
   onMenuAction,
+  draggable = false,
+  dropLabel = null,
+  moving = false,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd,
 }: RelayChannelBoxProps) {
   const isCompact = variant === 'compact'
   const elapsedLabel = formatElapsedSince(channel.changedAt, nowMs)
@@ -99,6 +115,7 @@ export default function RelayChannelBox({
     !isDisabled ? interactiveClasses : '',
     isEditing ? 'ring-2 ring-btn-primary-light' : '',
     isMenuOpen ? 'z-30' : 'z-0',
+    moving ? 'opacity-50' : '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -215,18 +232,54 @@ export default function RelayChannelBox({
     </div>
   )
 
+  const overlays = (
+    <>
+      {dropLabel ? (
+        <span
+          data-testid="relay-drop-label"
+          className="absolute inset-0 z-20 flex items-center justify-center rounded-sm bg-surface-primary/90 px-1 text-center text-11 font-semibold text-btn-primary"
+        >
+          {dropLabel}
+        </span>
+      ) : null}
+      {moving ? (
+        <span className="absolute inset-0 z-20 flex items-center justify-center rounded-sm bg-surface-primary/70 text-12 font-semibold text-text-secondary">
+          Moving…
+        </span>
+      ) : null}
+    </>
+  )
+
+  const dragProps = {
+    draggable: draggable && !isDisabled && !isCompact,
+    onDragStart,
+    onDragOver,
+    onDragLeave,
+    onDrop,
+    onDragEnd,
+    'aria-busy': moving ? true : undefined,
+  }
+
   if (!onSelect) {
-    return <div className={baseClasses}>{content}</div>
+    return (
+      <div className={baseClasses} data-testid={`relay-tile-${relayNum}`} {...dragProps}>
+        {content}
+        {overlays}
+      </div>
+    )
   }
 
   return (
     <button
       type="button"
       className={baseClasses}
+      data-testid={`relay-tile-${relayNum}`}
       disabled={isDisabled}
       onClick={() => onSelect(channel.channel)}
+      {...dragProps}
     >
       {content}
+      {overlays}
     </button>
   )
 }

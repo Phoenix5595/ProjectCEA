@@ -40,6 +40,8 @@ vi.mock('../../hooks/useDashboardScheduleContext', () => ({
     modes: {},
     modeErrors: {},
     schedules: [],
+    pendingModeChange: null,
+    expectedHarvests: {},
     loading: false,
     error: null,
     updatedAt: null,
@@ -130,11 +132,7 @@ describe('Dashboard dense layout', () => {
       .filter(link => link.classList.contains('dashboard-zone-row'))
     expect(zoneLinks).toHaveLength(3)
     expect(zoneLinks.map(l => l.getAttribute('href'))).toEqual(
-      expect.arrayContaining([
-        '/flower/control',
-        '/vegetation/control',
-        '/laboratory',
-      ])
+      expect.arrayContaining(['/flower/control', '/vegetation/control', '/laboratory'])
     )
   })
 
@@ -155,7 +153,8 @@ describe('Dashboard dense layout', () => {
       .getAllByRole('link')
       .find(
         link =>
-          link.classList.contains('dashboard-zone-row') && link.getAttribute('href') === '/laboratory'
+          link.classList.contains('dashboard-zone-row') &&
+          link.getAttribute('href') === '/laboratory'
       )
     expect(labLink).toBeDefined()
     expect(labLink).not.toHaveTextContent(

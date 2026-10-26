@@ -46,29 +46,34 @@ export default function CalendarOverviewPage({
         modeSchedule.active.submode_name !== modeSchedule.expected.submode_name))
 
   return (
-    <div className="p-4 flex flex-col gap-4 bg-surface-base">
-      {mismatch && (
-        <div
-          role="alert"
-          className="rounded-lg border border-amber-500/60 bg-amber-500/15 px-3 py-2 text-sm text-amber-100"
-        >
-          Scheduled: {modeSchedule.expected.mode_name}
-          {modeSchedule.expected.submode_name ? ` / ${modeSchedule.expected.submode_name}` : ''} (
-          {modeSchedule.expected.title}) — Active: {modeSchedule.active.mode_name ?? '—'}
-          {modeSchedule.active.submode_name ? ` / ${modeSchedule.active.submode_name}` : ''}
-        </div>
-      )}
-      <GrowCalendar
-        variant="full"
-        viewMode="room"
-        location={location}
-        events={events}
-        loading={loading}
-        onRefresh={refresh}
-        showAddTask={location === 'Flower Room'}
-        onAddTask={() => setWizardOpen(true)}
-      />
-      <EventLog entries={entries} now={now} />
+    <div className="room-overview p-4 flex flex-col gap-4 bg-surface-base">
+      <div className="room-overview__calendar flex flex-col gap-4">
+        {mismatch && (
+          <div
+            role="alert"
+            className="rounded-lg border border-amber-500/60 bg-amber-500/15 px-3 py-2 text-sm text-amber-100"
+          >
+            Scheduled: {modeSchedule.expected.mode_name}
+            {modeSchedule.expected.submode_name ? ` / ${modeSchedule.expected.submode_name}` : ''} (
+            {modeSchedule.expected.title}) — Active: {modeSchedule.active.mode_name ?? '—'}
+            {modeSchedule.active.submode_name ? ` / ${modeSchedule.active.submode_name}` : ''}
+          </div>
+        )}
+        <GrowCalendar
+          variant="full"
+          density="dashboard"
+          viewMode="room"
+          location={location}
+          events={events}
+          loading={loading}
+          onRefresh={refresh}
+          showAddTask={location === 'Flower Room'}
+          onAddTask={() => setWizardOpen(true)}
+        />
+      </div>
+      <div className="room-overview__events">
+        <EventLog entries={entries} now={now} />
+      </div>
       {location === 'Flower Room' && (
         <FlowerGrowWizard
           open={wizardOpen}

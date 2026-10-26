@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 import RelayChannelBox from './RelayChannelBox'
 import type { RelayChannelViewModel } from './relayViewModel'
 import { RELAY_MATRIX_ROWS, splitRelayByPhysicalLayout } from './relayViewModel'
@@ -17,6 +19,8 @@ interface RelayChannelMatrixProps {
     channel: number,
     action: 'auto' | 'timer-5m' | 'timer-10m' | 'timer-30m' | 'timer-1h' | 'off'
   ) => void
+  onMoveRelay?: (deviceId: number, sourceChannel: number, targetChannel: number) => void
+  movingChannels?: ReadonlySet<number>
 }
 
 interface ChannelBoxRenderProps {
@@ -31,6 +35,25 @@ interface ChannelBoxRenderProps {
     channel: number,
     action: 'auto' | 'timer-5m' | 'timer-10m' | 'timer-30m' | 'timer-1h' | 'off'
   ) => void
+  dragEnabled: boolean
+  dragChannel: number | null
+  hoverChannel: number | null
+  movingChannels?: ReadonlySet<number>
+  onDragStartChannel: (event: React.DragEvent<HTMLElement>, channel: number) => void
+  onDragOverChannel: (event: React.DragEvent<HTMLElement>, channel: number) => void
+  onDragLeaveChannel: (channel: number) => void
+  onDropChannel: (channel: number) => void
+  onDragEnd: () => void
+}
+
+function dropLabelFor(
+  channel: RelayChannelViewModel,
+  hoverChannel: number | null,
+  dragChannel: number | null
+): string | null {
+  if (hoverChannel !== channel.channel || dragChannel === channel.channel) return null
+  if (!channel.isAssigned) return 'Move here'
+  return `Swap with ${channel.deviceName ?? channel.assignedDeviceName ?? 'device'}`
 }
 
 function renderChannelBox(channel: RelayChannelViewModel, props: ChannelBoxRenderProps) {
@@ -46,6 +69,14 @@ function renderChannelBox(channel: RelayChannelViewModel, props: ChannelBoxRende
       isMenuOpen={props.menuOpenChannel === channel.channel}
       onToggleMenu={props.onToggleMenu}
       onMenuAction={props.onMenuAction}
+      draggable={props.dragEnabled && channel.isAssigned && channel.deviceId !== null}
+      dropLabel={dropLabelFor(channel, props.hoverChannel, props.dragChannel)}
+      moving={props.movingChannels?.has(channel.channel) ?? false}
+      onDragStart={event => props.onDragStartChannel(event, channel.channel)}
+      onDragOver={event => props.onDragOverChannel(event, channel.channel)}
+      onDragLeave={() => props.onDragLeaveChannel(channel.channel)}
+      onDrop={() => props.onDropChannel(channel.channel)}
+      onDragEnd={props.onDragEnd}
     />
   )
 }
@@ -75,8 +106,50 @@ export default function RelayChannelMatrix({
   menuOpenChannel = null,
   onToggleMenu,
   onMenuAction,
+  onMoveRelay,
+  movingChannels,
 }: RelayChannelMatrixProps) {
   const { rows } = splitRelayByPhysicalLayout(channels)
+  const [dragChannel, setDragChannel] = useState<number | null>(null)
+  const [hoverChannel, setHoverChannel] = useState<number | null>(null)
+
+  const dragEnabled = variant === 'panel' && !!onMoveRelay && (movingChannels?.size ?? 0) === 0
+
+  function handleDragStart(event: React.DragEvent<HTMLElement>, channel: number) {
+    if (event.dataTransfer) {
+      event.dataTransfer.setData('text/plain', String(channel))
+      event.dataTransfer.effectAllowed = 'move'
+    }
+    setDragChannel(channel)
+    setHoverChannel(null)
+  }
+
+  function handleDragOver(event: React.DragEvent<HTMLElement>, channel: number) {
+    event.preventDefault()
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'move'
+    }
+    setHoverChannel(channel)
+  }
+
+  function handleDragLeave(channel: number) {
+    setHoverChannel(previous => (previous === channel ? null : previous))
+  }
+
+  function handleDrop(channel: number) {
+    const sourceChannel = dragChannel
+    setDragChannel(null)
+    setHoverChannel(null)
+    if (sourceChannel === null || sourceChannel === channel) return
+    const source = channels.find(candidate => candidate.channel === sourceChannel)
+    if (!source || source.deviceId === null) return
+    onMoveRelay?.(source.deviceId, source.channel, channel)
+  }
+
+  function handleDragEnd() {
+    setDragChannel(null)
+    setHoverChannel(null)
+  }
 
   const boxProps: ChannelBoxRenderProps = {
     nowMs,
@@ -87,6 +160,15 @@ export default function RelayChannelMatrix({
     menuOpenChannel: menuOpenChannel ?? null,
     onToggleMenu,
     onMenuAction,
+    dragEnabled,
+    dragChannel,
+    hoverChannel,
+    movingChannels,
+    onDragStartChannel: handleDragStart,
+    onDragOverChannel: handleDragOver,
+    onDragLeaveChannel: handleDragLeave,
+    onDropChannel: handleDrop,
+    onDragEnd: handleDragEnd,
   }
 
   const relayWidth = variant === 'panel' ? '198px' : '150px'

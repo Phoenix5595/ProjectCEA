@@ -1,5 +1,7 @@
+import { formatTorontoClock } from '../../../utils/torontoWallTime'
 import type { EventLogEntry } from '../state/eventLogStore'
 
+import { formatPayloadValue } from './safePayload'
 import { formatSetpointFromTo } from './setpointChange'
 
 export interface EventSourcePart {
@@ -87,4 +89,125 @@ function relayEngagedClass(entry: EventLogEntry): string | undefined {
   if (entry.category !== 'relay') return undefined
   const engaged = entry.payload.state === true || entry.payload.observed_state === true
   return engaged ? 'text-event-relay font-bold' : undefined
+}
+
+function numberPayload(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function entityLabel(entry: EventLogEntry): string | null {
+  if (entry.entity === null) return null
+  return entry.entity.entityType === 'relay_channel'
+    ? `Channel ${entry.entity.entityId}`
+    : entityShortName(entry.entity.entityId)
+}
+
+function relayStateText(entry: EventLogEntry): string | null {
+  const state = entry.payload.state
+  if (typeof state === 'boolean') return state ? 'ON' : 'OFF'
+  const observedState = entry.payload.observed_state
+  if (typeof observedState === 'boolean') return observedState ? 'ON' : 'OFF'
+  return null
+}
+
+function manualOverrideText(payload: Record<string, unknown>): string | null {
+  const mode = stringPayload(payload.mode)
+  if (mode === null) return null
+  const expiresAt = stringPayload(payload.expires_at)
+  if (expiresAt !== null) {
+    const expiresAtMs = Date.parse(expiresAt)
+    if (Number.isFinite(expiresAtMs)) return `${mode} until ${formatTorontoClock(expiresAtMs)}`
+  }
+  const durationSeconds = numberPayload(payload.duration_seconds)
+  if (durationSeconds !== null) return `${mode} for ${Math.round(durationSeconds / 60)} min`
+  return mode
+}
+
+function setpointText(payload: Record<string, unknown>): string | null {
+  const effective = numberPayload(payload.effective_setpoint)
+  if (effective === null) return null
+  const previous = numberPayload(payload.previous_setpoint)
+  return previous === null
+    ? `SP ${formatPayloadValue(effective)}`
+    : `SP ${formatPayloadValue(previous)}→${formatPayloadValue(effective)}`
+}
+
+function rampValuesText(payload: Record<string, unknown>): string | null {
+  const target = numberPayload(payload.target_value)
+  if (target === null) return null
+  const start = numberPayload(payload.start_value)
+  return start === null
+    ? `→${formatPayloadValue(target)}`
+    : `${formatPayloadValue(start)}→${formatPayloadValue(target)}`
+}
+
+function mutationChangeText(payload: Record<string, unknown>): string | null {
+  const changes = payload.changes
+  if (!Array.isArray(changes) || changes.length === 0) return null
+  const first: unknown = changes[0]
+  if (typeof first !== 'object' || first === null) return null
+  const change = first as Record<string, unknown>
+  const key = stringPayload(change.key)
+  if (key === null) return null
+  const text = `${key}: ${formatPayloadValue(change.before)}→${formatPayloadValue(change.after)}`
+  return changes.length > 1 ? `${text} +${changes.length - 1} more` : text
+}
+
+/**
+ * One-line detail for a dashboard category card: the latest event's salient
+ * fields, joined with ` · `. Absent or wrongly typed source fields contribute
+ * nothing; `—` stands in when no part is present.
+ */
+export function eventDetailLine(entry: EventLogEntry): string {
+  const payload = entry.payload
+  const room = stringPayload(payload.room)
+  const parts: string[] = []
+
+  if (entry.category === 'relay') {
+    const label = entityLabel(entry)
+    if (label !== null) parts.push(label)
+    if (room !== null) parts.push(room)
+    const state = relayStateText(entry)
+    if (state !== null) parts.push(state)
+  } else if (entry.category === 'control') {
+    const controller = stringPayload(payload.device_type) ?? stringPayload(payload.controller)
+    if (controller !== null) parts.push(controller)
+    if (room !== null) parts.push(room)
+    const setpoint = setpointText(payload)
+    if (setpoint !== null) parts.push(setpoint)
+  } else if (entry.category === 'ramp') {
+    const rampType = stringPayload(payload.ramp_type)
+    if (rampType !== null) parts.push(rampType)
+    if (room !== null) parts.push(room)
+    const values = rampValuesText(payload)
+    if (values !== null) parts.push(values)
+  } else if (entry.category === 'manual_override') {
+    const label = entityLabel(entry)
+    if (label !== null) parts.push(label)
+    if (room !== null) parts.push(room)
+    const override = manualOverrideText(payload)
+    if (override !== null) parts.push(override)
+  } else if (entry.category === 'mutation') {
+    if (entry.entity !== null) {
+      parts.push(`${entry.entity.entityType} ${entry.entity.entityId}`)
+    }
+    if (room !== null) parts.push(room)
+    const change = mutationChangeText(payload)
+    if (change !== null) parts.push(change)
+  } else if (entry.category === 'alarm') {
+    const code = stringPayload(payload.alarm_code)
+    if (code !== null) parts.push(code)
+    const state = stringPayload(payload.state)
+    if (state !== null) parts.push(state)
+    if (room !== null) parts.push(room)
+  } else if (entry.category === 'system') {
+    const component = stringPayload(payload.component)
+    if (component !== null) parts.push(component)
+    const state = stringPayload(payload.state)
+    if (state !== null) parts.push(state)
+  } else if (room !== null) {
+    parts.push(room)
+  }
+
+  return parts.length === 0 ? '—' : parts.join(' · ')
 }

@@ -140,21 +140,6 @@ test('event-label fixture exposes readable labels, exact severity, and keyboard 
   await expect(eventList.locator('[aria-label="Severity: Critical"]')).toHaveCount(1)
   await expect(eventList.locator('[aria-label="Severity: Info"]')).toHaveCount(1)
 
-  await page.getByRole('button', { name: 'Critical', exact: true }).click()
-  await expect(entries).toHaveCount(1)
-  await expect(entries.first()).toContainText('Custom unknown type xyz')
-  await expect(entries.first().locator('[aria-label="Severity: Critical"]')).toHaveCount(1)
-
-  await page.getByRole('button', { name: 'All', exact: true }).click()
-  await page.getByRole('button', { name: 'Error', exact: true }).click()
-  await expect(entries).toHaveCount(1)
-  await expect(entries.first()).toContainText('Relay command failed')
-  await expect(entries.first()).toContainText('relay.command_failed')
-  await expect(entries.first().locator('[aria-label="Severity: Error"]')).toHaveCount(1)
-  await expect(page.getByText('Relay state changed', { exact: true })).toHaveCount(0)
-  await expect(page.getByText('Custom unknown type xyz', { exact: true })).toHaveCount(0)
-
-  await page.getByRole('button', { name: 'All', exact: true }).click()
   const failedEntry = entries.filter({ hasText: 'relay.command_failed' })
   const toggle = failedEntry.getByRole('button', { name: 'Toggle details' })
   await toggle.focus()

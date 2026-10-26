@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 from fastapi import HTTPException
@@ -118,7 +119,9 @@ async def test_raw_relay_hardware_failure_emits_no_success_mutation() -> None:
             hardware.RelayChannelControlRequest(state=1, duration_seconds=60),
             _Relay(False),
             SimpleNamespace(redis_client=redis),
-            SimpleNamespace(is_assigned_channel=lambda _channel: False),
+            SimpleNamespace(
+                is_assigned_channel=lambda _channel: False, actuation_lock=asyncio.Lock()
+            ),
             MutationRequestContext.create(),
             sink,
         )

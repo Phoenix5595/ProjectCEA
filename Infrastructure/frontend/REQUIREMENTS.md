@@ -25,16 +25,17 @@ Sensor display names in the monitoring manifests follow frontend mappings; backe
 
 ## Dashboard Status
 
-- Sensor freshness is scoped to `(location, cluster)`. Flower Front and Back render separate age, source, and quality badges next to the readings they qualify; a live cluster never upgrades another cluster’s status.
+- Sensor freshness is scoped to `(location, cluster)`. Each cluster's Front/Back (or Climate) tag sits left of its readings; a stale or missing cluster gets the red alert theme plus a hover/screen-reader line with its last good reading (Toronto clock), age and source instead of a badge. A live cluster never upgrades another cluster’s status.
 - Grow-mode labels use `GET /api/room-modes/active/{location}/{cluster}` for Flower Room/main and Veg Room/main. Do not use Redis control modes from `/api/mode` as grow modes. Lab has no grow mode; its dashboard card shows sensor freshness/readings and available trend labels/deltas, plus named devices in full cards or ON/OFF/unknown counts in the existing 768–1099px summary—never grow mode, decision, schedule, or setpoint placeholders.
 
 ## Dashboard Viewports and Navigation
 
 - Web navigation is a permanent 30px icon rail on every route. Each icon link has an accessible label and title; there is no expanded desktop state, persisted collapse preference, hamburger, or mobile drawer.
+- Sector top bar: the room name links to the sector root (`aria-current="page"` on that page) and the tabs are Monitoring, Control, Automation, Soil (Flower only), Historical — there is no Overview tab. `/laboratory` and `/devices` show the room-name link only.
 - Dashboard QA in this pass uses exactly 1920×1080 and 1280×1440. The 960px redesign is deferred; no mobile-web layout guarantee or phone QA project is supported. A separate mobile app does not exist yet.
-- At both supported dashboard QA sizes the page fits one viewport without document or in-panel scrolling or overlapping panels. Long lists and notes remain reachable through paging or transient detail dialogs; dialogs/popovers may scroll as overlays.
-- The dashboard calendar always renders six complete weeks, keeps 44px minimum day-button targets, and exposes task, note, and phase counts in each date's accessible name.
-- The compact dashboard Event Log shows eight canonical category groups at viewport heights ≥ 1300 CSS px and six below 1300 CSS px, updating on resize. The six-group view merges Ramp into Control and Mutation into System without dropping events; raw-category filters remain available. Categories are not paginated. Flat and expanded event lists show five newest-first events per page with visible status and event-list controls.
+- **R7 No-scroll.** At both supported dashboard QA sizes the overview pages (`/`, `/flower`, `/vegetation`, `/laboratory`) fit one viewport without document or panel scrolling or overlapping panels. From 768 px wide up they keep a 1280×720 minimum layout and never document-scroll at ≥1280×720; only the event-log body, the dashboard calendar inspector and a room overview's inline day detail scroll internally. Long lists and notes remain reachable through paging or transient detail dialogs; dialogs/popovers may scroll as overlays.
+- The dashboard calendar always renders six complete weeks, keeps 44px minimum day-button targets at viewport heights ≥900px, and exposes task, note, and phase counts in each date's accessible name.
+- **R8 Event log.** No event log has filter controls, a room selector, a view switch or an event total. The compact dashboard Event Log shows one card per canonical category — eight at viewport heights ≥ 1300 CSS px and six below 1300 CSS px, updating on resize. The six-card view merges Ramp into Control and Mutation into System without dropping events, and each card shows one detail line from its latest event. Categories are not paginated; a card opens that category's paged list, where five newest-first events show per page with visible status and event-list controls. The dashboard log carries every room; a room overview's log is automatically scoped to its room by data (`useEventLog({ location, cluster })`), flat and newest-first. Server-side `/api/events/history` filters remain for API clients.
 - Detail payloads, long inspector notes, and forms remain available in accessible dialogs. Full-width room logs retain their existing inline-detail behavior and do not use dashboard pagination.
 
 ## Zone Configuration
@@ -50,6 +51,7 @@ Climate periods are keyed by `(location, cluster, mode_id, submode_id)`. Fetch t
 ## Device Management
 
 - Device registry CRUD is the only assignment mutation path.
+- **R10 Relay matrix.** Dragging an assignment onto an empty relay moves it; onto an occupied relay swaps the two. Both channels must confirm OFF before any binding changes, otherwise nothing is rebound and the API returns HTTP 503. The control tick, manual device commands, raw channel writes, relay tests and registry mutations hold the shared actuation lock, so none of them interleaves with a move. The move route is `PUT /api/devices/registry/{device_id}/relay` with body `{ channel }`; it returns the moved device/channel and the swapped device/channel (null when the target was empty).
 - Flower Room devices always target `main`; `normalizeDeviceControlCluster` enforces this.
 - DFR assignments are globally unique; conflicts are rejected.
 - Relay steal requires operator confirmation after a 409 response.
@@ -86,7 +88,7 @@ Native room Monitoring and Historical pages (`/flower/monitoring`, `/flower/hist
 - Historical presets are 5 days, 7 days, 2 weeks, one Toronto calendar month, three Toronto calendar months, and Current run; every preset stays on Historical. Current run uses the unique canonical calendar phase-group span for the room containing Toronto today, starts at local midnight, and ends at Now; absence/ambiguity never falls back to a guessed range. Fixed ranges up to 7 days use the detailed reader; longer ones use the overview.
 - Long-view buckets are the finest whole-hour width from 1–12 hours that fits the actual intersecting bucket count, including clipped edges. The overview requests its measured plot-width budget (capped at 4000); the backend's generic default remains 600. Never widen beyond 12 hours or modify detailed sensor/Automation bucket policies to satisfy a long-view budget.
 - Min/max envelopes and sensor statistic-table extrema remain available, including shorter bucketed ranges. Raw light ramp/step geometry and unknown gaps are preserved rather than averaged. The statistics table beneath the graphs is sensor-only.
-- Keep the established 780px climate and 320px atmosphere/light chart regions. Their wrappers provide plot geometry and pointer interaction, not internal scrolling; only the room document may scroll.
+- Keep the established 780px climate and 320px atmosphere/light chart regions. Their wrappers provide plot geometry and pointer interaction, not internal scrolling. R7 limits document scrolling to widths between 768 px and the 1280×720 floor; only the event-log body, the dashboard calendar inspector and a room overview's inline day detail scroll internally.
 - Deployment requires verified Historical source coverage, not just service `/ready`. This release must not enable calendar compaction, raw deletion, age compression or Nextcloud/archive export.
 
 ## Validation

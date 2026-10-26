@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
@@ -58,6 +59,8 @@ class _Registry:
             light_intensities={},
             light_programs=[],
         )
+
+        self.actuation_lock = asyncio.Lock()
 
     def subscribe(self, consumer):
         consumer(self.snapshot)

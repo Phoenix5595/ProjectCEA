@@ -862,6 +862,7 @@ class _FakeScheduler:
 class _FakeRuntimeRegistry:
     def __init__(self, snapshot: RuntimeDeviceSnapshot) -> None:
         self.snapshot = snapshot
+        self.actuation_lock = asyncio.Lock()
 
 
 def _room_snapshot(

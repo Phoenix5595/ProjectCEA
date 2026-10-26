@@ -3,6 +3,7 @@ import type { ControlSnapshotResponse } from '../../services/api/devices'
 import type { Device } from '../../types/device'
 import type { SensorQuality, SensorSampleMeta, SensorSource } from '../../types/sensor'
 import { SENSOR_STALE_AFTER_MS } from '../../types/sensor'
+import { formatTorontoClockSeconds } from '../../utils/torontoWallTime'
 
 export type ClimateMetric = 'temperature' | 'rh' | 'vpd' | 'co2'
 
@@ -24,6 +25,7 @@ export type TrendData = Record<string, Partial<Record<ClimateMetric, TrendMetric
 export interface RoomSensorStatus {
   quality: SensorQuality
   newestAgeMs: number | null
+  newestObservedAtMs: number | null
   source: SensorSource | null
   cluster: string
 }
@@ -225,9 +227,38 @@ export function deriveClusterSensorStatus(
   return {
     quality,
     newestAgeMs: ageMs,
+    newestObservedAtMs: newest === null ? null : (newest.observedAtMs ?? newest.receivedAtMs),
     source: newest?.source ?? null,
     cluster,
   }
+}
+
+/** Freshness sentence: the last good Toronto wall clock time plus its age and
+ * transport. Only ever describes an observed sample; never a fabricated age. */
+export function clusterFreshnessText(status: RoomSensorStatus): string {
+  if (status.quality === 'bad') return 'No valid reading received'
+  if (status.newestObservedAtMs === null) return 'No reading received'
+  const source =
+    status.source === 'websocket'
+      ? 'WebSocket'
+      : status.source === 'poll'
+        ? 'polling'
+        : 'unknown source'
+  const clock = formatTorontoClockSeconds(status.newestObservedAtMs).slice(0, 8)
+  return `Last good reading ${clock} (Toronto) · ${freshnessAgeText(status.newestAgeMs)} ago · ${source}`
+}
+
+function freshnessAgeText(ageMs: number | null): string {
+  const totalSeconds = Math.max(0, Math.floor((ageMs ?? 0) / 1000))
+  if (totalSeconds < 60) return `${totalSeconds}s`
+  if (totalSeconds < 3600) {
+    const minutes = Math.floor(totalSeconds / 60)
+    const seconds = totalSeconds % 60
+    return `${minutes}m ${String(seconds).padStart(2, '0')}s`
+  }
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  return `${hours}h ${minutes}m`
 }
 
 export function deriveRoomDecisionSummary(

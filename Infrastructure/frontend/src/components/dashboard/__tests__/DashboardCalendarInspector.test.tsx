@@ -7,10 +7,27 @@ import type { CalendarEventDto } from '../../../types/calendar'
 import * as calendarUtils from '../../../utils/calendarDayMarkers'
 import DashboardCalendarInspector from '../DashboardCalendarInspector'
 
+const lifecycle = vi.hoisted(() => ({
+  grow_plan_id: 'gp-1',
+  crop_batch_id: 1,
+  state: 'open',
+  calendar_revision: 1,
+  original_drying_end: null,
+  first_closed_at: null,
+  closed_at: null,
+  anniversary_at: null,
+  dataset_id: null,
+  data_revision: null,
+  published_revision: null,
+}))
+
 vi.mock('../../../services/api', () => ({
   apiClient: {
     createCalendarEvent: vi.fn(),
     updateCalendarEvent: vi.fn(),
+    getGrowLifecycle: vi.fn(async () => lifecycle),
+    extendGrowPlanPhase: vi.fn(),
+    setRoomMode: vi.fn(),
   },
 }))
 
@@ -31,6 +48,13 @@ function makeEvent(overrides: Partial<CalendarEventDto> = {}): CalendarEventDto 
   }
 }
 
+/** Props every render needs; individual tests override what they exercise. */
+const baseProps = {
+  pendingModeChange: null,
+  expectedHarvest: null,
+  onCalendarStatusChange: vi.fn().mockResolvedValue(undefined),
+}
+
 function renderInspector(props: Partial<Parameters<typeof DashboardCalendarInspector>[0]> = {}) {
   const onRefresh = vi.fn()
   const onOpenGrowPlan = vi.fn()
@@ -42,6 +66,7 @@ function renderInspector(props: Partial<Parameters<typeof DashboardCalendarInspe
       selectedDateEvents={[]}
       onRefresh={onRefresh}
       onOpenGrowPlan={onOpenGrowPlan}
+      {...baseProps}
       {...props}
     />
   )
@@ -177,9 +202,24 @@ describe('DashboardCalendarInspector selection flow', () => {
     const user = userEvent.setup()
     const events = [
       makeEvent({ id: 'pending', title: 'Pending save', sync_status: 'pending_push' }),
-      makeEvent({ id: 'confirmed', title: 'Confirmed save', sync_status: 'synced', last_synced_at: '2026-10-14T12:00:00Z' }),
-      makeEvent({ id: 'failed', title: 'Unavailable save', sync_status: 'error', sync_error_code: 'calendar_auth_failed' }),
-      makeEvent({ id: 'conflict', title: 'Conflict save', sync_status: 'conflict', sync_error_code: 'calendar_remote_conflict' }),
+      makeEvent({
+        id: 'confirmed',
+        title: 'Confirmed save',
+        sync_status: 'synced',
+        last_synced_at: '2026-10-14T12:00:00Z',
+      }),
+      makeEvent({
+        id: 'failed',
+        title: 'Unavailable save',
+        sync_status: 'error',
+        sync_error_code: 'calendar_auth_failed',
+      }),
+      makeEvent({
+        id: 'conflict',
+        title: 'Conflict save',
+        sync_status: 'conflict',
+        sync_error_code: 'calendar_remote_conflict',
+      }),
     ]
     renderInspector({
       events,
@@ -211,6 +251,7 @@ describe('DashboardCalendarInspector selection flow', () => {
         selectedDateEvents={[]}
         onRefresh={vi.fn()}
         onOpenGrowPlan={vi.fn()}
+        {...baseProps}
       />
     )
     expect(screen.getByText('No tasks today')).toBeInTheDocument()
@@ -224,6 +265,7 @@ describe('DashboardCalendarInspector selection flow', () => {
         selectedDateEvents={events}
         onRefresh={vi.fn()}
         onOpenGrowPlan={vi.fn()}
+        {...baseProps}
       />
     )
     expect(screen.getByRole('button', { name: /Top dress/ })).toBeInTheDocument()
@@ -236,6 +278,7 @@ describe('DashboardCalendarInspector selection flow', () => {
         selectedDateEvents={[]}
         onRefresh={vi.fn()}
         onOpenGrowPlan={vi.fn()}
+        {...baseProps}
       />
     )
     expect(screen.getByText('No tasks today')).toBeInTheDocument()
@@ -438,5 +481,128 @@ describe('DashboardCalendarInspector edit', () => {
     expect(restoredEditButton).toHaveFocus()
     expect(apiClient.createCalendarEvent).not.toHaveBeenCalled()
     expect(apiClient.updateCalendarEvent).not.toHaveBeenCalled()
+  })
+})
+
+describe('DashboardCalendarInspector calendar status', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('triggers the pending manual mode change and refreshes both sources', async () => {
+    const user = userEvent.setup()
+    const onCalendarStatusChange = vi.fn().mockResolvedValue(undefined)
+    const { onRefresh } = renderInspector({
+      pendingModeChange: {
+        from_mode: 'veg',
+        to_mode: 'flower',
+        to_submode: 'stretch',
+        event_id: 500,
+        since: '2026-10-20',
+      },
+      onCalendarStatusChange,
+    })
+
+    const status = screen.getByRole('region', { name: 'Flower Room status' })
+    const button = within(status).getByRole('button', { name: 'Veg → Flower' })
+    expect(button).toHaveClass('font-bold', 'grow-cal-toolbar-btn--primary')
+    await user.click(button)
+
+    await waitFor(() =>
+      expect(apiClient.setRoomMode).toHaveBeenCalledWith('Flower Room', 'main', {
+        mode_name: 'flower',
+        submode_name: 'stretch',
+      })
+    )
+    expect(onRefresh).toHaveBeenCalledOnce()
+    expect(onCalendarStatusChange).toHaveBeenCalledOnce()
+  })
+
+  it('shows the expected harvest day before the mode button', () => {
+    renderInspector({
+      pendingModeChange: {
+        from_mode: 'flower',
+        to_mode: 'drying',
+        to_submode: null,
+        event_id: 503,
+        since: '2027-01-04',
+      },
+      expectedHarvest: { harvest_date: '2027-01-03', grow_plan_id: 'gp-1', event_id: 502 },
+    })
+
+    const status = screen.getByRole('region', { name: 'Flower Room status' })
+    const harvest = within(status).getByTestId('inspector-expected-harvest')
+    expect(harvest).toHaveTextContent('Harvest ~Jan 3')
+    expect(within(status).getByRole('button', { name: 'Flower → Drying' })).toBeInTheDocument()
+  })
+
+  it('extends a running flower phase by one week', async () => {
+    const user = userEvent.setup()
+    const onCalendarStatusChange = vi.fn().mockResolvedValue(undefined)
+    const events = [
+      makeEvent({
+        id: 'bulk',
+        title: 'Flower bulk',
+        eventType: 'flower_bulk',
+        source: 'mode_transition',
+        editable: false,
+        start: '2026-09-10',
+        end: '2026-10-05',
+        growPlanId: 'gp-1',
+        numericId: 501,
+      }),
+    ]
+    const { onRefresh } = renderInspector({
+      events,
+      selectedDate: new Date('2026-09-21T16:00:00Z'),
+      selectedDateEvents: events,
+      onCalendarStatusChange,
+    })
+
+    await user.click(screen.getByRole('button', { name: /Flower bulk/ }))
+    await user.click(screen.getByRole('button', { name: '+1 week' }))
+
+    await waitFor(() => expect(apiClient.extendGrowPlanPhase).toHaveBeenCalledWith('gp-1', 501, 7))
+    expect(onRefresh).toHaveBeenCalledOnce()
+    expect(onCalendarStatusChange).toHaveBeenCalledOnce()
+  })
+
+  it('hides the week extension for an ended or non-flower phase', async () => {
+    const user = userEvent.setup()
+    const endedBulk = makeEvent({
+      id: 'ended',
+      title: 'Ended bulk',
+      eventType: 'flower_bulk',
+      source: 'mode_transition',
+      editable: false,
+      start: '2026-08-01',
+      end: '2026-08-10',
+      growPlanId: 'gp-1',
+      numericId: 502,
+    })
+    const bedVeg = makeEvent({
+      id: 'veg',
+      title: 'Bed veg',
+      eventType: 'bed_veg',
+      source: 'mode_transition',
+      editable: false,
+      start: '2026-09-01',
+      end: '2026-10-05',
+      growPlanId: 'gp-1',
+      numericId: 503,
+    })
+
+    renderInspector({
+      events: [endedBulk, bedVeg],
+      selectedDate: new Date('2026-09-21T16:00:00Z'),
+      selectedDateEvents: [endedBulk, bedVeg],
+    })
+
+    await user.click(screen.getByRole('button', { name: /Ended bulk/ }))
+    expect(screen.queryByRole('button', { name: '+1 week' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+
+    await user.click(screen.getByRole('button', { name: /Bed veg/ }))
+    expect(screen.queryByRole('button', { name: '+1 week' })).not.toBeInTheDocument()
   })
 })

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from datetime import date
+from types import SimpleNamespace
 from typing import Any, final
 from unittest.mock import Mock
+from uuid import uuid4
 
 import pytest
 
@@ -21,6 +23,7 @@ class SchedulerCalendarRepository(CalendarRepositoryBase):
         super().__init__(Mock())
         self._transitions_enabled: bool = transitions_enabled
         self.mode_application_checked: bool = False
+        self.current_run_reads: int = 0
 
     async def flower_calendar_mode_transitions_enabled(self) -> bool:
         return self._transitions_enabled
@@ -34,10 +37,19 @@ class SchedulerCalendarRepository(CalendarRepositoryBase):
         self.mode_application_checked = True
         return self._transitions_enabled
 
+    async def get_current_run(self, location: str, today: date | None = None):
+        del location, today
+        self.current_run_reads += 1
+        return None
+
 
 @final
 class CalendarDatabase(DatabaseManager):
-    def __init__(self, calendar_repo: CalendarRepositoryBase) -> None:
+    def __init__(
+        self,
+        calendar_repo: CalendarRepositoryBase,
+        room_mode_repo: _RecordingRoomModeRepository | None = None,
+    ) -> None:
         super().__init__(
             {
                 "host": "localhost",
@@ -48,6 +60,9 @@ class CalendarDatabase(DatabaseManager):
             }
         )
         self._calendar_repo = calendar_repo
+        self._room_mode_repo = room_mode_repo or _RecordingRoomModeRepository(
+            {"mode_id": 2, "submode_id": 1, "mode_name": "flower"}
+        )
 
 
 @final
@@ -149,17 +164,37 @@ class _RecordingRoomModeRepository:
 class _RecordingCalendarRepository(CalendarRepositoryBase):
     """One active Flower phase event with recorded mode applications."""
 
-    def __init__(self, event: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        event: dict[str, Any] | None,
+        *,
+        transitions_enabled: bool = True,
+        run: Any = None,
+    ) -> None:
         super().__init__(Mock())
         self.event = event
+        self.transitions_enabled = transitions_enabled
+        self.run = run
         self.applications: list[tuple[int, date, int | None, int | None, str]] = []
+        self.current_run_reads: list[tuple[str, date | None]] = []
+        self.alignments: list[tuple[Any, date, bool]] = []
 
     async def flower_calendar_mode_transitions_enabled(self) -> bool:
-        return True
+        return self.transitions_enabled
 
-    async def get_active_flower_phase_event(self, on_date: date) -> dict[str, Any]:
+    async def get_active_flower_phase_event(self, on_date: date) -> dict[str, Any] | None:
         del on_date
         return self.event
+
+    async def get_current_run(self, location: str, today: date | None = None) -> Any:
+        self.current_run_reads.append((location, today))
+        return self.run
+
+    async def align_flower_start(
+        self, grow_plan_id: Any, flower_start: date, *, forward_only: bool
+    ) -> list[dict[str, Any]] | None:
+        self.alignments.append((grow_plan_id, flower_start, forward_only))
+        return []
 
     async def mode_application_exists(self, event_id: int, applied_date: date) -> bool:
         del event_id, applied_date
@@ -241,7 +276,9 @@ _BULK_PHASE_EVENT: dict[str, Any] = {
 async def test_calendar_scheduler_does_not_record_a_returned_failed_transition() -> None:
     # Given: the transition service reports the activation did not commit.
     repository = _RecordingCalendarRepository(_BULK_PHASE_EVENT)
-    room_modes = _RecordingRoomModeRepository({"mode_id": 2, "submode_id": 1})
+    room_modes = _RecordingRoomModeRepository(
+        {"mode_id": 2, "submode_id": 1, "mode_name": "flower"}
+    )
     transition = _StubTransitionService(
         result={"success": False, "message": "schedule sync failed"}
     )
@@ -262,7 +299,9 @@ async def test_calendar_scheduler_does_not_record_a_returned_failed_transition()
 async def test_calendar_scheduler_does_not_record_a_thrown_transition_failure() -> None:
     # Given: the transition service raises instead of returning a result.
     repository = _RecordingCalendarRepository(_BULK_PHASE_EVENT)
-    room_modes = _RecordingRoomModeRepository({"mode_id": 2, "submode_id": 1})
+    room_modes = _RecordingRoomModeRepository(
+        {"mode_id": 2, "submode_id": 1, "mode_name": "flower"}
+    )
     transition = _StubTransitionService(error=RuntimeError("registry unavailable"))
     scheduler = CalendarModeScheduler(
         _CalendarModeDatabase(repository, room_modes),
@@ -281,7 +320,9 @@ async def test_calendar_scheduler_does_not_record_a_thrown_transition_failure() 
 async def test_calendar_scheduler_records_same_active_destination_without_transition() -> None:
     # Given: the running identity already matches the calendar destination.
     repository = _RecordingCalendarRepository(_BULK_PHASE_EVENT)
-    room_modes = _RecordingRoomModeRepository({"mode_id": 2, "submode_id": 2})
+    room_modes = _RecordingRoomModeRepository(
+        {"mode_id": 2, "submode_id": 2, "mode_name": "flower"}
+    )
     transition = _StubTransitionService(result={"success": True})
     scheduler = CalendarModeScheduler(
         _CalendarModeDatabase(repository, room_modes),
@@ -300,7 +341,9 @@ async def test_calendar_scheduler_records_same_active_destination_without_transi
 async def test_calendar_scheduler_mutation_requires_the_injected_transition_service() -> None:
     # Given: a calendar destination must change mode without an injected service.
     repository = _RecordingCalendarRepository(_BULK_PHASE_EVENT)
-    room_modes = _RecordingRoomModeRepository({"mode_id": 2, "submode_id": 1})
+    room_modes = _RecordingRoomModeRepository(
+        {"mode_id": 2, "submode_id": 1, "mode_name": "flower"}
+    )
     scheduler = CalendarModeScheduler(_CalendarModeDatabase(repository, room_modes))
 
     # When: the scheduler reaches the Flower phase day.
@@ -308,3 +351,112 @@ async def test_calendar_scheduler_mutation_requires_the_injected_transition_serv
 
     # Then: the missing service fails the application explicitly without recording.
     assert repository.applications == []
+
+
+_STRETCH_PHASE_EVENT: dict[str, Any] = {
+    "id": 9,
+    "event_type": "flower_stretch",
+    "title": "Stretch",
+    "metadata": {
+        "auto_mode_transition": True,
+        "target_mode_name": "flower",
+        "target_submode_name": "stretch",
+    },
+}
+
+
+@pytest.mark.asyncio
+async def test_calendar_scheduler_applies_a_same_mode_submode_change() -> None:
+    # Given: Flower/stretch is active and the bulk phase begins today.
+    repository = _RecordingCalendarRepository(_BULK_PHASE_EVENT)
+    room_modes = _RecordingRoomModeRepository(
+        {"mode_id": 2, "submode_id": 1, "mode_name": "flower"}
+    )
+    transition = _StubTransitionService(result={"success": True})
+    scheduler = CalendarModeScheduler(
+        _CalendarModeDatabase(repository, room_modes),
+        transition_service=transition,
+    )
+
+    # When: the scheduler reaches the bulk day.
+    await scheduler._apply_for_date(date(2026, 3, 8), triggered_by="calendar_scheduler")
+
+    # Then: the submode changes inside the active mode and the day is recorded.
+    assert transition.calls == [("Flower Room", "main", 2, 2, "system")]
+    assert repository.applications == [(7, date(2026, 3, 8), 2, 2, "calendar_scheduler")]
+
+
+@pytest.mark.asyncio
+async def test_calendar_scheduler_leaves_a_cross_mode_change_to_the_owner() -> None:
+    # Given: Veg is still active while the calendar has reached stretch.
+    repository = _RecordingCalendarRepository(_STRETCH_PHASE_EVENT)
+    room_modes = _RecordingRoomModeRepository(
+        {"mode_id": 1, "submode_id": None, "mode_name": "veg"}
+    )
+    transition = _StubTransitionService(result={"success": True})
+    scheduler = CalendarModeScheduler(
+        _CalendarModeDatabase(repository, room_modes),
+        transition_service=transition,
+    )
+
+    # When: the scheduler ticks on the stretch day.
+    await scheduler._apply_for_date(date(2026, 3, 8), triggered_by="calendar_scheduler")
+
+    # Then: nothing activates and nothing is recorded; the owner flips manually.
+    assert transition.calls == []
+    assert repository.applications == []
+
+
+@pytest.mark.asyncio
+async def test_calendar_scheduler_leaves_drying_to_veg_to_the_owner() -> None:
+    # Given: the plan ended and Drying is still active with no calendar event.
+    repository = _RecordingCalendarRepository(None)
+    room_modes = _RecordingRoomModeRepository(
+        {"mode_id": 3, "submode_id": None, "mode_name": "drying"}
+    )
+    transition = _StubTransitionService(result={"success": True})
+    scheduler = CalendarModeScheduler(
+        _CalendarModeDatabase(repository, room_modes),
+        transition_service=transition,
+    )
+
+    # When: the scheduler ticks after the plan.
+    await scheduler._apply_for_date(date(2026, 3, 8), triggered_by="calendar_scheduler")
+
+    # Then: no automatic Drying -> Veg transition exists any more.
+    assert transition.calls == []
+    assert repository.applications == []
+
+
+@pytest.mark.asyncio
+async def test_calendar_scheduler_extends_waiting_bed_veg_with_transitions_disabled() -> None:
+    # Given: Veg is active with a waiting plan while calendar transitions are off.
+    run = SimpleNamespace(grow_plan_id=uuid4())
+    repository = _RecordingCalendarRepository(None, transitions_enabled=False, run=run)
+    room_modes = _RecordingRoomModeRepository(
+        {"mode_id": 1, "submode_id": None, "mode_name": "veg"}
+    )
+    scheduler = CalendarModeScheduler(_CalendarModeDatabase(repository, room_modes))
+
+    # When: the scheduler ticks.
+    await scheduler._apply_for_date(date(2026, 3, 8), triggered_by="calendar_scheduler")
+
+    # Then: the waiting bed veg is aligned forward before the toggle gate.
+    assert repository.alignments == [(run.grow_plan_id, date(2026, 3, 8), True)]
+
+
+@pytest.mark.asyncio
+async def test_calendar_scheduler_does_not_read_the_plan_while_flower_is_active() -> None:
+    # Given: Flower is active, so bed veg is no longer waiting.
+    repository = _RecordingCalendarRepository(_BULK_PHASE_EVENT)
+    room_modes = _RecordingRoomModeRepository(
+        {"mode_id": 2, "submode_id": 1, "mode_name": "flower"}
+    )
+    scheduler = CalendarModeScheduler(_CalendarModeDatabase(repository, room_modes))
+
+    # When: the scheduler ticks.
+    await scheduler._apply_for_date(date(2026, 3, 8), triggered_by="calendar_scheduler")
+
+    # Then: the plan is never read and never aligned.
+    assert repository.current_run_reads == []
+    assert repository.alignments == []

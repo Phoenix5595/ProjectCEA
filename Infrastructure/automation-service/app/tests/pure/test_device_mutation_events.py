@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from uuid import UUID
 
@@ -28,6 +29,9 @@ class _RelayManager:
 
 
 class _DeviceCommandAuthority:
+    def __init__(self) -> None:
+        self.actuation_lock = asyncio.Lock()
+
     def is_assigned_channel(self, _channel: int) -> bool:
         return False
 

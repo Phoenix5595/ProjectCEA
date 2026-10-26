@@ -62,6 +62,7 @@ Do not extend these commands to contact production endpoints, databases, Redis, 
 ## Browser QA viewport rule
 
 - Dashboard and frontend desktop QA use exactly **1920x1080** and **1280x1440** in this pass. The 960px redesign is deferred; no phone or mobile-web QA project is supported.
+- **R7 No-scroll.** Overview pages (`/`, `/flower`, `/vegetation`, `/laboratory`) never document-scroll at viewports ≥ 1280×720. From 768 px wide up to that size the page keeps a 1280×720 minimum layout and the document scrolls; phones below 768 px keep today's stacked layout (unsupported). Only three regions may scroll internally: the event-log body, the dashboard calendar inspector and a room overview's inline day detail; dialogs remain overlays.
 - The web application uses a permanent 30px icon rail on every route and has no mobile drawer/layout guarantee; a separate mobile app does not exist yet.
 - Use the isolated, guarded loopback fixture preview only. Port 4187 is the default; if occupied, select a free port from 4188–4199. Never set `BASE_URL`, contact production, or reuse, navigate, or stop an unrelated listener.
 
@@ -74,4 +75,4 @@ Do not extend these commands to contact production endpoints, databases, Redis, 
 
 ---
 
-_Last updated: 2026-10-18_
+_Last updated: 2026-10-25_

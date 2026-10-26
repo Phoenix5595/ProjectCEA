@@ -41,6 +41,7 @@ export interface RelayChannelViewModel {
   observedState: boolean | null
   isActive: boolean
   isAssigned: boolean
+  deviceId: number | null
   assignedDeviceName: string | null
   deviceName: string | null
   displayType: string | null
@@ -96,6 +97,7 @@ export function buildRelayChannelViewModels(
       observedState,
       isActive: observedState === true,
       isAssigned: assignment !== null,
+      deviceId: assignment?.device_id ?? null,
       assignedDeviceName: assignment?.device_name ?? null,
       deviceName: pickDisplayName(assignment),
       displayType: assignment?.device_type ? getReadableDeviceType(assignment.device_type) : null,
@@ -122,6 +124,7 @@ function emptyViewModel(channel: number): RelayChannelViewModel {
     observedState: null,
     isActive: false,
     isAssigned: false,
+    deviceId: null,
     assignedDeviceName: null,
     deviceName: null,
     displayType: null,

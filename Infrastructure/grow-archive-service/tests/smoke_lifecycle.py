@@ -256,18 +256,21 @@ async def _assert_toronto_boundaries(conn: asyncpg.Connection) -> None:
 
 
 async def _create_overlapping_grows(client: httpx.AsyncClient) -> dict[str, Any]:
+    # Anchored at the flower start (2026-01-11): bed veg 2025-12-21..2026-01-10,
+    # ripen end 2026-01-31, drying end 2026-02-07.
     common = {
         "crop_name": "Membership fixture grow",
         "environment": "indoor",
-        "flower_end": "2026-01-31",
-        "flower_weeks": 3,
-        "include_pot_phases": True,
-        "clone_weeks": 1,
-        "pot_weeks": 1,
-        "bed_weeks": 3,
+        "anchor": "flower_start",
+        "anchor_date": "2026-01-11",
+        "bed_veg_start": "2025-12-21",
+        "bed_veg_days": 21,
         "stretch_days": 7,
+        "bulk_days": 7,
         "ripen_days": 7,
         "drying_days": 7,
+        "pot_start": "2025-12-14",
+        "clone_start": "2025-12-07",
         "auto_mode_transition": False,
     }
     requests = [

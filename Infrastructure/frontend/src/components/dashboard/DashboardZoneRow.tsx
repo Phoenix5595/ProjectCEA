@@ -11,6 +11,7 @@ import type { Device } from '../../types/device'
 import { MODE_DISPLAY_NAMES, SUBMODE_DISPLAY_NAMES } from '../../types/modes'
 import type { RoomTransition } from '../../utils/dashboardSchedule'
 import { formatTransitionCountdown } from '../../utils/dashboardSchedule'
+import { formatHarvestDay } from '../../utils/expectedHarvest'
 
 import {
   getClimateDisplay,
@@ -21,11 +22,12 @@ import {
   renderTemperature,
 } from './dashboardDisplay'
 import { DashboardMiniTrend } from './DashboardMiniTrend'
-import type {
-  RoomControlContext,
-  RoomDecisionSummary,
-  RoomSensorStatus,
-  TrendData,
+import {
+  clusterFreshnessText,
+  type RoomControlContext,
+  type RoomDecisionSummary,
+  type RoomSensorStatus,
+  type TrendData,
 } from './dashboardStatus'
 
 export interface DashboardZoneRowProps {
@@ -46,6 +48,8 @@ export interface DashboardZoneRowProps {
   modeError?: string | null
   nextTransition?: RoomTransition | null
   trendData?: TrendData
+  /** Room-tied expected harvest (`yyyy-MM-dd`, last ripen day); never shown in the past. */
+  expectedHarvestDate?: string | null
   now?: Date
 }
 
@@ -75,31 +79,28 @@ function ClimateMini({
   compact?: boolean
 }) {
   const unplugged = !hasClimateData(location, cluster, sensorData)
-  const age =
-    sensorStatus.newestAgeMs == null ? '—' : `${Math.floor(sensorStatus.newestAgeMs / 1000)}s`
-  const source =
-    sensorStatus.source === 'websocket' ? 'WS' : sensorStatus.source === 'poll' ? 'POLL' : '—'
-  const badgeText = `${label} ${qualityLabel(sensorStatus)} · ${age} · ${source}`
+  const alert = sensorStatus.quality === 'stale' || sensorStatus.quality === 'missing'
+  const freshness = clusterFreshnessText(sensorStatus)
+  const valueClass = alert
+    ? 'text-status-danger-text font-mono tabular-nums'
+    : 'text-text-default font-mono tabular-nums'
 
   return (
     <div
-      className={`bg-surface-secondary rounded-sm p-1.5 cursor-help ${compact ? 'min-w-0' : 'min-w-[9.5rem]'}`}
-      title={
-        unplugged
-          ? `No climate readings are available for ${label.toLowerCase()} (${cluster}).`
-          : `${label} sensor readings: temperature, relative humidity, CO₂ concentration, and calculated vapor pressure deficit (VPD). Check the freshness badge; it does not claim every metric is current.`
-      }
+      data-testid={`climate-cluster-${cluster}`}
+      data-alert={alert ? 'true' : 'false'}
+      className={`rounded-sm border p-1.5 cursor-help ${
+        alert
+          ? 'border-status-danger bg-status-danger/10 text-status-danger-text'
+          : 'border-transparent bg-surface-secondary'
+      } ${compact ? 'min-w-0' : 'min-w-[9.5rem]'}`}
+      title={freshness}
     >
+      <span className="sr-only">{freshness}</span>
       <div
-        className={`text-10 text-text-muted flex items-center gap-1 ${compact ? 'mb-1 flex-wrap' : 'mb-0.5'}`}
+        className={`flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-10 ${alert ? 'text-status-danger-text' : 'text-text-muted'}`}
       >
         <span>{label}</span>
-        <span
-          title={qualityTooltip(sensorStatus)}
-          className={`text-9 px-1 py-0.5 rounded-sm border cursor-help ${qualityClass(sensorStatus)}`}
-        >
-          {badgeText}
-        </span>
         {unplugged && sensorStatus.quality !== 'missing' && (
           <span
             className="text-status-danger cursor-help"
@@ -108,65 +109,33 @@ function ClimateMini({
             ⚠
           </span>
         )}
-      </div>
-      <div
-        className={`${compact ? 'flex flex-wrap gap-x-2 gap-y-0.5' : 'grid grid-cols-2 gap-x-2 gap-y-0.5'} text-10`}
-      >
-        <div>
-          <span className="text-text-subtle">T </span>
-          <span className="text-text-default font-mono tabular-nums">
-            {renderTemperature(location, cluster, sensorData)}
-          </span>
-        </div>
-        <div>
-          <span className="text-text-subtle">RH </span>
-          <span className="text-text-default font-mono tabular-nums">
-            {getClimateDisplay(sensorData, location, cluster, 'rh', '%')}
-          </span>
-        </div>
-        <div>
-          <span className="text-text-subtle">CO₂ </span>
-          <span className="text-text-default font-mono tabular-nums">
-            {getClimateDisplay(sensorData, location, cluster, 'co2', ' ppm', 0)}
-          </span>
-        </div>
-        <div>
-          <span className="text-text-subtle">VPD </span>
-          <span className="text-text-default font-mono tabular-nums">
-            {getClimateDisplay(sensorData, location, cluster, 'vpd', ' kPa')}
-          </span>
+        <div className="flex min-w-0 flex-wrap gap-x-2 gap-y-0.5">
+          <div>
+            <span className="text-text-subtle">T </span>
+            <span className={valueClass}>{renderTemperature(location, cluster, sensorData)}</span>
+          </div>
+          <div>
+            <span className="text-text-subtle">RH </span>
+            <span className={valueClass}>
+              {getClimateDisplay(sensorData, location, cluster, 'rh', '%')}
+            </span>
+          </div>
+          <div>
+            <span className="text-text-subtle">CO₂ </span>
+            <span className={valueClass}>
+              {getClimateDisplay(sensorData, location, cluster, 'co2', ' ppm', 0)}
+            </span>
+          </div>
+          <div>
+            <span className="text-text-subtle">VPD </span>
+            <span className={valueClass}>
+              {getClimateDisplay(sensorData, location, cluster, 'vpd', ' kPa')}
+            </span>
+          </div>
         </div>
       </div>
     </div>
   )
-}
-
-function qualityLabel(status: RoomSensorStatus): string {
-  if (status.quality === 'bad') return 'BAD VALUE'
-  if (status.quality === 'stale') return 'STALE'
-  if (status.quality === 'missing') return 'NO DATA'
-  return 'LIVE'
-}
-function qualityTooltip(status: RoomSensorStatus): string {
-  const overview = `Latest valid sample in ${status.cluster}; not a claim that every metric is current.`
-  const age =
-    status.newestAgeMs == null
-      ? ''
-      : ` The newest valid sample is ${Math.floor(status.newestAgeMs / 1000)} seconds old.`
-  const source =
-    status.source === 'websocket'
-      ? 'WebSocket stream'
-      : status.source === 'poll'
-        ? 'live sensor polling'
-        : 'no known transport'
-
-  if (status.quality === 'live')
-    return `${overview} LIVE: recent valid sensor data from ${source}.${age}`
-  if (status.quality === 'stale')
-    return `${overview} STALE: the newest valid sample is older than 45 seconds. Retained values are not treated as current.${age}`
-  if (status.quality === 'bad')
-    return `${overview} BAD VALUE: samples were received, but none were valid finite numbers.`
-  return `${overview} NO DATA: no usable live samples are available for this cluster.`
 }
 
 function controlModeTooltip(mode: RoomControlContext['mode']): string {
@@ -182,16 +151,6 @@ function controlModeTooltip(mode: RoomControlContext['mode']): string {
     case 'AUTO':
       return 'No manual, scheduled, or failsafe command is reported; automatic control is in effect.'
   }
-}
-
-function qualityClass(status: RoomSensorStatus): string {
-  if (status.quality === 'bad')
-    return 'border-status-danger-border text-status-danger-text bg-status-danger-bg'
-  if (status.quality === 'stale')
-    return 'border-status-warning text-status-warning-text bg-status-warning-bg'
-  if (status.quality === 'missing')
-    return 'border-border-subtle text-text-muted bg-surface-tertiary'
-  return 'border-status-success-border text-status-success-text bg-status-success-bg'
 }
 
 function displayModeName(name: string, displayNames: Record<string, string>): string {
@@ -264,6 +223,7 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
   modeError = null,
   nextTransition = null,
   trendData = {},
+  expectedHarvestDate = null,
   now = new Date(),
   icon,
 }: DashboardZoneRowProps) {
@@ -292,6 +252,8 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
         ? `Database-backed active grow mode is ${activeModeLabel}.`
         : 'Database-backed active grow mode has not been reported yet.'
   const transitionText = isLab ? '' : formatTransitionCountdown(nextTransition?.at ?? null, now)
+  const harvestSuffix =
+    !isLab && expectedHarvestDate ? ` · Harvest ~${formatHarvestDay(expectedHarvestDate)}` : ''
   const trendKeys = isLab ? [] : trendMetrics(location, trendData)
   const deviceStatus = statusDevices
   const lightReadouts = lightDevices.map(device => {
@@ -324,23 +286,29 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
     )
   })
   const labSensorStatus = sensorStatuses[cluster]
+  const labAlert =
+    labSensorStatus != null &&
+    (labSensorStatus.quality === 'stale' || labSensorStatus.quality === 'missing')
+  const labFreshness = labSensorStatus ? clusterFreshnessText(labSensorStatus) : null
   const labReadout = isLab ? (
     <div
       role="group"
       aria-label="Lab sensor readings"
-      className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-10 font-mono tabular-nums"
+      data-alert={labAlert ? 'true' : 'false'}
+      title={labFreshness ?? undefined}
+      className={`flex flex-wrap items-center gap-x-3 gap-y-0.5 text-10 font-mono tabular-nums ${
+        labAlert
+          ? 'rounded-sm border border-status-danger bg-status-danger/10 px-1.5 py-1 text-status-danger-text'
+          : ''
+      }`}
     >
-      <span title="Lab ambient temperature">T {renderTemperature(location, cluster, sensorData)}</span>
+      <span title="Lab ambient temperature">
+        T {renderTemperature(location, cluster, sensorData)}
+      </span>
       <span title="Water temperature">
         Water {getSensorDisplay(sensorData, `${setpointPrefix}water_temperature`, '°C')}
       </span>
-      {labSensorStatus && (
-        <span className="text-text-muted" title={qualityTooltip(labSensorStatus)}>
-          {qualityLabel(labSensorStatus)}
-          {labSensorStatus.newestAgeMs != null &&
-            ` · ${Math.floor(labSensorStatus.newestAgeMs / 1000)}s`}
-        </span>
-      )}
+      {labFreshness && <span className="sr-only">{labFreshness}</span>}
     </div>
   ) : null
 
@@ -362,6 +330,7 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
               <>
                 <span className="mt-1 text-10 text-text-secondary cursor-help" title={modeTooltip}>
                   Mode: <strong className="text-text-default">{visibleModeLabel}</strong>
+                  {harvestSuffix}
                 </span>
                 <span
                   className="mt-1 text-10 px-1 py-0.5 rounded-sm bg-status-success-bg/50 text-status-success border border-status-success-border/50 w-fit cursor-help"
@@ -502,6 +471,7 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
                       sensorStatuses[layer.cluster] ?? {
                         quality: 'missing',
                         newestAgeMs: null,
+                        newestObservedAtMs: null,
                         source: null,
                         cluster: layer.cluster,
                       }
@@ -518,6 +488,7 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
                       sensorStatuses.back ?? {
                         quality: 'missing',
                         newestAgeMs: null,
+                        newestObservedAtMs: null,
                         source: null,
                         cluster: 'back',
                       }
@@ -535,6 +506,7 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
                   sensorStatuses[cluster] ?? {
                     quality: 'missing',
                     newestAgeMs: null,
+                    newestObservedAtMs: null,
                     source: null,
                     cluster,
                   }
@@ -579,7 +551,11 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
                 Lights
               </div>
               <div className="flex flex-col gap-0.5">
-                {lightReadouts.length > 0 ? lightReadouts : <span role="status">Light data unavailable</span>}
+                {lightReadouts.length > 0 ? (
+                  lightReadouts
+                ) : (
+                  <span role="status">Light data unavailable</span>
+                )}
               </div>
             </div>
           )}
@@ -645,6 +621,7 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
                 title={modeTooltip}
               >
                 Mode: <strong className="text-text-default">{visibleModeLabel}</strong>
+                {harvestSuffix}
               </div>
               <div
                 className="dashboard-zone-row__narrow-transition min-w-0 text-10 px-1 py-0.5 rounded-sm bg-status-success-bg/50 text-status-success border border-status-success-border/50 break-words [overflow-wrap:anywhere]"
@@ -784,6 +761,7 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
                       sensorStatuses[layer.cluster] ?? {
                         quality: 'missing',
                         newestAgeMs: null,
+                        newestObservedAtMs: null,
                         source: null,
                         cluster: layer.cluster,
                       }
@@ -801,6 +779,7 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
                       sensorStatuses.back ?? {
                         quality: 'missing',
                         newestAgeMs: null,
+                        newestObservedAtMs: null,
                         source: null,
                         cluster: 'back',
                       }
@@ -819,6 +798,7 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
                   sensorStatuses[cluster] ?? {
                     quality: 'missing',
                     newestAgeMs: null,
+                    newestObservedAtMs: null,
                     source: null,
                     cluster,
                   }
@@ -861,14 +841,22 @@ export const DashboardZoneRow = memo(function DashboardZoneRow({
             >
               <div className="min-w-0 flex flex-col gap-0.5">
                 <div className="font-semibold text-text-muted">Lights</div>
-                {lightReadouts.length > 0 ? lightReadouts : <span role="status">Light data unavailable</span>}
+                {lightReadouts.length > 0 ? (
+                  lightReadouts
+                ) : (
+                  <span role="status">Light data unavailable</span>
+                )}
                 {nonLightDevices.length > 0 && (
                   <div className="flex min-w-0 flex-col gap-0.5 border-t border-border-subtle pt-0.5">
                     <span className="font-semibold text-text-muted">Devices</span>
                     {nonLightDevices.map(device => (
                       <div key={device.device_name} className="flex min-w-0 justify-between gap-1">
-                        <span className="truncate" title={device.device_name}>{device.device_name}</span>
-                        <span>{device.state === 1 ? 'ON' : device.state === 0 ? 'OFF' : 'unknown'}</span>
+                        <span className="truncate" title={device.device_name}>
+                          {device.device_name}
+                        </span>
+                        <span>
+                          {device.state === 1 ? 'ON' : device.state === 0 ? 'OFF' : 'unknown'}
+                        </span>
                       </div>
                     ))}
                   </div>

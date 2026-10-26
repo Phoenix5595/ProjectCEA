@@ -43,15 +43,16 @@ class PhaseRange:
 class FlowerGrowPlanInput:
     crop_name: str
     environment: str
-    flower_end: date
-    flower_weeks: int
-    include_pot_phases: bool
-    clone_weeks: int = 3
-    pot_weeks: int = 2
-    bed_weeks: int = 2
+    anchor: str
+    anchor_date: date
+    bed_veg_start: date
+    bed_veg_days: int = 14
     stretch_days: int = 21
+    bulk_days: int = 21
     ripen_days: int = 21
     drying_days: int = 7
+    pot_start: date | None = None
+    clone_start: date | None = None
     auto_mode_transition: bool = True
 
 
@@ -59,90 +60,89 @@ def _slug_location(location: str) -> str:
     return location.lower().replace(" ", "-")
 
 
+def flower_start_for(inp: FlowerGrowPlanInput) -> date:
+    """The plan's flower start derived from its anchor date."""
+    if inp.anchor == "flower_start":
+        return inp.anchor_date
+    if inp.anchor == "bed_veg_start":
+        return inp.anchor_date + timedelta(days=inp.bed_veg_days)
+    if inp.anchor == "ripen_end":
+        return inp.anchor_date - timedelta(
+            days=inp.stretch_days + inp.bulk_days + inp.ripen_days - 1
+        )
+    raise ValueError(f"unknown grow plan anchor: {inp.anchor}")
+
+
 def build_flower_grow_plan(inp: FlowerGrowPlanInput) -> tuple[list[PhaseRange], str | None]:
     """Return phase ranges and optional error message."""
-    flower_days = inp.flower_weeks * 7
-    bulk_days = flower_days - inp.stretch_days - inp.ripen_days
-    if bulk_days < 1:
-        return [], (
-            f"Flower length must be at least "
-            f"{(inp.stretch_days + inp.ripen_days + 7) // 7} weeks "
-            f"for {inp.stretch_days}d stretch + {inp.ripen_days}d ripen."
-        )
+    if inp.anchor == "bed_veg_start" and inp.bed_veg_start != inp.anchor_date:
+        return [], "bed_veg_start must equal anchor_date for the bed_veg_start anchor"
+    flower_start = flower_start_for(inp)
+    if inp.bed_veg_start >= flower_start:
+        return [], "Bed veg must start before flower start"
+    if inp.pot_start is not None and inp.pot_start >= inp.bed_veg_start:
+        return [], "pot_start must be before bed_veg_start"
+    if inp.clone_start is not None:
+        clone_limit = inp.pot_start or inp.bed_veg_start
+        if inp.clone_start >= clone_limit:
+            return [], (
+                "clone_start must be before pot_start"
+                if inp.pot_start is not None
+                else "clone_start must be before bed_veg_start"
+            )
 
-    flower_end = inp.flower_end
-    flower_start = flower_end - timedelta(days=flower_days - 1)
     stretch_end = flower_start + timedelta(days=inp.stretch_days - 1)
-    ripen_start = flower_end - timedelta(days=inp.ripen_days - 1)
     bulk_start = stretch_end + timedelta(days=1)
-    bulk_end = ripen_start - timedelta(days=1)
+    bulk_end = bulk_start + timedelta(days=inp.bulk_days - 1)
+    ripen_start = bulk_end + timedelta(days=1)
+    ripen_end = ripen_start + timedelta(days=inp.ripen_days - 1)
 
     phases: list[PhaseRange] = []
-
-    if inp.include_pot_phases:
-        bed_end = flower_start - timedelta(days=1)
-        bed_start = bed_end - timedelta(days=inp.bed_weeks * 7 - 1)
-        pot_end = bed_start - timedelta(days=1)
-        pot_start = pot_end - timedelta(days=inp.pot_weeks * 7 - 1)
-        clone_end = pot_start - timedelta(days=1)
-        clone_start = clone_end - timedelta(days=inp.clone_weeks * 7 - 1)
-        phases.extend(
-            [
-                PhaseRange(
-                    "clone_window",
-                    "Clone",
-                    "Veg Room",
-                    "main",
-                    clone_start,
-                    clone_end,
-                    1,
-                    None,
-                    None,
-                    False,
-                ),
-                PhaseRange(
-                    "pot_veg",
-                    "Pot veg",
-                    "Veg Room",
-                    "main",
-                    pot_start,
-                    pot_end,
-                    2,
-                    None,
-                    None,
-                    False,
-                ),
-                PhaseRange(
-                    "bed_veg",
-                    "Bed veg",
-                    "Flower Room",
-                    "main",
-                    bed_start,
-                    bed_end,
-                    3,
-                    None,
-                    None,
-                    False,
-                ),
-            ]
-        )
-    else:
-        bed_end = flower_start - timedelta(days=1)
-        bed_start = bed_end - timedelta(days=inp.bed_weeks * 7 - 1)
+    if inp.clone_start is not None:
+        clone_end = (inp.pot_start or inp.bed_veg_start) - timedelta(days=1)
         phases.append(
             PhaseRange(
-                "bed_veg",
-                "Bed veg",
-                "Flower Room",
+                "clone_window",
+                "Clone",
+                "Veg Room",
                 "main",
-                bed_start,
-                bed_end,
-                3,
+                inp.clone_start,
+                clone_end,
+                1,
                 None,
                 None,
                 False,
             )
         )
+    if inp.pot_start is not None:
+        phases.append(
+            PhaseRange(
+                "pot_veg",
+                "Pot veg",
+                "Veg Room",
+                "main",
+                inp.pot_start,
+                inp.bed_veg_start - timedelta(days=1),
+                2,
+                None,
+                None,
+                False,
+            )
+        )
+    phases.append(
+        PhaseRange(
+            "bed_veg",
+            "Bed veg",
+            "Flower Room",
+            "main",
+            inp.bed_veg_start,
+            flower_start - timedelta(days=1),
+            3,
+            None,
+            None,
+            False,
+        )
+    )
 
     auto = inp.auto_mode_transition
     phases.extend(
@@ -189,22 +189,10 @@ def build_flower_grow_plan(inp: FlowerGrowPlanInput) -> tuple[list[PhaseRange], 
                 "Flower Room",
                 "main",
                 ripen_start,
-                flower_end,
+                ripen_end,
                 7,
                 "flower",
                 "ripen",
-                auto,
-            ),
-            PhaseRange(
-                "drying",
-                "Drying",
-                "Flower Room",
-                "main",
-                flower_end + timedelta(days=1),
-                flower_end + timedelta(days=inp.drying_days),
-                8,
-                "drying",
-                None,
                 auto,
             ),
             PhaseRange(
@@ -212,12 +200,24 @@ def build_flower_grow_plan(inp: FlowerGrowPlanInput) -> tuple[list[PhaseRange], 
                 "Harvest",
                 "Flower Room",
                 "main",
-                flower_end + timedelta(days=inp.drying_days),
-                flower_end + timedelta(days=inp.drying_days),
-                9,
+                ripen_end,
+                ripen_end,
+                8,
                 None,
                 None,
                 False,
+            ),
+            PhaseRange(
+                "drying",
+                "Drying",
+                "Flower Room",
+                "main",
+                ripen_end + timedelta(days=1),
+                ripen_end + timedelta(days=inp.drying_days),
+                9,
+                "drying",
+                None,
+                auto,
             ),
         ]
     )

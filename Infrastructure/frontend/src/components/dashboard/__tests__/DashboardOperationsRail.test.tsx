@@ -50,11 +50,13 @@ describe('DashboardOperationsRail', () => {
     const graphic = screen.getByRole('img', {
       name: 'Water tank level: sensor not configured',
     })
-    expect(graphic).toHaveClass('relative', 'w-full', 'aspect-square', 'min-h-0')
+    expect(graphic).toHaveClass('relative', 'h-full', 'max-w-full', 'aspect-square', 'min-h-0')
     expect(graphic).toHaveTextContent('NO DATA')
     expect(screen.getByText('Temp 19.5°C')).toBeInTheDocument()
     expect(screen.getByText('Pressure —')).toBeInTheDocument()
     expect(screen.getByText('Irrig. today —')).toBeInTheDocument()
+    expect(screen.getByTestId('water-tank-readings')).toHaveClass('-translate-y-[15px]')
+    expect(screen.getByTestId('water-tank-level-label')).toHaveClass('-translate-y-[15px]')
     expect(screen.queryByRole('region', { name: 'Lab' })).not.toBeInTheDocument()
   })
 
