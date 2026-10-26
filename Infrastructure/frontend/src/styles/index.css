@@ -1130,10 +1130,10 @@ body {
     overflow: hidden;
   }
 
+  /* As wide as the event log above it (the whole rail column); only the
+     height is fixed. RailSection centres the square tank graphic. */
   .dashboard-water-panel {
-    width: 15rem;
     height: 15rem;
-    justify-self: end;
     align-self: end;
   }
 

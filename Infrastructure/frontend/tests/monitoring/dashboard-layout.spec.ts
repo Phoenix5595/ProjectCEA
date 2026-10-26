@@ -643,10 +643,10 @@ test('dashboard fits both supported desktop viewports without overflow', async (
   expect(metrics.boxes.events!.bottom).toBeLessThanOrEqual(metrics.boxes.water!.top + 1)
   expect(metrics.boxes.events!.left).toBeGreaterThanOrEqual(metrics.boxes.rail!.left - 1)
   expect(metrics.boxes.events!.right).toBeLessThanOrEqual(metrics.boxes.rail!.right + 1)
-  // The tank is a fixed 15rem square snapped to the rail's bottom-right corner.
-  expect(Math.abs(metrics.boxes.water!.right - metrics.boxes.rail!.right)).toBeLessThanOrEqual(1)
+  // The tank panel is exactly as wide as the event log, 15rem tall, on the rail's bottom edge.
+  expect(Math.abs(metrics.boxes.water!.left - metrics.boxes.events!.left)).toBeLessThanOrEqual(1)
+  expect(Math.abs(metrics.boxes.water!.right - metrics.boxes.events!.right)).toBeLessThanOrEqual(1)
   expect(Math.abs(metrics.boxes.water!.bottom - metrics.boxes.rail!.bottom)).toBeLessThanOrEqual(1)
-  expect(Math.abs(metrics.boxes.water!.width - 240)).toBeLessThanOrEqual(1)
   expect(Math.abs(metrics.boxes.water!.height - 240)).toBeLessThanOrEqual(1)
   expect(metrics.boxes.water!.bottom).toBeLessThanOrEqual(metrics.boxes.footer!.top + 1)
   expect(metrics.boxes.waterGraphic!.left).toBeGreaterThanOrEqual(metrics.boxes.water!.left - 1)
@@ -656,6 +656,14 @@ test('dashboard fits both supported desktop viewports without overflow', async (
   expect(
     Math.abs(metrics.boxes.waterGraphic!.width - metrics.boxes.waterGraphic!.height)
   ).toBeLessThanOrEqual(1)
+  expect(
+    Math.abs(
+      metrics.boxes.waterGraphic!.left +
+        metrics.boxes.waterGraphic!.right -
+        metrics.boxes.water!.left -
+        metrics.boxes.water!.right
+    )
+  ).toBeLessThanOrEqual(2)
   // Readings sit 15 px above their 29% anchor line inside the tank graphic.
   const expectedReadingsTop =
     metrics.boxes.waterGraphic!.top + 0.29 * metrics.boxes.waterGraphic!.height - 15
