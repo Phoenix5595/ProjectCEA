@@ -27,7 +27,7 @@ from app.events.mutation_dependencies import get_mutation_event_sink, get_mutati
 from app.events.mutation_diff import safe_allowlisted_diff
 from app.events.operational_models import EntityContext, JsonValue
 from app.events.operational_ports import OperationalEventSink
-from app.repositories.calendar import CalendarMutationError, GrowPlanCurrentRunAmbiguousError
+from app.repositories.calendar_errors import CalendarMutationError, GrowPlanCurrentRunAmbiguousError
 from app.schemas.calendar import (
     CalendarCurrentRunResponse,
     CalendarEventCreate,

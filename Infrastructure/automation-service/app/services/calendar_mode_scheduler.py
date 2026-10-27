@@ -21,11 +21,8 @@ from app.events.operational_models import (
 from app.events.operational_ports import OperationalEventSink
 from shared.infra_logging import get_logger
 
-from ..repositories.calendar import (
-    CalendarMutationError,
-    CalendarRepository,
-    GrowPlanCurrentRunAmbiguousError,
-)
+from ..repositories.calendar import CalendarRepository
+from ..repositories.calendar_errors import CalendarMutationError, GrowPlanCurrentRunAmbiguousError
 
 if TYPE_CHECKING:
     from app.services.mode_transition_service import ModeTransitionService
