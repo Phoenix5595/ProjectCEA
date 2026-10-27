@@ -14,7 +14,7 @@ from .manifest import ArchiveManifest
 from .models import JobClaim, JobKind
 
 if TYPE_CHECKING:
-    from .exporter import LoadPin
+    from .exporter_loads import LoadPin
 
 
 @dataclass(frozen=True, slots=True)

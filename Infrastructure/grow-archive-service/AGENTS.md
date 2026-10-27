@@ -8,7 +8,10 @@
 |---|---|
 | `capture.py` | Capture raw source rows directly from resolved dataset windows; assemble manifest and capture parts |
 | `deletion.py` | Recheck ZIP part counts/digests and delete eligible source rows within the deleting transaction |
-| `exporter.py` | Coordinate capture, ZIP writing, verification, publication, and catalog state |
+| `exporter.py` | Coordinate capture, ZIP writing, verification, publication, catalog state, and export requests |
+| `exporter_support.py` | Shared exporter helpers: DAV error translation and manifest identity checks |
+| `exporter_loads.py` | Explicit Historical ZIP load pins: target resolution, pinning, touch, release, and expiry |
+| `exporter_annual.py` | Annual containers: merge verified quarters, publish, and clean superseded artifacts |
 | `webdav.py` | Nextcloud/WebDAV transport |
 | `cache.py` | Verified local artifact cache, pins, and staging cleanup |
 | `loads.py` | Explicit ZIP-only Historical selection and load lifecycle |
