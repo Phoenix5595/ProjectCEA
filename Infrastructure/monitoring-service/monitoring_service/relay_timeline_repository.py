@@ -24,6 +24,14 @@ from monitoring_service.query_observation import request_observation
 from monitoring_service.relay_timeline import (
     MAX_RELAY_LOAD_ROWS,
     MAX_RELAY_TIMELINE_LIMIT,
+    RelayTimelineCursor,
+    aggregate_load_points,
+    coverage_from_rows,
+    decode_cursor,
+    encode_cursor,
+    raw_load_points,
+)
+from monitoring_service.relay_timeline_sql import (
     RELAY_1MIN_PID_LOAD_SQL,
     RELAY_5MIN_PID_LOAD_SQL,
     RELAY_CHANNEL_ANCHORS_SQL,
@@ -33,12 +41,6 @@ from monitoring_service.relay_timeline import (
     RELAY_TRANSITIONS_AFTER_CURSOR_SQL,
     RELAY_TRANSITIONS_FIRST_PAGE_SQL,
     RELAY_WATERMARK_SQL,
-    RelayTimelineCursor,
-    aggregate_load_points,
-    coverage_from_rows,
-    decode_cursor,
-    encode_cursor,
-    raw_load_points,
 )
 from monitoring_service.sensor_models import MonitoringUnavailableError
 from shared.history_availability import local_history_scope

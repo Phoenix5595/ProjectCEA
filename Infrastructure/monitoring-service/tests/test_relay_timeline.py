@@ -17,7 +17,8 @@ from monitoring_service.control_models import (
 )
 from monitoring_service.relay_timeline_repository import RelayTimelineRepository
 from monitoring_service.main import create_app
-from monitoring_service.relay_timeline import (
+from monitoring_service.relay_timeline import raw_load_points
+from monitoring_service.relay_timeline_sql import (
     RELAY_1MIN_PID_LOAD_SQL,
     RELAY_5MIN_PID_LOAD_SQL,
     RELAY_CHANNEL_ANCHORS_SQL,
@@ -26,7 +27,6 @@ from monitoring_service.relay_timeline import (
     RELAY_TRANSITIONS_AFTER_CURSOR_SQL,
     RELAY_TRANSITIONS_FIRST_PAGE_SQL,
     RELAY_WATERMARK_SQL,
-    raw_load_points,
 )
 
 START = datetime(2026, 8, 20, 12, 0, tzinfo=UTC)
