@@ -3,7 +3,7 @@ from typing import Any
 
 import pytest
 
-from app.services.photoperiod_history_logger import DatabasePhotoperiodHistoryStore
+from app.services.photoperiod_history_store import DatabasePhotoperiodHistoryStore
 
 
 class _AsyncContext:

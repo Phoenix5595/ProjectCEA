@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, ClassVar, NewType, Protocol, Self
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 if TYPE_CHECKING:
-    from app.services.photoperiod_history_logger import PhotoperiodObservation
+    from app.services.photoperiod_history_store import PhotoperiodObservation
 
     from .monitoring import FlushHealth
 

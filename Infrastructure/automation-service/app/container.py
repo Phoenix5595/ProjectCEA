@@ -39,10 +39,8 @@ from app.repositories.relay_observations import RelayObservationRepository
 from app.routes.operational_events import OperationalEventRouteReader
 from app.services.device_registry_service import DeviceRegistryService
 from app.services.mode_transition_service import ModeTransitionService
-from app.services.photoperiod_history_logger import (
-    DatabasePhotoperiodHistoryStore,
-    PhotoperiodHistoryLogger,
-)
+from app.services.photoperiod_history_logger import PhotoperiodHistoryLogger
+from app.services.photoperiod_history_store import DatabasePhotoperiodHistoryStore
 from app.services.room_schedule_service import RoomScheduleService
 from app.state import get_state_manager
 from shared.infra_logging import get_logger

@@ -25,9 +25,11 @@ from app.schemas.monitoring_models import (
 from app.services.photoperiod_history_logger import (
     BACKOFF_INTERVAL,
     QUEUE_CAPACITY,
+    PhotoperiodHistoryLogger,
+)
+from app.services.photoperiod_history_store import (
     DatabasePhotoperiodHistoryStore,
     PhotoperiodCoverageObservation,
-    PhotoperiodHistoryLogger,
     PhotoperiodHistoryRow,
     PhotoperiodObservation,
     PhotoperiodRecorderState,

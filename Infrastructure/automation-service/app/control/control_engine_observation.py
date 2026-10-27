@@ -14,7 +14,7 @@ from app.schemas.monitoring_models import (
     PhotoperiodObservationSink,
     RuntimeSnapshotVersion,
 )
-from app.services.photoperiod_history_logger import PhotoperiodObservation
+from app.services.photoperiod_history_store import PhotoperiodObservation
 from shared.infra_logging import get_logger
 from shared.monitoring_contracts import CurrentSnapshot
 
