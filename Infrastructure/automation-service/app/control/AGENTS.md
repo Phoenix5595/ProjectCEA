@@ -31,6 +31,7 @@ control/
 ├── vpd_controller.py                # VPD calculation
 ├── vpd_cascade_controller.py        # VPD-driven actuator selection
 ├── sensor_reader.py                 # Batched latest-measurement DB reads
+├── ramp_manager.py                  # Setpoint ramp transitions and their state
 ├── setpoint_manager.py              # Effective setpoint authority
 └── runtime_device_registry.py        # Immutable snapshot publisher
 ```

@@ -10,8 +10,8 @@ import pytest
 
 from app.control.control_engine import ControlEngine
 from app.control.current_publication_observer import build_current_snapshot
+from app.control.ramp_manager import RampState
 from app.control.runtime_device_snapshot import RuntimeDeviceSnapshot
-from app.control.setpoint_manager import RampState
 from app.monitoring_publication.current import CurrentPublicationPublisher
 from shared.monitoring_contracts import CurrentSnapshot, PhotoperiodPhase
 

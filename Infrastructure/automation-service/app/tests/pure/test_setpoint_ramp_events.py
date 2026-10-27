@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from app.control.setpoint_manager import RampManager
+from app.control.ramp_manager import RampManager
 from app.events.operational_models import OperationalEvent
 
 
