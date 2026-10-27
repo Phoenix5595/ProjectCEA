@@ -467,7 +467,7 @@ async def snapshot_aggregates(
         "relay_1hour": "SELECT bucket,location,cluster,channel,device_id,device_name,device_type,on_microseconds,off_microseconds,last_observed_at,source_watermark,active FROM public.monitoring_relay_duration_1hour WHERE bucket>=$1 AND bucket<$2 ORDER BY 1,2,3,4,5,6,7",
         "relay_1day": "SELECT bucket,location,cluster,channel,device_id,device_name,device_type,on_microseconds,off_microseconds,last_observed_at,source_watermark FROM public.monitoring_relay_duration_1day WHERE bucket>=$1 AND bucket<$2 ORDER BY 1,2,3,4,5,6,7",
     }
-    from grow_archive_service.derived_refresh import KNOWN
+    from grow_archive_service.derived_refresh_support import KNOWN
 
     for name in KNOWN:
         queries.setdefault(name, f"SELECT * FROM public.{name} WHERE bucket>=$1 AND bucket<$2")

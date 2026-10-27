@@ -25,6 +25,8 @@
 | `lifecycle_expiry.py` | Identity/stream binding, room locks, holds, and cursor/slice expiry |
 | `dispatcher.py`, `jobs.py` | Leased job dispatch, queue operations, and fencing |
 | `derived_refresh.py` | Refresh derived history after source deletion |
+| `derived_refresh_support.py` | Shared derived catalog: known aggregate hierarchy, relay identifiers, the dependency record, and advisory-lock helpers |
+| `derived_refresh_preflight.py` | Read-only preflight: catalog, permission, and hierarchy checks before any source DELETE |
 | `policy_gate.py` | Block source retention policies; allow source compression only at a three-month interval or longer |
 | `streams.py` | Source stream bindings, hypertable list, and nullable-time lookup |
 | `schema.py` | Source catalog and live schema preflight |
