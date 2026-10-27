@@ -379,8 +379,7 @@ interface RelayFixtureDevice {
 
 /**
  * Recorded relay lane identities of the fixture registry (mirror of
- * RELAY_TIMELINE_DEVICES in vite.monitoring.config.ts; the config file cannot
- * be imported from here without a cycle).
+ * RELAY_TIMELINE_DEVICES in tests/monitoring/monitoringPreviewFixtures.ts).
  */
 const RELAY_LANE_DEVICES: readonly RelayFixtureDevice[] = [
   { device_id: 101, device_name: 'veg_heater', device_type: 'heating', location: 'Veg Room', channel: 0, pid_enabled: false },
