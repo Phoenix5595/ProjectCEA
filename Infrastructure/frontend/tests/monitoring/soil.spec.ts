@@ -2,8 +2,9 @@
  * Flower soil observable workflow: open /flower/soil, verify Back above
  * Front beside the history chart, live probe cards, the default Moisture
  * heatmap painted under a placed probe, a hollow marker for a placement
- * closed 36 h ago and the legend; follow the unassigned badge to filtered
- * Sensor Settings; assert no request leaves the test-only loopback origin.
+ * closed 36 h ago and the legend; the toolbar's RS485 settings button and the
+ * unassigned badge both open the RS485 Sensor Settings tab; assert no request
+ * leaves the test-only loopback origin.
  */
 import { expect, test, type Page } from '@playwright/test'
 
@@ -72,16 +73,46 @@ test('flower soil renders beds, heatmap, live values, and history', async ({ pag
   expect(violations).toEqual([])
 })
 
-test('the unassigned badge navigates to Sensor Settings', async ({ page }, testInfo) => {
+test('the toolbar RS485 settings button opens the RS485 bus tab', async ({ page }, testInfo) => {
+  const violations = trackViolations(page)
+  await page.goto(fixtureUrl('/flower/soil', testInfo, 'settings-button'))
+
+  // The button sits inside the existing toolbar row, not on a new line.
+  const toolbar = page.locator('.mon-toolbar').first()
+  // WCAG 2.5.3: the accessible name contains the visible label unchanged.
+  const button = toolbar.getByRole('button', { name: 'Open RS485 settings', exact: true })
+  await expect(button).toHaveText('RS485 settings')
+  const toolbarBox = await toolbar.boundingBox()
+  const resetBox = await toolbar.getByRole('button', { name: 'Reset Zoom' }).boundingBox()
+  const buttonBox = await button.boundingBox()
+  if (toolbarBox === null || resetBox === null || buttonBox === null) {
+    throw new Error('toolbar controls must be measurable')
+  }
+  expect(buttonBox.y).toBeGreaterThanOrEqual(toolbarBox.y)
+  expect(buttonBox.y + buttonBox.height).toBeLessThanOrEqual(toolbarBox.y + toolbarBox.height)
+  expect(buttonBox.x).toBeGreaterThan(resetBox.x)
+
+  await button.click()
+  await expect(page).toHaveURL(/\/devices\?tab=sensors&settings_tab=rs485$/)
+  await expect(page.getByRole('tab', { name: 'RS485' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('table', { name: 'RS485 probes' })).toBeVisible()
+
+  expect(violations).toEqual([])
+})
+
+test('the unassigned badge opens the RS485 tab when an RS485 probe is unassigned', async ({
+  page,
+}, testInfo) => {
   const violations = trackViolations(page)
   await page.goto(fixtureUrl('/flower/soil', testInfo, 'badge'))
 
-  // The persistent unassigned badge appears and navigates to the filtered panel.
+  // The persistent unassigned badge appears and navigates to the bus that holds the probe.
   const badge = page.getByRole('button', { name: /unassigned sensor/ })
   await expect(badge).toBeVisible()
   await badge.click()
-  await expect(page).toHaveURL(/\/devices\?tab=sensors&status=unassigned/)
+  await expect(page).toHaveURL(/\/devices\?tab=sensors&settings_tab=rs485&status=unassigned/)
   await expect(page.getByRole('heading', { name: 'Sensor Settings' })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'RS485' })).toHaveAttribute('aria-selected', 'true')
 
   expect(violations).toEqual([])
 })

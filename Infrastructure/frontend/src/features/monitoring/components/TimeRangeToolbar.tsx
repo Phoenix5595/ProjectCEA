@@ -20,7 +20,7 @@
  * Reset Zoom action enabled only while the range-owner stack has a prior
  * range to restore.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 import type { MonitoringRange } from '../state'
@@ -145,6 +145,8 @@ export interface TimeRangeToolbarProps {
    * regular Monitoring routes, which keep the live preset group. */
   historical?: HistoricalToolbarControl
   monitoring?: ToolbarMonitoring
+  /** Page-specific controls rendered at the end of the toolbar row. */
+  actions?: ReactNode
 }
 
 export function TimeRangeToolbar({
@@ -162,6 +164,7 @@ export function TimeRangeToolbar({
   suppressInitialUrlParse,
   historical,
   monitoring,
+  actions,
 }: TimeRangeToolbarProps) {
   const [searchParams, setSearchParams] = useSearchParams()
   const maxCapMs = maxRangeMs === undefined ? MAX_RANGE_MS : maxRangeMs
@@ -481,6 +484,7 @@ export function TimeRangeToolbar({
         onFallFoldChoice={chooseFallFold}
       />
       {monitoring && <MonitoringToolbarStatus monitoring={monitoring} />}
+      {actions !== undefined && <div className="mon-toolbar__actions">{actions}</div>}
     </div>
   )
 }

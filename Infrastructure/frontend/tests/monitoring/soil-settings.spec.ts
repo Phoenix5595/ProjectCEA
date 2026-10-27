@@ -1,8 +1,9 @@
 /**
- * Sensor Settings split (R9): CAN bus and RS485 sections; RS485 probes are
- * placed by native drag (drop point → bed fractions) or per-row buttons;
- * the bus banner reports a pending power cycle. Bodies are asserted on the
- * wire against the guarded loopback fixture.
+ * Sensor Settings sub-tabs (R9): CAN bus and RS485 are separate tab pages
+ * (`settings_tab=can|rs485`, default CAN). RS485 probes are placed by native
+ * drag (drop point → bed fractions) or per-row buttons; the bus banner reports
+ * a pending power cycle. Bodies are asserted on the wire against the guarded
+ * loopback fixture.
  */
 import { expect, test } from '@playwright/test'
 import type { Locator, Page } from '@playwright/test'
@@ -49,29 +50,44 @@ async function dragTo(
   await source.dispatchEvent('dragend', { dataTransfer })
 }
 
-async function openSensorSettings(page: Page, url: string): Promise<void> {
+const RS485_SETTINGS = '/devices?tab=sensors&settings_tab=rs485'
+
+async function openRs485Settings(page: Page, url: string): Promise<void> {
   await page.goto(url)
   await expect(page.getByRole('heading', { name: 'Sensor Settings' })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'RS485' })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByTestId('soil-tag-2')).toBeVisible()
 }
 
-test('sensor settings splits CAN bus and RS485 sections', async ({ page }, testInfo) => {
+test('CAN bus and RS485 are separate sub-tab pages', async ({ page }, testInfo) => {
   const violations = trackViolations(page)
-  await openSensorSettings(page, fixtureUrl('/devices?tab=sensors', testInfo))
+  await page.goto(fixtureUrl('/devices?tab=sensors', testInfo))
 
-  const can = page.getByRole('region', { name: 'CAN bus' })
-  const rs485 = page.getByRole('region', { name: 'RS485' })
-  await expect(can.getByRole('heading', { name: 'CAN bus' })).toBeVisible()
-  await expect(rs485.getByRole('heading', { name: 'RS485' })).toBeVisible()
-  await expect(can.getByText('Node 1', { exact: true })).toBeVisible()
-  await expect(rs485.getByText('Node 1', { exact: true })).toHaveCount(0)
+  const canTab = page.getByRole('tab', { name: 'CAN bus' })
+  const rs485Tab = page.getByRole('tab', { name: 'RS485' })
+  // No settings_tab lands on CAN; the RS485 page is not mounted.
+  await expect(canTab).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('heading', { name: 'CAN bus' })).toBeVisible()
+  await expect(page.getByText('Node 1', { exact: true })).toBeVisible()
+  await expect(page.getByRole('table', { name: 'RS485 probes' })).toHaveCount(0)
+
+  await rs485Tab.click()
+  await expect(rs485Tab).toHaveAttribute('aria-selected', 'true')
+  const url = new URL(page.url())
+  expect(url.searchParams.get('settings_tab')).toBe('rs485')
+  // Switching keeps every other query parameter (here the fixture session).
+  expect(url.searchParams.get('fixtureSession')).toBe(testInfo.testId)
+  await expect(page.getByRole('heading', { name: 'RS485' })).toBeVisible()
+  await expect(page.getByRole('table', { name: 'RS485 probes' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'CAN bus' })).toHaveCount(0)
+  await expect(page.getByText('Node 1', { exact: true })).toHaveCount(0)
   await expect(page.getByTestId('soil-bus-status')).toHaveCount(0)
   expect(violations).toEqual([])
 })
 
 test('dragging a probe into a bed places it at the drop point', async ({ page }, testInfo) => {
   const violations = trackViolations(page)
-  await openSensorSettings(page, fixtureUrl('/devices?tab=sensors', testInfo))
+  await openRs485Settings(page, fixtureUrl(RS485_SETTINGS, testInfo))
 
   const request = assignmentRequest(page, 'PUT', 12)
   await dragTo(page, page.getByTestId('soil-tag-2'), page.getByTestId('soil-bed-back'), {
@@ -91,7 +107,7 @@ test('dragging a probe into a bed places it at the drop point', async ({ page },
 
 test('dragging a placed probe onto Unassigned unassigns it', async ({ page }, testInfo) => {
   const violations = trackViolations(page)
-  await openSensorSettings(page, fixtureUrl('/devices?tab=sensors', testInfo))
+  await openRs485Settings(page, fixtureUrl(RS485_SETTINGS, testInfo))
   await expect(page.getByTestId('soil-bed-back').getByTestId('soil-tag-4')).toBeVisible()
 
   const request = assignmentRequest(page, 'DELETE', 14)
@@ -103,7 +119,7 @@ test('dragging a placed probe onto Unassigned unassigns it', async ({ page }, te
 
 test('the Veg Room button places a probe room-level', async ({ page }, testInfo) => {
   const violations = trackViolations(page)
-  await openSensorSettings(page, fixtureUrl('/devices?tab=sensors', testInfo))
+  await openRs485Settings(page, fixtureUrl(RS485_SETTINGS, testInfo))
 
   const row = page
     .getByRole('table', { name: 'RS485 probes' })
@@ -124,10 +140,7 @@ test('the bus banner asks for a power cycle with the reserved address', async ({
   page,
 }, testInfo) => {
   const violations = trackViolations(page)
-  await openSensorSettings(
-    page,
-    fixtureUrl('/devices?tab=sensors', testInfo, undefined, 'soil-power-cycle')
-  )
+  await openRs485Settings(page, fixtureUrl(RS485_SETTINGS, testInfo, undefined, 'soil-power-cycle'))
 
   await expect(page.getByTestId('soil-bus-status')).toHaveText(
     'Power-cycle the new probe to finish address 3'

@@ -158,7 +158,8 @@ The `/flower/soil` page reuses the monitoring layout system verbatim instead of 
 - **Data table**: the shared `ChartDataTable` primitive ("View data as table", consuming the exact `AlignedData` the plot renders) renders only in dev/fixture builds (R6); production keeps the legend's hidden semantic table. The page does not maintain its own table markup.
 - Beds render Back Bed above Front Bed; probe identity is the registry hardware address (`Soil probe #N`), and per-metric fresh/stale text uses `--mon-stale`.
 - **Bed figure** (`features/soil/SoilBedFigure.tsx`): a square with the bed's `width_ft/length_ft` aspect holds a 32×32 heatmap canvas stretched over it, active markers (solid dot, `#<address> <value>`) at `x_frac`/`y_frac` and closed markers (hollow ring, `#<address> · <age>`) for placements removed within 72 h. Under the square, a gradient legend with the 5th–95th percentile domain. Heatmap colours are fixed data stops (like the SUN/MOON fills), not theme tokens; cell alpha is `0.85 × confidence`, where confidence decays as `exp(−d / 1 ft)` times the point's freshness.
-- **Sensor Settings RS485 placement** draws Back Bed left and Front Bed right as squares with free-positioned tags, plus Unassigned and Veg Room drop zones and a per-probe button table.
+- **Soil toolbar action:** the toolbar row ends with an "RS485 settings" button (`TimeRangeToolbar` `actions` slot, end-aligned `.mon-toolbar__actions`, same size as the other toolbar buttons, no extra row) that opens Sensor Settings → RS485.
+- **Sensor Settings RS485 placement** (RS485 sub-tab page) draws Back Bed left and Front Bed right as squares with free-positioned tags, plus Unassigned and Veg Room drop zones and a per-probe button table.
 
 ## Responsive Layout
 

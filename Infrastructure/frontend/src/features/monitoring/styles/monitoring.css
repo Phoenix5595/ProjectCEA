@@ -167,6 +167,15 @@
   display: contents;
 }
 
+/* Page-specific trailing controls (for example the soil page's RS485
+   settings link). End-aligned inside the existing toolbar row. */
+.mon-toolbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
 .mon-toolbar__presets {
   display: flex;
   flex-wrap: wrap;
@@ -176,7 +185,8 @@
 .mon-toolbar__preset,
 .mon-toolbar__now,
 .mon-toolbar__status button,
-.mon-toolbar__absolute button {
+.mon-toolbar__absolute button,
+.mon-toolbar__actions button {
   padding: 0.25rem 0.625rem;
   font-size: 0.8rem;
   border: 1px solid var(--border-default, #475b3e);

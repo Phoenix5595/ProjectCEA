@@ -48,11 +48,17 @@ the automation calendar routes' error codes. Use placeholders, never a real tail
 
 Physical sensor rows have a permanent identity separate from their CAN/RS-485
 address. RS-485 rows are never pending (the Modbus address is the device ID,
-R9); identity confirmation is CAN-only. Pending CAN rows are listed first in the
-Sensor Settings CAN bus section; the operator confirms them as an existing
-eligible identity or as a new sensor. RS-485 probes are placed in the RS485
-section (`Rs485PlacementSection`). The Flower Soil page surfaces a
-pending/unassigned badge. Registry wire contracts live in
+R9); identity confirmation is CAN-only. Sensor Settings (`/devices?tab=sensors`)
+has one sub-tab page per bus, selected by `settings_tab=can|rs485` (missing or
+unknown → CAN; switching keeps the other query parameters; only the active bus
+mounts). Pending CAN rows are listed first on the CAN bus page
+(`CanBusSection`); the operator confirms them as an existing eligible identity
+or as a new sensor. RS-485 probes are placed on the RS485 page
+(`Rs485PlacementSection`). The Flower Soil toolbar ends with an "RS485
+settings" button opening `/devices?tab=sensors&settings_tab=rs485`; its
+unassigned badge opens the RS485 page when an RS-485 probe is unassigned
+(otherwise CAN) and its pending badge opens the CAN page, both with
+`status=unassigned`. Registry wire contracts live in
 `features/soil/api/contracts.ts`; do not hand-edit generated OpenAPI files.
 - `src/config/clusterTopology.ts` mirrors `Infrastructure/shared/cluster_topology.py`: device cluster is always `main`; Flower Room has sensor sub-clusters `front` and `back`; unsplit rooms reuse `main` as a sensor URL sentinel.
 - Operational event SSE uses `fetch` with `Accept: text/event-stream` and `X-API-Key`. Native `EventSource` and query-token keys are not used.

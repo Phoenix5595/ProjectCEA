@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const soilMocks = vi.hoisted(() => ({
@@ -71,7 +72,11 @@ beforeEach(() => {
 
 describe('SensorSettingsPanel identity confirmation', () => {
   it('preselects the stale candidate and offers same/new decisions', async () => {
-    render(<SensorSettingsPanel />)
+    render(
+      <MemoryRouter>
+        <SensorSettingsPanel />
+      </MemoryRouter>
+    )
 
     const target = await screen.findByRole('combobox', {
       name: 'Previous identity for can_node_233',

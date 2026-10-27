@@ -8,8 +8,10 @@
  * heatmap that fades past positions linearly to zero over 72 h (R9). Probe
  * cards with live readings (polled every five seconds) sit under each bed.
  * A new-probe toast fires only for RS-485 probes first seen after the page
- * opened; a persistent badge lists unassigned and pending sensors. One
- * multi-axis historical uPlot is fed by the soil history API.
+ * opened; a persistent badge lists unassigned and pending sensors. The
+ * toolbar carries a permanent "RS485 settings" button that deep-links to the
+ * RS485 bus tab. One multi-axis historical uPlot is fed by the soil history
+ * API.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -153,8 +155,12 @@ export default function FlowerSoil() {
     createMonitoringChartFeed(emptyAlignedData(), { kind: 'live', duration: LIVE_DURATION_MS })
   )
 
-  const goToSensorSettings = useCallback(() => {
-    navigate('/devices?tab=sensors&status=unassigned')
+  const goToCanSettings = useCallback(() => {
+    navigate('/devices?tab=sensors&settings_tab=can&status=unassigned')
+  }, [navigate])
+
+  const goToRs485Settings = useCallback(() => {
+    navigate('/devices?tab=sensors&settings_tab=rs485&status=unassigned')
   }, [navigate])
 
   const poll = useCallback(async () => {
@@ -178,14 +184,14 @@ export default function FlowerSoil() {
       for (const record of freshUnassigned) {
         seenUnassignedRef.current.add(record.registry_id)
         toast(`New soil probe detected: Soil probe #${record.hardware_address}`, {
-          action: { label: 'Sensor Settings', onClick: goToSensorSettings },
+          action: { label: 'Sensor Settings', onClick: goToRs485Settings },
         })
       }
     } catch (error) {
       logger.error('Soil page poll failed', error)
       setErrorAt(new Date())
     }
-  }, [goToSensorSettings, seenUnassignedRef])
+  }, [goToRs485Settings, seenUnassignedRef])
 
   useEffect(() => {
     void poll()
@@ -222,6 +228,9 @@ export default function FlowerSoil() {
       record => record.identity_status !== 'pending' && record.status === 'unassigned'
     )
   }, [registry])
+  // RS485 probes can only be placed from the RS485 tab; when any is unassigned
+  // the badge opens that bus, otherwise the pending/identity work is CAN-only.
+  const unassignedHasRs485 = unassignedRecords.some(record => record.bus === 'rs485')
 
   const isLive = range.kind === 'live'
 
@@ -381,6 +390,15 @@ export default function FlowerSoil() {
         }}
         onResetZoom={() => chartRef.current?.resetZoom()}
         defaultDuration={LIVE_DURATION_MS}
+        actions={
+          <button
+            type="button"
+            aria-label="Open RS485 settings"
+            onClick={() => navigate('/devices?tab=sensors&settings_tab=rs485')}
+          >
+            RS485 settings
+          </button>
+        }
       />
 
       {errorAt !== null && (
@@ -390,18 +408,18 @@ export default function FlowerSoil() {
       )}
 
       {unassignedRecords.length > 0 && (
-        <button type="button" onClick={goToSensorSettings} className="mon-banner mon-banner--error">
+        <button
+          type="button"
+          onClick={unassignedHasRs485 ? goToRs485Settings : goToCanSettings}
+          className="mon-banner mon-banner--error"
+        >
           {unassignedRecords.length} unassigned sensor
           {unassignedRecords.length === 1 ? '' : 's'} — open Sensor Settings
         </button>
       )}
 
       {pendingRecords.length > 0 && (
-        <button
-          type="button"
-          onClick={goToSensorSettings}
-          className="mon-banner mon-banner--error"
-        >
+        <button type="button" onClick={goToCanSettings} className="mon-banner mon-banner--error">
           {pendingRecords.length} sensor {pendingRecords.length === 1 ? 'identity needs' : 'identities need'}{' '}
           confirmation — open Sensor Settings
         </button>
