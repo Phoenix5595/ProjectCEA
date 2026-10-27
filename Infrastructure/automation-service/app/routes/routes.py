@@ -26,6 +26,7 @@ from app.routes import (
     system_config,
     websocket,
 )
+from app.routes.calendar import dependencies as calendar_dependencies
 from shared.infra_logging import get_logger
 
 logger = get_logger(__name__)
@@ -128,7 +129,7 @@ def setup_dependency_overrides(app: FastAPI, container) -> None:
     # Override dependencies in failsafe module
     app.dependency_overrides[failsafe.get_database] = container.get_database
 
-    app.dependency_overrides[calendar.get_database] = container.get_database
+    app.dependency_overrides[calendar_dependencies.get_database] = container.get_database
 
     # Override the activation owner in the room-modes module
     app.dependency_overrides[room_modes.get_mode_transition_service] = (

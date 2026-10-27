@@ -45,7 +45,7 @@ from app.events.mutation_dependencies import (  # noqa: E402
     get_mutation_event_sink,
 )
 from app.repositories.calendar import CalendarRepository  # noqa: E402
-from app.routes.calendar import get_database as calendar_get_database  # noqa: E402
+from app.routes.calendar.dependencies import get_database as calendar_get_database  # noqa: E402
 from app.routes.calendar import router as calendar_router  # noqa: E402
 from grow_archive_service.main import create_app as create_archive_app  # noqa: E402
 from shared.auth import APIKeyAuthMiddleware  # noqa: E402

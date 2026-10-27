@@ -12,7 +12,8 @@ import pytest
 
 from app.repositories import calendar as calendar_repository
 from app.repositories.calendar import CalendarRepository
-from app.routes.calendar import get_database, router
+from app.routes.calendar import router
+from app.routes.calendar.dependencies import get_database
 
 
 class CalendarReadPool:

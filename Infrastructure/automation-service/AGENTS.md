@@ -104,7 +104,7 @@ Generation/revision/lease compare-and-set fences reject older responses.
 Fresh Nextcloud credentials are entered in Calendar settings. Saving verified
 settings leaves the connection disabled until the explicit backup-confirmed
 “Reconnect and mirror all local events” action. The existing calendar named
-`Culture` (`TARGET_CALENDAR_NAME` in `app/routes/calendar.py`, case-insensitive)
+`Culture` (`TARGET_CALENDAR_NAME` in `app/routes/calendar/sync.py`, case-insensitive)
 and a writable Files root are discovered separately; no calendar is created or
 cleared, and only events carrying the Pi's own UID/`X-CEA-EVENT-ID` are deleted.
 Secrets stay Fernet-encrypted with `CALENDAR_SYNC_ENCRYPTION_KEY`, loaded by both

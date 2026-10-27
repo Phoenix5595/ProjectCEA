@@ -8,10 +8,14 @@ from httpx import ASGITransport, AsyncClient
 import pytest
 
 from app.calendar import sync_worker
+from app.events.mutation_context import MutationRequestContext
 from app.events.mutation_coverage import assert_mutation_route_coverage
+from app.events.mutation_dependencies import get_mutation_event_sink
 from app.events.mutation_exclusions import MUTATION_ROUTE_EXCLUSIONS, NonPersistentEffect
 from app.events.operational_models import OperationalEvent
 from app.routes import calendar
+from app.routes.calendar import sync as calendar_sync
+from app.routes.calendar.dependencies import get_database
 from app.routes.routes import register_routes
 
 
@@ -80,11 +84,11 @@ async def test_run_sync_emits_safe_action_only_after_synced_events(
         {"ok": True, "pushed": 2, "deleted": 1, "errors": []},
         [],
     )
-    monkeypatch.setattr(calendar, "CalendarSyncWorker", lambda _database: worker)
+    monkeypatch.setattr(calendar_sync, "CalendarSyncWorker", lambda _database: worker)
     app = FastAPI()
     app.include_router(calendar.router)
-    app.dependency_overrides[calendar.get_database] = lambda: SimpleNamespace()
-    app.dependency_overrides[calendar.get_mutation_event_sink] = lambda: sink
+    app.dependency_overrides[get_database] = lambda: SimpleNamespace()
+    app.dependency_overrides[get_mutation_event_sink] = lambda: sink
 
     # When: the sync is driven through its HTTP surface.
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -122,11 +126,11 @@ async def test_run_sync_emits_nothing_without_a_successful_event_sync(
     # Given: a worker that has no committed event synchronization to report.
     sink = _RecordingSink()
     worker = _SyncWorker(sync_result, [])
-    monkeypatch.setattr(calendar, "CalendarSyncWorker", lambda _database: worker)
+    monkeypatch.setattr(calendar_sync, "CalendarSyncWorker", lambda _database: worker)
 
     # When: the route returns the no-op or failure result.
-    response = await calendar.run_sync(
-        SimpleNamespace(), calendar.MutationRequestContext.create(), sink
+    response = await calendar_sync.run_sync(
+        SimpleNamespace(), MutationRequestContext.create(), sink
     )
 
     # Then: no action event overstates a completed synchronization.
@@ -149,10 +153,10 @@ async def test_connection_probe_is_transient_and_redacts_failure_secrets(
             }
         ],
     )
-    monkeypatch.setattr(calendar, "CalendarSyncWorker", lambda _database: worker)
+    monkeypatch.setattr(calendar_sync, "CalendarSyncWorker", lambda _database: worker)
     app = FastAPI()
     app.include_router(calendar.router)
-    app.dependency_overrides[calendar.get_database] = lambda: SimpleNamespace()
+    app.dependency_overrides[get_database] = lambda: SimpleNamespace()
 
     # When: a client checks a connection through the API surface.
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -176,10 +180,12 @@ async def test_connection_probe_failure_does_not_echo_credentials(
 ) -> None:
     # Given: a remote probe failure whose exception contains the supplied password.
     password = "calendar-password"
-    monkeypatch.setattr(calendar, "CalendarSyncWorker", lambda _database: _FailingProbeWorker())
+    monkeypatch.setattr(
+        calendar_sync, "CalendarSyncWorker", lambda _database: _FailingProbeWorker()
+    )
     app = FastAPI()
     app.include_router(calendar.router)
-    app.dependency_overrides[calendar.get_database] = lambda: SimpleNamespace()
+    app.dependency_overrides[get_database] = lambda: SimpleNamespace()
 
     # When: the failing probe is driven through its HTTP surface.
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

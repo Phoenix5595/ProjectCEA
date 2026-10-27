@@ -16,8 +16,12 @@ import pytest
 from app.calendar.flower_grow_plan import LOCAL_TZ
 from app.events import ConfigChangeEvent, ConfigEventType
 from app.events.mutation_context import MutationRequestContext
+from app.events.mutation_dependencies import get_mutation_event_sink
 from app.events.operational_models import OperationalEvent
 from app.routes import calendar, room_modes
+from app.routes.calendar import core as calendar_core
+from app.routes.calendar import sync as calendar_sync
+from app.routes.calendar.dependencies import get_database
 from app.schemas.calendar import CalendarEventCreate, CalendarEventUpdate, SyncConnectionCreate
 from app.schemas.room_modes import SetModeRequest, UpdateParametersRequest
 from app.services import climate_timeline_apply as climate_apply_module
@@ -414,7 +418,7 @@ async def test_calendar_event_emits_only_after_a_changed_persisted_update() -> N
     database = SimpleNamespace(calendar_repo=_CalendarRepository(stored_event))
 
     # When: the route accepts an idempotent update.
-    response = await calendar.update_event(
+    response = await calendar_core.update_event(
         3,
         CalendarEventUpdate(title="Water plants"),
         database,
@@ -436,7 +440,7 @@ async def test_calendar_event_emits_safe_details_after_persistence() -> None:
     database = SimpleNamespace(calendar_repo=_CalendarRepository(stored_event))
 
     # When: event creation returns the committed row.
-    await calendar.create_event(
+    await calendar_core.create_event(
         CalendarEventCreate(
             location="Veg Room",
             title="Water plants",
@@ -460,10 +464,10 @@ async def test_calendar_event_route_emits_after_a_successful_http_persistence() 
     sink = _RecordingSink()
     app = FastAPI()
     app.include_router(calendar.router)
-    app.dependency_overrides[calendar.get_database] = lambda: SimpleNamespace(
+    app.dependency_overrides[get_database] = lambda: SimpleNamespace(
         calendar_repo=_CalendarRepository(_calendar_event(title="Water plants"))
     )
-    app.dependency_overrides[calendar.get_mutation_event_sink] = lambda: sink
+    app.dependency_overrides[get_mutation_event_sink] = lambda: sink
 
     # When: a client persists an event through the API surface.
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -491,7 +495,7 @@ async def test_calendar_event_emits_nothing_when_create_persistence_fails() -> N
 
     # When: event creation cannot produce a persisted row.
     with pytest.raises((HTTPException, KeyError)):
-        await calendar.create_event(
+        await calendar_core.create_event(
             CalendarEventCreate(
                 location="Veg Room",
                 title="Water plants",
@@ -514,7 +518,7 @@ async def test_calendar_sync_event_redacts_credentials_and_urls(
     # Given: a CalDAV request with credential and URL sentinels.
     sink = _RecordingSink()
     database = SimpleNamespace(calendar_repo=_CalendarRepository(None))
-    monkeypatch.setattr(calendar, "encrypt_secret", lambda secret: f"encrypted:{secret}")
+    monkeypatch.setattr(calendar_sync, "encrypt_secret", lambda secret: f"encrypted:{secret}")
     body = SyncConnectionCreate(
         caldav_base_url="https://calendar.example.test/dav",
         username="calendar-user",
@@ -530,11 +534,13 @@ async def test_calendar_sync_event_redacts_credentials_and_urls(
         )
 
     monkeypatch.setattr(
-        calendar, "CalendarSyncWorker", lambda _database: SimpleNamespace(discover=discover)
+        calendar_sync, "CalendarSyncWorker", lambda _database: SimpleNamespace(discover=discover)
     )
 
     # When: the connection is persisted.
-    await calendar.create_sync_connection(body, database, MutationRequestContext.create(), sink)
+    await calendar_sync.create_sync_connection(
+        body, database, MutationRequestContext.create(), sink
+    )
 
     # Then: its event includes only safe connection identity and host information.
     serialized = sink.events[0].model_dump_json()
@@ -565,8 +571,8 @@ async def test_calendar_sync_removal_emits_only_after_a_persisted_deletion() -> 
     # When: a client removes the sync connection through the API surface.
     app = FastAPI()
     app.include_router(calendar.router)
-    app.dependency_overrides[calendar.get_database] = lambda: database
-    app.dependency_overrides[calendar.get_mutation_event_sink] = lambda: sink
+    app.dependency_overrides[get_database] = lambda: database
+    app.dependency_overrides[get_mutation_event_sink] = lambda: sink
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.delete("/api/calendar/sync/connections")
 
@@ -597,7 +603,7 @@ async def test_calendar_sync_removal_emits_nothing_without_persisted_deletion(
     )
 
     # When: the disconnect route completes without an authoritative deletion.
-    await calendar.remove_sync_connection(database, MutationRequestContext.create(), sink)
+    await calendar_sync.remove_sync_connection(database, MutationRequestContext.create(), sink)
 
     # Then: no false persisted-mutation event is emitted.
     assert sink.events == []
@@ -619,7 +625,7 @@ async def test_grow_plan_deletion_emits_only_for_deleted_rows(
     database = SimpleNamespace(calendar_repo=repository)
 
     # When: the deletion route returns its persisted-row result.
-    response = await calendar.delete_grow_plan(
+    response = await calendar_core.delete_grow_plan(
         grow_plan_id, database, MutationRequestContext.create(), sink
     )
 

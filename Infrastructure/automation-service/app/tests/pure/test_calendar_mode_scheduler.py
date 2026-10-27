@@ -12,7 +12,7 @@ from app.database import DatabaseManager
 from app.events.mutation_context import MutationRequestContext
 from app.events.operational_models import OperationalEvent
 from app.repositories.calendar import CalendarRepository as CalendarRepositoryBase
-from app.routes import calendar
+from app.routes.calendar import core as calendar_core
 from app.schemas.calendar import FlowerCalendarModeTransitionUpdate
 from app.services.calendar_mode_scheduler import CalendarModeScheduler
 
@@ -126,7 +126,7 @@ async def test_flower_calendar_mode_transition_setting_persists_the_requested_va
     sink = RecordingSink()
 
     # When: the Flower-only setting is disabled through the calendar API handler.
-    response = await calendar.update_flower_mode_transitions(
+    response = await calendar_core.update_flower_mode_transitions(
         FlowerCalendarModeTransitionUpdate(enabled=False),
         database,
         MutationRequestContext.create(),
