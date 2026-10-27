@@ -6,16 +6,14 @@ from decimal import Decimal
 import pytest
 
 from monitoring_service.history_buckets import choose_history_bucket, history_bucket_bounds
+from monitoring_service.history_overview_control_sql import CONTROL_OVERVIEW_STATEMENT
 from monitoring_service.history_overview_models import (
     HistoryOverviewPoint,
     HistoryOverviewSamplePoint,
     MonitoringValidationError,
 )
 from monitoring_service.history_overview_repository import _control_series_groups
-from monitoring_service.history_overview_sql import (
-    CONTROL_OVERVIEW_STATEMENT,
-    SENSOR_OVERVIEW_STATEMENT,
-)
+from monitoring_service.history_overview_sensor_sql import SENSOR_OVERVIEW_STATEMENT
 
 
 def test_sensor_overview_freshness_covers_measurement_ancestors():

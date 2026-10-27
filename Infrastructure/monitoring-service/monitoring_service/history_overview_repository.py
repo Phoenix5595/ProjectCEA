@@ -29,6 +29,10 @@ from monitoring_service.history_buckets import (
     timedelta_microseconds,
     validate_history_budget,
 )
+from monitoring_service.history_overview_control_sql import (
+    CONTROL_OVERVIEW_STATEMENT,
+    LIGHT_OVERVIEW_STATEMENT,
+)
 from monitoring_service.history_overview_models import (
     HistoryOverviewControlResponse,
     HistoryOverviewControlSeries,
@@ -43,14 +47,12 @@ from monitoring_service.history_overview_models import (
     HistoryOverviewSensorSeries,
     HistoryOverviewSensorStatistics,
 )
+from monitoring_service.history_overview_relay_sql import RELAY_OVERVIEW_STATEMENT
+from monitoring_service.history_overview_sensor_sql import SENSOR_OVERVIEW_STATEMENT
 from monitoring_service.history_overview_sql import (
-    CONTROL_OVERVIEW_STATEMENT,
     DATA_ROW_KIND,
     GUARD_ROW_KIND,
     GUARD_UNAVAILABLE_MESSAGE,
-    LIGHT_OVERVIEW_STATEMENT,
-    RELAY_OVERVIEW_STATEMENT,
-    SENSOR_OVERVIEW_STATEMENT,
     bucket_points_json,
 )
 from monitoring_service.query_observation import request_observation
